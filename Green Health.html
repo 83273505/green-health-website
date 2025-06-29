@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+
+    <!-- Production-Ready Content Security Policy (CSP) -->
+    <meta http-equiv="Content-Security-Policy" 
+          content="default-src 'self' data: blob:; 
+                   script-src 'self' https://unpkg.com https://cdn.jsdelivr.net blob:;
+                   style-src 'self' https://fonts.googleapis.com; 
+                   font-src 'self' https://fonts.gstatic.com; 
+                   img-src 'self' data: https://threejs.org;
+                   connect-src 'self' https://fonts.googleapis.com https://threejs.org https://dl.dropboxusercontent.com;
+                   object-src 'none'; 
+                   frame-ancestors 'none';">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- SEO & Branding Metatags -->
+    <title>Green Health 綠健｜突尼西亞特級初榨橄欖油專家</title>
+    <meta name="description" content="Green Health 綠健嚴選來自突尼西亞冠軍莊園的特級初榨橄欖油。探索 Koroneiki 單一品種的純淨風味，與多項國際大獎肯定的安心承諾。">
+    <meta name="keywords" content="特級初榨橄欖油, 橄欖油, Green Health, 綠健, 選油顧問, 突尼西亞, 地中海飲食, 冷壓初榨, Koroneiki, 橄欖油皇后, 健康食譜, IFRIQIA, 2500 YEARS OF TRADITION, FSSC 22000, BRCGS, ISO 9001, IFS Food, 綠健小舖, shopee, facebook, instagram, Chemlali, Chetoui, 策展人筆記, Omega 3 6 9">
+    <meta name="author" content="Green Health 綠健">
+    <meta name="robots" content="index, follow">
+    <link rel="canonical" href="https://www.greenhealth.com.tw/">
+    <link rel="alternate" hreflang="zh-Hant" href="https://www.greenhealth.com.tw/" />
+
+    <!-- Favicon & Theme Color -->
+    <link rel="icon" href="images/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="images/apple-touch-icon.png">
+    <meta name="theme-color" content="#556B2F" />
+    
+    <!-- Open Graph (for Social Sharing) -->
+    <meta property="og:title" content="Green Health 綠健｜突尼西亞特級初榨橄欖油專家">
+    <meta property="og:description" content="Green Health 綠健嚴選來自突尼西亞冠軍莊園的特級初榨橄欖油。探索 Koroneiki 單一品種的純淨風味。">
+    <meta property="og:image" content="https://www.greenhealth.com.tw/images/green-health-koroneiki-olive-oil.webp"> 
+    <meta property="og:url" content="https://www.greenhealth.com.tw/">
+    <meta property="og:type" content="website">
+
+    <!-- Preconnect for performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    
+    <!-- Stylesheet -->
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+
+    <!-- JavaScript Import Map -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.142.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/"
+            }
+        }
+    </script>
+    
+    <!-- GSAP Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/MotionPathPlugin.min.js"></script>
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    [
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "name": "Green Health 綠健",
+        "url": "https://www.greenhealth.com.tw/",
+        "logo": "https://www.greenhealth.com.tw/images/LOGO_1-1.webp",
+        "description": "Green Health 綠健是您最值得信賴的選油顧問與餐桌風味策展人。以三重把關原則，嚴選來自地中海的天然橄欖油與精品食材，為餐桌注入安心與純粹。",
+        "contactPoint": {
+          "@type": "ContactPoint",
+          "telephone": "+886-3-359-1696",
+          "contactType": "Customer Service",
+          "areaServed": "TW",
+          "availableLanguage": ["Chinese"]
+        },
+        "sameAs": [
+          "https://www.facebook.com/share/16NWCJL951/",
+          "https://www.instagram.com/green_health_olive/",
+          "https://shopee.tw/_a9_5vmt07"
+        ]
+      }
+    ]
+    </script>
+    
+</head>
+<body>
+
+    <svg xmlns="http://www.w3.org/2000/svg" class="u-visually-hidden">
+        <symbol id="icon-tear-gold" viewBox="0 0 100 150">
+            <defs>
+                <linearGradient id="gold-gradient-sprite" x1="50%" y1="0%" x2="50%" y2="100%">
+                    <stop offset="0%" stop-color="#FFFDE4"/>
+                    <stop offset="15%" stop-color="#F9D479"/>
+                    <stop offset="50%" stop-color="#B8860B"/>
+                    <stop offset="100%" stop-color="#8B6914"/>
+                </linearGradient>
+            </defs>
+            <path d="M50 0C-2.5 65 -15 95 50 150C115 95 102.5 65 50 0Z" fill="url(#gold-gradient-sprite)"/>
+        </symbol>
+        <symbol id="icon-tear-outline" viewBox="0 0 100 150">
+            <path d="M50 0C-2.5 65 -15 95 50 150C115 95 102.5 65 50 0Z" stroke-width="8"/>
+        </symbol>
+        <symbol id="icon-tear-shape" viewBox="0 0 100 150">
+            <path d="M50 0C-2.5 65 -15 95 50 150C115 95 102.5 65 50 0Z" />
+        </symbol>
+    </svg>
+    
+    <nav class="c-navbar" id="mainNav">
+        <a href="#" class="c-navbar__logo">
+            <img src="images/LOGO_1-1.webp" alt="Green Health 綠健的橄欖枝標誌 Logo" class="c-navbar__logo-img" width="42" height="42">
+            <div class="c-navbar__brand-title">
+                <span class="c-navbar__brand-en">Green Health</span>
+                <span class="c-navbar__brand-zh">綠健</span>
+            </div>
+        </a>
+        <ul class="c-navbar__links">
+            <li><a href="#products" class="c-navbar__link">產品世界</a></li>
+            <li><a href="#health" class="c-navbar__link">健康益處</a></li>
+            <li><a href="#recipes" class="c-navbar__link">烹飪靈感</a></li>
+            <li><a href="#faq" class="c-navbar__link">常見問題</a></li>
+            <li><a href="#about-us" class="c-navbar__link">關於我們</a></li>
+        </ul>
+        <button class="c-navbar__toggle" aria-label="開啟選單" aria-expanded="false" aria-controls="nav-links">
+            <span class="hamburger"></span>
+        </button>
+    </nav>
+
+    <nav class="c-sub-nav" id="subNav">
+        <div class="c-sub-nav__links">
+            <a href="#quality" class="c-sub-nav__link">品質旅程</a>
+            <a href="#products" class="c-sub-nav__link">產品世界</a>
+            <a href="#health" class="c-sub-nav__link">健康益處</a>
+            <a href="#recipes" class="c-sub-nav__link">烹飪靈感</a>
+        </div>
+    </nav>
+
+    <header class="c-hero">
+        <div class="c-hero__video-wrapper">
+            <canvas id="hero-canvas"></canvas>
+        </div>
+        <div class="c-hero__overlay"></div>
+        <div class="c-hero__content">
+            <h1 id="heroTitle">
+                <span class="c-hero__title-text u-text-phantom-gold">一滴皇后之淚，為餐桌加冕榮耀</span>
+                <svg class="c-hero__tear-drop" aria-hidden="true"><use xlink:href="#icon-tear-gold"></use></svg>
+            </h1>
+            <p class="u-text-soft">一滴地中海的純淨靈魂，為您的餐桌加冕榮耀。<br>我們是 Green Health 綠健，您的專業選油顧問，用近乎苛求的標準，只為帶回那份真正安心的風味。</p>
+            <div class="c-hero__cta-container">
+                <a href="#product-gold" class="c-cta-button">探索傳奇風味</a>
+                <a href="https://shopee.tw/_a9_5vmt07" class="c-cta-button c-cta-button--secondary" target="_blank" rel="noopener noreferrer">帶回地中海的陽光</a>
+            </div>
+        </div>
+        <a href="#quality" class="c-hero__scroll-hint" aria-label="向下滾動探索我們的故事">
+            <span class="c-hero__scroll-text">滑下來，感受地中海的風味旅程</span>
+            <span class="c-hero__scroll-arrow">&#8595;</span>
+        </a>
+    </header>
+
+    <main>
+        <section id="brand-statement" class="c-brand-statement u-reveal c-section-transition">
+            <div class="o-container">
+                <div class="c-brand-statement__image-container">
+                    <img src="images/green-health-koroneiki-olive-oil.webp" alt="Green Health 綠健精選 Koroneiki 單一品種特級初榨橄欖油，作為品牌形象主圖" loading="lazy" width="1200" height="800">
+                </div>
+            </div>
+        </section>
+        
+        <section id="quality" class="u-reveal c-section-transition">
+            <div class="o-container">
+                <h2 class="u-section-title">我們的品質旅程</h2>
+                <p class="u-section-intro">
+                    跟隨這滴純淨之源，探索一瓶頂級橄欖油的誕生之旅。
+                </p>
+                
+                <div class="c-scroll-narrative__wrapper">
+                    <div class="c-scroll-narrative__animation-track">
+                        <svg id="svg-oil-path-container" class="c-svg-oil-path" viewBox="0 0 100 1200" preserveAspectRatio="none">
+                            <path id="svg-oil-track" d="M50,0 C60,200 40,400 50,600 C60,800 40,1000 50,1200" fill="none" stroke="rgba(184, 134, 11, 0.2)" stroke-width="2" />
+                            <image id="svg-oil-drop" href="images/gold_tear_icon.webp" width="40" height="60" x="30" y="-30" />
+                        </svg>
+                    </div>
+                    <div class="c-timeline">
+                        <details class="c-timeline__item u-reveal" data-step="1">
+                            <summary class="c-timeline__summary">
+                                <div class="c-timeline__marker">🌱</div>
+                                <h3 class="c-timeline__title">01｜土壤的秘密｜風土的恩賜</h3>
+                            </summary>
+                            <div class="c-timeline__content-card">
+                                <div class="c-timeline__image-wrapper">
+                                    <img src="images/sum.webp" alt="陽光穿透橄欖葉，照耀在青澀的橄欖果實上" loading="lazy" width="800" height="600">
+                                </div>
+                                <p>每一滴橄欖油，都是風土的恩賜。 北非烈日、紅土沃壤與地中海微鹹海風，共同孕育出這片得天獨厚的土地——成就不凡的起點。</p>
+                            </div>
+                        </details>
+                        <details class="c-timeline__item u-reveal" data-step="2">
+                            <summary class="c-timeline__summary">
+                                <div class="c-timeline__marker">🤲</div>
+                                <h3 class="c-timeline__title">02｜我們的堅持｜掌心溫度，完整呵護</h3>
+                            </summary>
+                            <div class="c-timeline__content-card">
+                                 <div class="c-timeline__image-wrapper">
+                                    <img src="images/estate-1.webp" alt="農夫使用傳統梯子手工採收橄欖" loading="lazy" width="800" height="600">
+                                </div>
+                                <p>好油的關鍵，是成熟的瞬間。我們採用純人工採收法，避免機械傷害與果實氧化，讓每一顆橄欖都保持完好、鮮美，如實傳遞原始風味。</p>
+                            </div>
+                        </details>
+                        <details class="c-timeline__item u-reveal" data-step="3">
+                            <summary class="c-timeline__summary">
+                                <div class="c-timeline__marker">❄️</div>
+                                <h3 class="c-timeline__title">03｜我們的技藝｜鎖住鮮活，冷壓初榨</h3>
+                            </summary>
+                            <div class="c-timeline__content-card">
+                                <div class="c-timeline__image-grid">
+                                    <img src="images/estate-14.webp" alt="金黃色的初榨橄欖油從壓榨機中流出" loading="lazy" width="600" height="400">
+                                    <img src="images/bucket.webp" alt="大型不鏽鋼儲存桶" loading="lazy" width="600" height="400">
+                                </div>
+                                <p>橄欖一旦採收，即刻送往壓榨坊，黃金時間内冷壓初榨，不加熱、不加化學物質，保留珍貴的抗氧化成分與原始風味。這，就是Extra Virgin的真正意義。</p>
+                            </div>
+                        </details>
+                        <details class="c-timeline__item u-reveal" data-step="4">
+                            <summary class="c-timeline__summary">
+                                <div class="c-timeline__marker">🧪</div>
+                                <h3 class="c-timeline__title">04｜我們的標準｜純粹絕不妥協</h3>
+                            </summary>
+                            <div class="c-timeline__content-card">
+                                <div class="c-timeline__image-grid">
+                                    <img src="images/Detection.webp" alt="實驗室中使用滴管進行精準的橄欖油品質檢測" loading="lazy" width="600" height="400">
+                                    <img src="images/Savor.webp" alt="專業人員正在用藍色品油杯進行感官品評" loading="lazy" width="600" height="400">
+                                </div>
+                                <p>每一批橄欖油都經過細緻過濾與感官／化學雙重檢驗。我們確保色澤澄澈、口感圓潤，並符合國際品質標準，只將最優質的油品裝瓶出廠。</p>
+                            </div>
+                        </details>
+                        <details class="c-timeline__item u-reveal" data-step="5">
+                            <summary class="c-timeline__summary">
+                                <div class="c-timeline__marker">🍶</div>
+                                <h3 class="c-timeline__title">05｜我們的承諾｜從莊園到您手中</h3>
+                            </summary>
+                            <div class="c-timeline__content-card">
+                                <div class="c-timeline__image-wrapper">
+                                    <img src="images/BOTTLE.webp" alt="現代化的橄欖油自動化裝瓶產線，展現專業與安全" loading="lazy" width="800" height="600">
+                                </div>
+                                <p>真正的安心，來自看得見的透明。每一瓶「瓶中的陽光」，從果實採摘、冷壓初榨到瓶身封存，都體現了我們對純粹的堅持。</p>
+                                <p class="c-timeline__footnote">
+                                    *為確保最高標準，我們的裝瓶流程，委由通過 FSSC 22000、BRCGS 等國際食安高階認證的專業工廠執行，為您的安心加冕。
+                                </p>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+                
+                <div class="u-text-center u-mt-lg">
+                    <p>每一份堅持，都是為了這一刻。點擊探索，感受這份來自土地的心意。</p>
+                    <a href="#products" class="c-cta-button">探索我們嚴選的橄欖油</a>
+                </div>
+
+            </div>
+        </section>
+        
+        <section id="products" class="o-container u-reveal c-section-transition">
+            
+            <div class="o-container u-text-center" style="padding-top: 0; padding-bottom: 30px;">
+                <h2 class="u-section-title">從風土的故事，走向餐桌的饗宴</h2>
+                <p class="u-section-intro">我們邀請您，一同探索這份風味與誠意的結晶。</p>
+            </div>
+
+            <section class="c-product-region">
+              <div class="o-container">
+            
+                <header class="c-product-region__header">
+                  <h2 class="c-product-region__title">探索產品世界</h2>
+                  <h3 class="c-product-region__subtitle">橄欖油的故鄉：突尼西亞 <span class="c-product-region__subtitle-en">(Tunisia)</span></h3>
+                </header>
+            
+                <article class="c-product-region__story">
+                  <figure class="c-product-region__map">
+                    <picture>
+                      <source srcset="images/tunisia_map.webp" type="image/webp">
+                      <img src="images/tunisia_map.webp" alt="突尼西亞地理位置地圖，位於地中海南岸，與義大利西西里島隔海相望。"  loading="lazy" width="600" height="600">
+                    </picture>
+                    <figcaption class="c-product-region__map-caption">
+                        地圖上的突尼西亞，靜靜坐落於地中海南岸，與義大利西西里島隔海相望。
+                    </figcaption>
+                  </figure>
+                  <h4 class="c-product-region__section-title">🌿 橄欖的古老搖籃</h4>
+                  <p class="c-product-region__text">
+                    三千年的風土洗禮，孕育出一份來自時光的純淨禮物。
+                  </p>
+                  <p class="c-product-region__text">
+                    在地中海心臟地帶的北非海岸，陽光灑落在赤紅土地與蔚藍海岸之間，這裡是突尼西亞——一個擁有超過三千年橄欖種植歷史的文明古國。得天獨厚的地理位置與氣候條件，使這片土地成為全球最卓越的特級初榨橄欖油原產地之一。
+                  </p>
+                  <p class="c-product-region__text">
+                    突尼西亞不僅是世界主要特級初榨橄欖油出口國之一，其橄欖油以天然、有機、冷壓製程聞名於國際。這裡的橄欖樹世代繁衍於無污染的自然環境中，並承襲古老技藝與現代品質控管並行的工藝傳統。
+                  </p>
+                  <p class="c-product-region__text">
+                    每一滴特級初榨橄欖油，不僅是風土的結晶，更承載著文化、匠心與永續精神的交融。
+                  </p>
+                </article>
+              </div>
+            </section>
+
+            <h4 id="video-journey-anchor" class="u-text-center u-mb-sm u-mt-lg">🎥 一起見證風味的起點</h4>
+            <div class="c-video-container">
+                <video id="main-video" muted playsinline loading="lazy" poster="images/video-poster.webp" preload="metadata">
+                    <source src="video/OLYFO VIDEO.mp4" type="video/mp4">
+                    您的瀏覽器不支援影片播放。
+                </video>
+                <button class="c-video-container__play-btn" id="videoPlayBtn" aria-label="播放影片">▶</button>
+            </div>
+            
+            <section class="c-journey u-reveal" id="farm-to-table">
+                <div class="o-container">
+                    <div class="c-journey__grid">
+                        <div class="c-journey__visuals">
+                            <div class="c-image-gallery" tabindex="0" aria-label="莊園圖片庫，可使用左右方向鍵切換圖片">
+                                <div class="c-image-gallery__main-image-container">
+                                    <img id="main-estate-image" src="images/estate-1.webp" alt="莊園工人使用梯子手工採收橄欖" width="800" height="600">
+                                    <span class="c-image-gallery__hint c-image-gallery__hint--left" aria-hidden="true">&#9664;</span>
+                                    <span class="c-image-gallery__hint c-image-gallery__hint--right" aria-hidden="true">&#9654;</span>
+                                </div>
+                                <div class="c-image-gallery__thumbnails">
+                                    <img src="images/estate-1.webp" alt="莊園工人使用梯子手工採收橄欖" class="c-image-gallery__thumbnail active" width="100" height="100"><img src="images/estate-2.webp" alt="一位女性莊園工人正在篩選剛採收的橄欖" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-3.webp" alt="一棵擁有2500年歷史的古老橄欖樹" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-4.webp" alt="橄欖樹枝頭上盛開的橄欖花" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-5.webp" alt="從下方仰視一位正在採摘橄欖的婦女" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-6.webp" alt="橄欖樹枝上含苞待放的橄欖花" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-7.webp" alt="掛在樹枝上的青澀未成熟橄欖果實" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-8.webp" alt="特寫鏡頭下的青綠色橄欖果串" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-9.webp" alt="一位婦女跪在地上細心手工挑選橄欖" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-10.webp" alt="裝滿了各種顏色成熟度橄欖的容器特寫" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-11.webp" alt="一位婦女正在手工採摘橄欖，強調手工的價值" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-12.webp" alt="一雙手正在手工篩選橄欖，象徵著細心的挑選過程" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-13.webp" alt="廣闊的橄欖園中，工人們在藍天白雲下進行採收" class="c-image-gallery__thumbnail" width="100" height="100"><img src="images/estate-14.webp" alt="金黃色的初榨橄欖油從壓榨機中流出" class="c-image-gallery__thumbnail" width="100" height="100">
+                                </div>
+                            </div>
+                            <div class="c-video-feature">
+                                <video src="video/ladybug.mp4" poster="images/ladybug-poster.webp" autoplay muted loop playsinline preload="metadata"></video>
+                                <div class="c-video-feature__overlay">
+                                    <h5>友善農業的最佳代言</h5>
+                                    <p>我們莊園的瓢蟲，是我們堅持友善農業、與自然共生的最好證明。</p>
+                                </div>
+                            </div>
+                        </div>
+                        <article class="c-journey__content">
+                            <h3 class="c-journey__subtitle">🏞️ 我們的故事，從陽光中的橄欖園開始</h3>
+                            <p class="c-journey__text">
+                                在突尼西亞陽光普照的橄欖園，春風輕拂，千年古樹靜靜矗立。枝頭橄欖花含苞待放，預示著新一季的生命循環。這裡，孕育着我們堅持與初心的起點。
+                            </p>
+                            <h3 class="c-journey__subtitle">👐 堅持，是為了守護純粹</h3>
+                            <p class="c-journey__text">
+                                我們選擇了最溫柔，也最不妥協的方式：<strong>100% 手工採收</strong>。這不只是對抗冰冷機械的選擇，更是對每一顆橄欖的深深敬意。經驗老道的農夫，用雙手細心摘取，慢工細活，只為確保每顆果實完好無損。
+                            </p>
+                            <p class="c-journey__text">
+                                橄欖自樹上摘下後，在 <strong>黃金時間完成冷壓初榨</strong>，將自然的香氣與營養，毫無保留地封存其中。
+                            </p>
+                            <h3 class="c-journey__subtitle">🍽️ 為了您的餐桌，成就每一滴真實</h3>
+                            <p class="c-journey__text c-journey__text--closing">
+                                從田間到瓶中，從手中到餐桌，這是一段不假修飾的旅程。<br>
+                                我們相信，唯有來自土地、保有真實與時間痕跡的特級初榨橄欖油，才值得出現在您的每一口餐點之中。
+                            </p>
+                        </article>
+                    </div>
+                    
+                    <div id="ladybug-animation-container" class="c-ladybug-container">
+                        <svg width="0" height="0">
+                            <defs>
+                                <path data-path="desktop" id="path-desk-1" d="M -50 150 Q 150 50 400 200 T 700 250 Q 900 300 1000 500 T 1200 800 Q 1100 950 800 1000 T 400 950 Q 100 900 -50 1100" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-2" d="M 1200 100 Q 800 250 600 450 T 400 700 Q 200 900 50 1000 T -100 1200" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-3" d="M 50 200 C 150 150, 250 250, 300 300 S 400 450, 500 500 C 600 550, 750 450, 800 500 S 900 650, 850 750 T 700 900" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-4" d="M 1000 800 C 900 850, 800 750, 750 700 S 650 550, 550 500 C 450 450, 300 550, 250 600 S 150 750, 200 850 T 350 1000" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-5" d="M 200 1100 Q 400 950 500 800 T 600 500 Q 700 300 500 200 T 200 150" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-6" d="M -50 300 Q 200 400 400 300 T 600 400 Q 800 500 1250 450 Q 800 600 600 700 T 400 800 Q 200 900 -50 850" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-7" d="M 1250 800 Q 900 700 700 800 T 500 700 Q 300 600 -50 650 Q 300 500 500 400 T 700 300 Q 900 200 1250 250" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-8" d="M 500 50 C 400 250, 600 350, 500 500 S 400 650, 500 800 C 600 950, 700 1050, 500 1150" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-9" d="M 1100 200 Q 800 400 900 600 T 700 800 Q 500 1000 200 1100" fill="none" stroke="none"/>
+                                <path data-path="desktop" id="path-desk-10" d="M 100 1000 Q 400 800 300 600 T 500 400 Q 700 200 1000 100" fill="none" stroke="none"/>
+                                <path id="ladybug-path-mobile"  d="M 20 120 Q 80 200 50 400 T 150 600 Q 80 800 200 1000 T 50 1300 Q 150 1450 350 1600" fill="none" stroke="none"/>
+                            </defs>
+                        </svg>
+                        <img src="images/ladybug-flying.webp" alt="Green Health 綠健的友善農業代言瓢蟲" id="ladybug-actor" class="c-ladybug-actor">
+                    </div>
+                </div>
+            </section>
+
+            <article class="c-product-showcase">
+                <div class="c-product-showcase__grid">
+                    <div class="c-product-showcase__image-container">
+                       <img src="images/green-health-origin-blend-awards.webp" alt="Green Health 綠健代理之經典混合橄欖油榮獲超過七項國際大獎" width="800" height="600">
+                    </div>
+                    <div class="c-product-showcase__content">
+                        <h3>我們的起點，是贏得超過 7 項國際大獎的肯定<svg class="c-icon c-icon--title" aria-hidden="true"><use xlink:href="#icon-tear-gold"></use></svg></h3>
+                        <p class="c-product-showcase__subtitle">Green Health 綠健，從這一瓶開始被您看見。</p>
+                        <div class="c-product-showcase__divider"></div>
+                        <p><strong>ORIGIN Blend｜經典多品種橄欖油</strong></p>
+                        <p>超過 7 項國際大獎金銀等獎牌・多種橄欖的完美和聲。正是這份備受肯定的經驗，讓我們有信心為您獻上更純粹的味覺探索。</p>
+                    </div>
+                </div>
+            </article>
+            
+            <section class="c-award-summary u-reveal">
+                <div class="o-container">
+                    <h2 class="c-award-summary__title">世界級的肯定，是我們為您尋味的起點</h2>
+                    <p class="c-award-summary__text">
+                        Green Health 綠健，以國際大獎的經典配方為線索，為您尋覓並帶回其中擔綱風味主體的單一品種特級初榨橄欖油。
+                    </p>
+                    <p class="c-award-summary__text c-award-summary__text--highlight">
+                        我們深信，每一瓶原裝引進的純粹，都是值得您親身體驗的風土真味。
+                    </p>
+                </div>
+            </section>
+
+            <section class="c-award-years u-reveal">
+                <div class="o-container">
+                    <div class="c-award-years__grid">
+                        <div class="c-award-years__item">
+                            <h3 class="c-award-years__title">2025 年｜榮耀巔峰</h3>
+                            <ul class="c-award-years__list">
+                                <li>🥇 倫敦國際橄欖油大賽 金牌<br><span class="en">Gold – London International Olive Oil Awards</span></li>
+                                <li>🥈 紐約國際橄欖油大賽 銀牌<br><span class="en">Silver – New York International Olive Oil Competition (NYIOOC)</span></li>
+                                <li>🥇 巴黎品質大獎 金牌（北半球新油）<br><span class="en">Gold – Paris Quality Awards (Northern Hemisphere – Olio Nuovo)</span></li>
+                                <li>🥇 突尼西亞全國橄欖油大賽 金牌（成熟果香）<br><span class="en">Gold – Tunisia National Olive Oil Competition (Fruité Mûr)</span></li>
+                                <li>🏅 小小品油師國際大賽 金牌<br><span class="en">Gold – International Kids' Choice Olive Oil Awards</span></li>
+                            </ul>
+                        </div>
+            
+                        <div class="c-award-years__item">
+                            <h3 class="c-award-years__title">2022 年</h3>
+                            <ul class="c-award-years__list">
+                                <li>🥈 加拿大國際橄欖油大賽 銀牌<br><span class="en">Silver – Canada International Olive Oil Competition</span></li>
+                            </ul>
+                        </div>
+            
+                        <div class="c-award-years__item">
+                            <h3 class="c-award-years__title">2021 年｜雙料國際獎項肯定</h3>
+                            <ul class="c-award-years__list">
+                                <li>🥈 加拿大國際橄欖油大賽 銀牌<br><span class="en">Silver – Canada International Olive Oil Competition</span></li>
+                                <li>🎖️ 倫敦國際橄欖油大賽 榮譽獎<br><span class="en">Awarded – London International Olive Oil Awards</span></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="reports" class="c-reports-section o-container u-reveal">
+                <h2 class="u-section-title">品質與安全承諾</h2>
+                <p class="u-section-intro">
+                    從有機莊園的純淨土壤，到權威實驗室的精準數據，我們為您層層把關，兌現每一滴特級初榨橄欖油的安心承諾。
+                </p>
+
+                <div class="c-reports-grid">
+                    <article class="c-report-card">
+                        <div class="c-report-card__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="M12 2a10 10 0 0 0-3.16 19.5M12 2a10 10 0 0 1 3.16 19.5"></path><path d="M2.5 9h19"></path><path d="M2.5 15h19"></path></svg>
+                        </div>
+                        <h3 class="c-report-card__title">源自國際有機認證莊園</h3>
+                        <p class="c-report-card__description">
+                            我們嚴選的合作夥伴，其橄欖莊園已通過歐盟與美國最嚴格的有機農業標準，確保從土壤到果實的純淨與永續。
+                        </p>
+                        <div class="c-report-card__logos">
+                            <img src="images/ecocert-logo.webp" alt="Ecocert Organic Certification Logo" class="c-report-card__logo-img">
+                            <img src="images/usda-organic-logo.webp" alt="USDA Organic Certification Logo" class="c-report-card__logo-img">
+                        </div>
+                        <div class="c-report-card__links">
+                            <a href="images/Ecocert.pdf" class="c-cta-button c-cta-button--secondary" target="_blank" rel="noopener noreferrer">
+                                查看歐盟 ECOCERT 證書
+                            </a>
+                            <a href="images/USAOrganic-SAS.pdf" class="c-cta-button c-cta-button--secondary" target="_blank" rel="noopener noreferrer">
+                                查看美國 USDA 證書
+                            </a>
+                        </div>
+                    </article>
+
+                    <article class="c-report-card">
+                        <div class="c-report-card__icon" aria-hidden="true">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path><polyline points="13 2 13 9 20 9"></polyline></svg>
+                        </div>
+                        <h3 class="c-report-card__title">權威機構的科學數據</h3>
+                        <p class="c-report-card__description">
+                            油品經突尼西亞國家橄欖油局 (ONH) 檢測，關鍵數據不僅符合、更遠超特級初榨的國際標準。
+                        </p>
+                        <div class="c-report-card__data">
+                            <div class="label">關鍵指標：酸度 (Acidity)</div>
+                            <div class="value u-text-gold">0.25 %</div>
+                            <div class="standard">國際特級初榨標準: ≤ 0.8 %</div>
+                        </div>
+                        <div class="c-report-card__links">
+                             <a href="images/analysis_report.pdf" class="c-cta-button c-cta-button--secondary" target="_blank" rel="noopener noreferrer">
+                                查看完整檢驗報告
+                            </a>
+                        </div>
+                    </article>
+                </div>
+            </section>
+            
+            <section id="product-gold" class="c-product c-product--heritage u-reveal is-pending" data-theme="gold" data-accent="#B8860B">
+                <div class="o-container">
+                    <div class="c-product__layout">
+                        <div class="c-product__visual">
+                            <img src="images/green-health-2500-years-tradition-olive-oil.webp" alt="Green Health 綠健 2500 YEARS OF TRADITION - THE GOLD 特級初榨橄欖油產品瓶身" loading="lazy">
+                            <span class="c-product__badge">即將登場</span>
+                        </div>
+                        <div class="c-product__details">
+                            <header class="c-product__header">
+                                <p class="c-product__intro">來自【冠軍莊園】，承載 2500 年傳統的榮耀之油。</p>
+                                <h2 class="c-product__title u-text-gold">🥇 黃金傳承・榮耀加冕</h2>
+                                <p class="c-product__subtitle">2500 YEARS OF TRADITION – THE GOLD</p>
+                            </header>
+                            <article class="c-product__content">
+                                <p class="c-product__text">
+                                    <strong>為何稱它為「皇后的眼淚」？</strong><br>
+                                    因為這滴金黃色的油體，延續了地中海橄欖油文化的經典精髓，也體現了 Green Health 綠健一貫的選品原則與品質堅持。
+                                </p>
+                                <p class="c-product__text">
+                                    我們以過去獲獎橄欖油所使用的核心品種為基礎，精選其中表現最穩定、風味最具代表性的 <strong>Koroneiki</strong>，作為本款產品的唯一品種來源。
+                                </p>
+                                <p class="c-product__text">
+                                    <strong>100% 單一品種冷壓</strong>，無調和，完整保留品種原始風味與風土特徵，從挑選到裝瓶，每一環都依循我們對「純粹」的承諾。
+                                </p>
+                            </article>
+                        </div>
+                    </div>
+              
+                    <section class="c-product__feature-highlight">
+                        <div class="c-product__feature-text">
+                            <h3 class="c-product__feature-title">一瓶全能，點亮您的廚房日常。</h3>
+                            <p>從清爽宜人的涼拌沙拉，到高溫煎煮、翻炒與酥炸，THE GOLD 憑藉其優雅細緻的風味與高發煙點的穩定特性，從容應對每一道料理靈感。
+專為台灣廚房量身打造，成就您對料理的每一種想像。
+延續 2500 年橄欖油工藝的傳承 —— THE GOLD，凝萃時光的風味精華。</p>
+                        </div>
+                        <div class="c-product__feature-image">
+                            <img src="images/green-health-koroneiki-olive-oil2-2.webp" alt="THE GOLD 橄欖油特色介紹：涼拌煎煮、炒炸生飲，高發煙點適合台灣廚房" loading="lazy">
+                        </div>
+                    </section>
+                  
+                    <div class="c-product__bottom-grid">
+                        <div class="c-product__tasting">
+                            <h3 class="c-product__section-title">🍈 單一品種的純淨風味表現</h3>
+                            <ul class="c-product__flavor-list">
+                                <li><strong>前段香氣：</strong>清新的青草與青橄欖香氣</li>
+                                <li><strong>中段口感：</strong>柔和果仁與輕熟果調</li>
+                                <li><strong>尾段餘韻：</strong>清晰且平衡的微辛收斂感</li>
+                            </ul>
+                        </div>
+                        <div class="c-product__specs">
+                            <h3 class="c-product__section-title">📦 品種組成摘要</h3>
+                            <ul class="c-product__spec-list">
+                                <li><strong>品種：</strong>Koroneiki（單一品種）</li>
+                                <li><strong>原產地：</strong>突尼西亞</li>
+                                <li><strong>萃取方式：</strong>冷壓初榨 / 無調和</li>
+                                <li><strong>容量：</strong>500ml</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="c-curator-note">
+                        <h4 class="c-curator-note__title">策展人筆記</h4>
+                        <p class="c-curator-note__text">初嚐 THE GOLD 時，我們立刻被它那純淨、爆炸性的青草香氣所折服。它的尾韻帶有一絲迷人的杏仁味，非常適合搭配新鮮的沙拉或直接蘸麵包，感受最純粹的風土力量。這正是我們想為您呈現的「冠軍之心」。</p>
+                    </div>
+
+                    <p class="c-product__cta">敬請期待・COMING SOON</p>
+                </div>
+            </section>
+
+            <section id="ifriqia" class="c-product c-product--ifriqia u-reveal is-pending" data-theme="ifriqia" data-accent="#C75B5B">
+                <div class="o-container">
+                    <div class="c-product__layout">
+                        <div class="c-product__visual">
+                            <img src="images/green-health-ifriqia-olive-oil.webp" alt="Green Health 綠健的 IFRIQIA 特級初榨橄欖油，瓶身設計現代簡潔" loading="lazy" width="800" height="600">
+                            <span class="c-product__badge">即將登場</span>
+                        </div>
+                        <div class="c-product__details">
+                            <header class="c-product__header">
+                                <p class="c-product__intro">來自【北非古國】，喚醒您味蕾的熱情探險。</p>
+                                <h2 class="c-product__title u-text-ifriqia-red">🌶️ 北非的熱情・舌尖的辛辣探險</h2>
+                                <p class="c-product__subtitle">IFRIQIA 伊弗里基葉系列｜橄欖油的風味革新</p>
+                            </header>
+                            <article class="c-product__content">
+                                <p class="c-product__text">「IFRIQIA」是古代對北非的稱呼，也是這款特級初榨橄欖油個性與風土的象徵。</p>
+                                <p class="c-product__text">我們選用來自突尼西亞的兩大品種：<strong>Chemlali</strong> 和 <strong>Chetoui</strong>，前者擁有溫潤果香，後者則帶有強烈草本與辛辣收尾。</p>
+                                <p class="c-product__text">透過自然比例調和，這款特級初榨橄欖油展現出奔放而鮮明的風味對話。它不追求圓滑協奏，而是一次醒腦式的風味探索 —— 為燒烤、紅肉與地中海重香料料理帶來靈魂點綴。</p>
+                            </article>
+                        </div>
+                    </div>
+              
+                    <div class="c-product__bottom-grid c-product__bottom-grid--ifriqia">
+                        <div class="c-product__specs">
+                            <h3 class="c-product__section-title">品種組成與風味</h3>
+                            <ul class="c-product__spec-list">
+                                <li><strong>品種組合：</strong> Chemlali × Chetoui</li>
+                                <li><strong>風味特徵：</strong> 果香濃郁、草本辛辣、層次鮮明</li>
+                                <li><strong>風味定位：</strong> 奔放辛香型・高抗氧・醒味提香</li>
+                                <li><strong>容量：</strong> 500ml</li>
+                            </ul>
+                        </div>
+                        <div class="c-product__recommendations">
+                            <h3 class="c-product__section-title">建議料理</h3>
+                            <ul class="c-product__reco-list">
+                                <li>烤羊排</li>
+                                <li>炙燒牛肉</li>
+                                <li>紅椒鷹嘴豆</li>
+                                <li>烤蔬菜</li>
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="c-curator-note">
+                        <h4 class="c-curator-note__title">策展人筆記</h4>
+                        <p class="c-curator-note__text">IFRIQIA 是我們尋找「個性」的答案。它強烈的辛辣感，來自高含量的橄欖多酚，這正是健康的證明。別被它的嗆勁嚇到，試著淋在剛烤好的牛排或羊排上，你會發現它能奇蹟般地提升肉類的鮮甜，帶來畫龍點睛的驚喜。</p>
+                    </div>
+
+                    <p class="c-product__cta">敬請期待・COMING SOON</p>
+                </div>
+            </section>
+            
+        </section>
+        
+        <section id="health" class="o-container u-reveal c-section-transition">
+            <h2 class="u-section-title">大自然的健康饋贈</h2>
+            <div class="o-grid o-grid--3-cols">
+                <div class="c-flip-card c-flip-card--health" tabindex="0">
+                    <div class="c-flip-card__inner">
+                        <div class="c-flip-card__front"><div class="c-flip-card__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg></div><h3>優質脂肪來源</h3><p class="c-flip-card__subtitle">聰明的飲食選擇</p><span class="c-flip-card__hint-icon">↺</span></div>
+                        <div class="c-flip-card__back"><h4>優質脂肪來源</h4><p>本產品富含<strong>單元不飽和脂肪酸</strong>。在日常飲食中以好油取代飽和脂肪，是維持健康活力的聰明選擇。</p></div>
+                    </div>
+                </div>
+                <div class="c-flip-card c-flip-card--health" tabindex="0">
+                    <div class="c-flip-card__inner">
+                        <div class="c-flip-card__front"><div class="c-flip-card__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"></path><path d="m9 12 2 2 4-4"></path></svg></div><h3>天然抗氧化特性</h3><p class="c-flip-card__subtitle">來自大地的保護力</p<span class="c-flip-card__hint-icon">↺</span></div>
+                        <div class="c-flip-card__back"><h4>天然抗氧化特性</h4><p><strong>橄欖多酚</strong>等天然成分，具抗氧化特性，是日常飲食中的理想搭配，幫助您維持青春活力。</p></div>
+                    </div>
+                </div>
+                <div class="c-flip-card c-flip-card--health" tabindex="0">
+                    <div class="c-flip-card__inner">
+                        <div class="c-flip-card__front"><div class="c-flip-card__icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6.364 6.364 0 0 0 9 9 9 9 0 1 1-9-9Z"></path><path d="M12 3v1"></path><path d="M12 21v-1"></path><path d="M3.55 18.45l.71-.71"></path><path d="M19.74 4.26l-.71.71"></path><path d="M21 12h-1"></path><path d="M4 12H3"></path><path d="M18.45 3.55l-.71.71"></path><path d="M4.26 19.74l.71-.71"></path></svg></div><h3>天然維生素E</h3><p class="c-flip-card__subtitle">不可或缺的營養素</p<span class="c-flip-card__hint-icon">↺</span></div>
+                        <div class="c-flip-card__back"><h4>天然維生素E</h4><p>富含<strong>維生素E</strong>，是人體不可或缺的脂溶性維生素之一，具抗氧化作用，有助於日常營養攝取均衡。</p></div>
+                    </div>
+                </div>
+            </div>
+            <p class="u-transition-link">這些天然養分，全部濃縮在我們的每一滴特級初榨橄欖油中，<a href="#recipes">現在就來啟發您的烹飪靈感吧！</a></p>
+        </section>
+        
+        <section id="recipes" class="o-container u-reveal c-section-transition">
+            <h2 class="u-section-title">啟發您的烹飪靈感</h2>
+            <div class="o-grid o-grid--2-cols">
+                <details class="c-recipe-item">
+                    <summary class="c-recipe-item__summary">
+                        <span class="c-recipe-item__pairing">建議搭配：IFRIQIA</span>
+                        <img src="images/recipe-chicken.webp" alt="盤中擺著烤雞與沙拉" loading="lazy" class="c-recipe-item__image" width="600" height="400">
+                        <h3 class="c-recipe-item__title">烤地中海雞肉佐橄欖油醃料</h3>
+                        <span class="c-recipe-item__icon">+</span>
+                    </summary>
+                    <div class="c-recipe-item__details">
+                        <h4>食材：</h4><ul><li>4塊 去骨去皮雞胸肉</li><li>1/4杯 (約60毫升) <strong class="u-text-highlight">特級初榨橄欖油</strong></li><li>2湯匙 新鮮檸檬汁</li><li>2瓣 大蒜，切末</li><li>1茶匙 乾燥奧勒岡</li><li>鹽和現磨黑胡椒 適量</li><li>檸檬角和新鮮香草（裝飾用）</li></ul>
+                        <div class="c-recipe-item__actions">
+                            <a href="https://shopee.tw/_a9_5vmt07" target="_blank" rel="noopener noreferrer" class="c-recipe-item__buy-btn">購買 IFRIQIA</a>
+                            <button class="c-recipe-item__copy-btn" aria-label="複製食譜">複製食譜</button>
+                        </div>
+                        <h4>作法：</h4><ol><li>在碗中，將特級初榨橄欖油、檸檬汁、蒜末、乾燥奧勒岡、鹽和黑胡椒攪拌均勻。</li><li>將雞胸肉放入淺盤或可密封的塑膠袋中。將醃料倒在雞肉上，翻動使其均勻沾裹。放入冰箱冷藏至少30分鐘，或最多4小時。</li><li>將烤架預熱至中高溫。</li><li>每面烤6-7分鐘，或直到雞肉完全熟透且中心不再呈粉紅色。</li><li>趁熱搭配檸檬角並用新鮮香草裝飾後即可享用。</li></ol>
+                    </div>
+                </details>
+                <details class="c-recipe-item c-recipe-item--gold">
+                    <summary class="c-recipe-item__summary">
+                        <span class="c-recipe-item__pairing">建議搭配：THE GOLD</span>
+                        <img src="images/recipe-cake.webp" alt="橄欖油柳橙蛋糕與一旁的橄欖油瓶" loading="lazy" class="c-recipe-item__image" width="600" height="400">
+                        <h3 class="c-recipe-item__title">小荳蔻橄欖油蛋糕</h3>
+                        <span class="c-recipe-item__icon">+</span>
+                    </summary>
+                    <div class="c-recipe-item__details">
+                        <h4>食材：</h4><ul><li>無鹽奶油（用於塗抹）</li><li>150克 (2杯) 低筋麵粉，外加少許用於撒粉</li><li>4顆大雞蛋</li><li>200克 (1杯) 細砂糖</li><li>2-3顆柳橙皮屑</li><li>½ 茶匙鹽</li><li>¾-1 茶匙小荳蔻粉</li><li>250 毫升 (1杯) 新鮮柳橙汁</li><li>250 毫升 (1杯) <strong class="u-text-highlight">2500 YEARS OF TRADITION - THE GOLD</strong></li></ul>
+                        <div class="c-recipe-item__actions">
+                            <a href="https://shopee.tw/_a9_5vmt07" target="_blank" rel="noopener noreferrer" class="c-recipe-item__buy-btn c-recipe-item__buy-btn--gold">購買 THE GOLD</a>
+                            <button class="c-recipe-item__copy-btn" aria-label="複製食譜">複製食譜</button>
+                        </div>
+                        <h4>作法：</h4><ol><li>將烤箱預熱至 170°C。在25公分的蛋糕模底部鋪上烘焙紙，塗抹奶油並撒上麵粉。</li><li>用電動攪拌器將雞蛋、糖、柳橙皮屑、小荳蔻粉和鹽打發均勻。</li><li>在一個中型碗中，混合柳橙汁和特級初榨橄欖油。</li><li>以低速，將柳橙混合物分批逐漸打入雞蛋混合物中。</li><li>分三到四次將麵粉拌入，形成光滑的麵糊。</li><li>將麵糊刮入準備好的蛋糕模中，烘烤約 45-50 分鐘。</li><li>將金屬竹籤插入蛋糕中測試是否烤熟。如果竹籤取出時是乾淨的，表示已完成。</li><li>讓蛋糕冷遞迴30分鐘後再從蛋糕模中取出，撒上糖粉即可享用。</li></ol>
+                    </div>
+                </details>
+                <details class="c-recipe-item c-recipe-item--gold">
+                    <summary class="c-recipe-item__summary">
+                        <span class="c-recipe-item__pairing">建議搭配：THE GOLD</span>
+                        <img src="images/recipe-salad.webp" alt="一盤色彩鮮豔的鮮蝦沙拉佐檸檬角" loading="lazy" class="c-recipe-item__image" width="600" height="400">
+                        <h3 class="c-recipe-item__title">熱帶鮮蝦沙拉</h3>
+                        <span class="c-recipe-item__icon">+</span>
+                    </summary>
+                    <div class="c-recipe-item__details">
+                        <h4>食材：</h4><ul><li>1 磅大蝦，去殼去腸泥</li><li>2 湯匙 <strong class="u-text-highlight">特級初榨橄欖油</strong> (用於烹煮蝦子)</li><li>1 茶匙蒜粉、鹽和胡椒粉適量</li><li>1 個芒果、1 個酪梨、1 個紅甜椒，皆切丁</li><li>1 杯鳳梨塊、1/2 個紅洋蔥(切薄片)</li><li>1/4 杯新鮮香菜(切碎)、4 杯綜合生菜</li></ul>
+                        <h4>沙拉醬：</h4><ul><li>1/4 杯 <strong class="u-text-highlight">特級初榨橄欖油</strong></li><li>2 個檸檬的汁</li><li>1 湯匙蜂蜜、1 茶匙第戎芥末</li></ul>
+                         <div class="c-recipe-item__actions">
+                            <a href="https://shopee.tw/_a9_5vmt07" target="_blank" rel="noopener noreferrer" class="c-recipe-item__buy-btn c-recipe-item__buy-btn--gold">購買 THE GOLD</a>
+                            <button class="c-recipe-item__copy-btn" aria-label="複製食譜">複製食譜</button>
+                        </div>
+                        <h4>作法：</h4><ol><li>用中高火熱鍋，加入2湯匙特級初榨橄欖油，放入用蒜粉、鹽、胡椒調味過的蝦子，每面煎2-3分鐘至熟透後取出。</li><li>在小碗中混合所有沙拉醬食材。</li><li>在大沙拉碗中混合所有生菜、水果、蔬菜和煮好的蝦子。</li><li>淋上沙拉醬，輕輕攪拌均勻即可享用。</li></ol>
+                    </div>
+                </details>
+                <details class="c-recipe-item c-recipe-item--gold">
+                    <summary class="c-recipe-item__summary">
+                        <span class="c-recipe-item__pairing">建議搭配：THE GOLD</span>
+                        <img src="images/recipe-ice-cream.webp" alt="兩碗裝在木碗裡的橄欖油冰淇淋" loading="lazy" class="c-recipe-item__image" width="600" height="400">
+                        <h3 class="c-recipe-item__title">橄欖油冰淇淋</h3>
+                        <span class="c-recipe-item__icon">+</span>
+                    </summary>
+                    <div class="c-recipe-item__details">
+                        <h4>食材：</h4><ul><li>1 ½ 杯 (360 克) 鮮奶油</li><li>1 ½ 杯 (360 克) 全脂牛奶</li><li>⅔ 杯 (133 克) 細砂糖</li><li>½ 茶匙海鹽</li><li>4 個大蛋黃</li><li>1 片檸檬皮</li><li>¼ 杯 (56 克) <strong class="u-text-highlight">特級初榨橄欖油</strong></li></ul>
+                         <div class="c-recipe-item__actions">
+                            <a href="https://shopee.tw/_a9_5vmt07" target="_blank" rel="noopener noreferrer" class="c-recipe-item__buy-btn c-recipe-item__buy-btn--gold">購買 THE GOLD</a>
+                            <button class="c-recipe-item__copy-btn" aria-label="複製食譜">複製食譜</button>
+                        </div>
+                        <h4>作法：</h4><ol><li>加熱牛奶、一半鮮奶油、糖和鹽至微冒泡。</li><li>將蛋黃打散，緩慢沖入一半的熱奶液進行回溫。</li><li>將蛋黃混合物倒回鍋中，用中低火煮至濃稠。</li><li>離火過濾，加入剩下的鮮奶油和檸檬皮，冷藏至完全冰涼。</li><li>取出檸檬皮，拌入特級初榨橄欖油，再用冰淇淋機攪拌至完成。</li></ol>
+                    </div>
+                </details>
+            </div>
+            <div class="c-ugc-section u-reveal">
+                <h2>分享您的餐桌風景</h2>
+                <p class="u-section-intro">在 Facebook 或 Instagram 上分享您的創意料理，<br>並標註 <strong>#MyGreenHealthRecipe</strong>，就有機會在這裡展示您的作品！</p>
+                <div class="c-ugc-section__share-buttons">
+                    <a href="https://www.facebook.com/share/16NWCJL951/" target="_blank" rel="noopener noreferrer" class="c-share-button c-share-button--facebook"><svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg> <span>分享至 Facebook</span></a>
+                    <a href="https://www.instagram.com/green_health_olive/" target="_blank" rel="noopener noreferrer" class="c-share-button c-share-button--instagram"><svg viewBox="0 0 24 24"><path d="M7.8,2H16.2C19.4,2 22,4.6 22,7.8V16.2A5.8,5.8 0 0,1 16.2,22H7.8C4.6,22 2,19.4 2,16.2V7.8A5.8,5.8 0 0,1 7.8,2M7.6,4A3.6,3.6 0 0,0 4,7.6V16.4C4,18.39 5.61,20 7.6,20H16.4A3.6,3.6 0 0,0 20,16.4V7.6C20,5.61 18.39,4 16.4,4H7.6M17.25,5.5A1.25,1.25 0 0,1 18.5,6.75A1.25,1.25 0 0,1 17.25,8A1.25,1.25 0 0,1 16,6.75A1.25,1.25 0 0,1 17.25,5.5M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z"></path></svg> <span>分享至 Instagram</span></a>
+                </div>
+                <div class="c-ugc-section__grid">
+                    <!-- 
+                    <div class="c-ugc-card"><img src="images/ugc-1.webp" alt="用戶分享的橄欖油烤蔬菜" width="400" height="400"><div class="c-ugc-card__overlay"><span class="c-ugc-card__username">@foodie_claire</span><span class="c-ugc-card__hashtag">#MyGreenHealthRecipe</span></div></div>
+                    <div class="c-ugc-card"><img src="images/ugc-2.webp" alt="用戶分享的橄欖油蒜香義大利麵" width="400" height="400"><div class="c-ugc-card__overlay"><span class="c-ugc-card__username">@davids_kitchen</span><span class="c-ugc-card__hashtag">#地中海飲食</span></div></div>
+                     <div class="c-ugc-card"><img src="images/ugc-3.webp" alt="用戶分享的橄欖油麵包沾醬" width="400" height="400"><div class="c-ugc-card__overlay"><span class="c-ugc-card__username">@baking_mom</span><span class="c-ugc-card__hashtag">#GreenHealth</span></div></div>
+                    -->
+                </div>
+            </div>
+        </section>
+
+        <section id="faq" class="o-container u-reveal c-section-transition">
+            <h2 class="u-section-title">常見問題</h2>
+            
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>如何挑選優質特級初榨橄欖油？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>請留意以下關鍵標準：</p>
+                    <ul>
+                        <li>✅ <strong>酸價 &lt; 0.8%</strong>（純粹新鮮的基本指標）</li>
+                        <li>✅ <strong>產區與品種明確</strong>（來源可溯，風味有跡可循）</li>
+                        <li>✅ <strong>原瓶原裝進口</strong>（品質完整保留，不因分裝受損）</li>
+                    </ul>
+                    <p><strong>Green Health 綠健嚴選的每一瓶特級初榨橄欖油，皆以清晰的產區、品種，以及超越國際標準的品質為基礎。</strong></p>
+                    <p>我們相信，卓越的風味不僅展現在國際大賽的榮耀中，更隱藏在那些獨具風土個性的特色莊園裡。Green Health 綠健的使命，就是為您發掘並呈現這兩種同樣值得品嚐的純粹之味。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>「特級初榨」跟「一般」橄欖油，我該怎麼選？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>當您選擇橄欖油時，可能會看到「初榨」和「純」這兩種標示。它們之間有什麼差別呢？</p>
+                    <h4>特級初榨橄欖油 (Extra Virgin Olive Oil, EVOO)</h4>
+                    <ul>
+                        <li>最純粹、最高品質的橄欖油。</li>
+                        <li>僅使用第一次冷壓新鮮橄欖製成，不經化學處理。</li>
+                        <li>富含抗氧化劑和濃郁的天然橄欖風味（可能帶有果香、草本味或辛辣感）。</li>
+                        <li><strong>適合：</strong>生飲、烹飪、煎、炒、炸、涼拌沙拉、沾麵包，或在菜餚起鍋後淋上提味。</li>
+                    </ul>
+                    <h4>一般橄欖油 (Pure Olive Oil)</h4>
+                    <ul>
+                        <li>通常是精煉油與少量初榨油的混合。</li>
+                        <li>風味較為溫和中性，顏色也較淺。</li>
+                        <li><strong>適合：</strong>日常烹飪、煎、炒、炸，或用於烘焙，因為其煙點較高。</li>
+                    </ul>
+                    <h4>簡單來說：</h4>
+                    <ul>
+                        <li>特級初榨橄欖油是「橄欖的鮮榨果汁」，保留了最原始的風味和營養。</li>
+                        <li>一般橄欖油則經過精煉，風味較淡。</li>
+                    </ul>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>特級初榨橄欖油與冷壓、冷萃有什麼不同？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>特級初榨橄欖油必須採低溫壓榨（一般指冷壓），油溫不超過 27°C，以保留最多的營養與香氣。冷萃則多指物理分離過程不同，實務差異不大，重點仍是製程溫控與鮮度。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>橄欖油有哪些等級？怎麼分辨？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>主要分為：</p>
+                    <ul>
+                        <li><strong>特級初榨 (Extra Virgin)：</strong>酸價 &lt; 0.8%，風味最佳</li>
+                        <li><strong>初榨 (Virgin)</strong></li>
+                        <li><strong>精製橄欖油 (Refined)</strong></li>
+                        <li><strong>橄欖渣油 (Pomace)</strong></li>
+                    </ul>
+                    <p>Green Health 綠健僅專注於最高等級的特級初榨橄欖油。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>如何分辨雙品種特級初榨橄欖油與調和油？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p><strong>特級初榨橄欖油</strong>可採用單一品種或不同品種的橄欖果實直接壓榨製成。例如 Green Health 綠健嚴選的 IFRIQIA，它巧妙地融合了 Chemlali 的溫潤果香與 Chetoui 的強勁草本兩種風味。這是一款由不同品種橄欖製成的「多品種特級初榨橄欖油」，旨在創造更豐富的味覺層次。</p>
+                    <p><strong>調和油</strong>則可能混含了精製橄欖油，甚至是其他種類的植物油（如葵花油、大豆油等），其品質、風味與營養價值均與特級初榨橄欖油不同。</p>
+                    <p>選購時，建議您仔細確認瓶標上清楚標示<strong>橄欖品種</strong>與「<strong>特級初榨橄欖油</strong>」等級字樣，以辨識其純正品質。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>特級初榨橄欖油不能煎炒，是真的嗎？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer"><p>這是一個常見的迷思。特級初榨橄欖油的發煙點介於 190–210°C，適合絕大多數家庭烹飪，包括炒菜、煎魚、烤雞塊與烘烤等料理，且富含天然抗氧化物，是兼具健康與美味的首選。</p></div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>我的橄欖油該放冰箱嗎？怎麼存才能保鮮？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer"><p>最好的保存方式是「避光、避熱、避氧」。請將橄欖油存放在陰涼的櫥櫃中，遠離爐灶等熱源，並確保每次使用後都將瓶蓋旋緊。不需要冷藏，因為低溫會使其凝固，反覆的狀態改變可能影響風味。</p></div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>特級初榨橄欖油可以用來保養皮膚嗎？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>可以。特級初榨橄欖油質地溫和，富含維生素E與多酚等天然抗氧化物，常被用於日常肌膚保養，如乾燥部位的潤澤、卸妝、按摩等用途。</p>
+                    <p>建議您初次使用時，先在小範圍肌膚上測試，並依個人膚質調整使用方式與頻率。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>特級初榨橄欖油瓶底有沉澱物是正常的嗎？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer"><p>當然。若您在瓶底發現些許天然沉澱，請您放心。這代表我們的特級初榨橄欖油未經過度過濾，完整保留了最珍貴的橄欖果肉精華，是其天然純粹的絕佳證明。</p></div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>為什麼我的特級初榨橄欖油每一瓶味道都不同？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer"><p>特級初榨橄欖油的風味差異是自然現象，因為橄欖作為一種農產品，其風味會受到季節、氣候和土壤的影響。這使得每一批我們的特級初榨橄欖油都獨一無二。</p></div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>橄欖油比豬油更健康嗎？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>特級初榨橄欖油富含單元不飽和脂肪酸，適合作為日常飲食中的優質植物油選擇。豬油則屬於高飽和脂肪，建議均衡攝取，依個人飲食習慣適量搭配。</p>
+                </div>
+            </details>
+
+            <details class="c-faq-item">
+                <summary class="c-faq-item__question">
+                    <span>Green Health 綠健的特級初榨橄欖油含有 Omega 3, 6, 9 嗎？</span>
+                    <svg class="c-icon c-icon--faq-expander" aria-hidden="true"><use xlink:href="#icon-tear-outline"></use></svg>
+                </summary>
+                <div class="c-faq-item__answer">
+                    <p>是的。如同所有優質的特級初榨橄欖油，我們的產品含有多種脂肪酸，其組成結構有以下特點：</p>
+                    <ul>
+                        <li><strong>以 Omega-9 (油酸) 為主：</strong> 它是橄欖油最核心的成分，屬於優質的單元不飽和脂肪酸，這使得橄欖油非常適合作為日常烹調的基礎用油。</li>
+                        <li><strong>含有 Omega-6 (亞麻油酸)：</strong> 作為必需脂肪酸之一，它在我們的油品中佔有適量比例。</li>
+                        <li><strong>僅含微量 Omega-3 (α-亞麻酸)：</strong> 特級初榨橄欖油並非 Omega-3 的主要膳食來源。</li>
+                    </ul>
+                    <p><strong>我們的品牌理念是「追求均衡」。</strong>我們不建議您依賴任何單一食物來獲取所有營養。將 Green Health 綠健的橄欖油作為您健康飲食的一部分，並搭配堅果、深海魚類、亞麻籽等富含不同脂肪酸的天然食材，才是最理想、最全面的健康之道。</p>
+                </div>
+            </details>
+
+        </section>
+        
+        <section id="about-us" class="c-about u-reveal c-section-transition">
+            <div class="o-container">
+          
+              <header class="c-about__header">
+                <h2 class="c-about__title">關於我們</h2>
+                <p class="c-about__subtitle">真正的健康，不該靠運氣，而該靠眼光。</p>
+              </header>
+          
+              <div class="c-about__content">
+                <p class="c-about__text">
+                  Green Health 綠健，不是製造商，而是您最挑剔、最值得信賴的選油顧問。我們專注於替您尋覓那滴來自地中海的純粹陽光——一種融合風土、時間與專業所淬鍊的真實滋味。
+                </p>
+          
+                <h3 class="c-about__commitment-title">一份源自地中海的真實承諾</h3>
+                <p class="c-about__text">
+                  我們深信，最好的風味源自最純淨的土地。因此，我們對您的承諾建立在三個不動搖的基礎之上：
+                </p>
+          
+                <ul class="c-about__standards">
+                  <li class="c-about__standard-item">100% 莊園直送</li>
+                  <li class="c-about__standard-item">國際雙有機認證</li>
+                  <li class="c-about__standard-item">在台合法進口報關</li>
+                </ul>
+          
+                <p class="c-about__text c-about__text--closing">
+                  我們相信，真正的安心來自於專業的眼光與不妥協的堅持。這就是 Green Health 綠健存在的理由。<br>
+                  <strong>我們不只是進口商，更是您的『餐桌風味策展人』與『信賴選油顧問』</strong>。從特級初榨橄欖油出發，為您的健康生活，嚴選每一份來自土地的純粹與誠意。
+                </p>
+
+                <p class="c-about__footnote">
+                    *為確保資訊透明，本產品遵循其莊園之歐盟/美國有機規範生產，並未另行申請台灣農糧署有機標章。
+                </p>
+              </div>
+          
+            </div>
+          </section>
+    
+    </main>
+
+    <footer class="c-site-footer">
+        <div class="c-site-footer__bg-container">
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+            <svg class="c-icon c-icon--bg-tear" aria-hidden="true"><use xlink:href="#icon-tear-shape"></use></svg>
+        </div>
+        <div class="c-site-footer__content">
+            <p><strong>綠健有限公司</strong></p>
+            <p>電話：<a href="tel:033591696">(03) 359-1696</a></p>
+            <p>地址：桃園市龍潭區中興路九龍段355巷30弄27號1樓</p>
+            <p>客服信箱：<a href="mailto:a896214@gmail.com">a896214@gmail.com</a></p>
+            <div class="c-site-footer__social-icons">
+                <a href="https://www.facebook.com/share/16NWCJL951/" target="_blank" rel="noopener noreferrer" aria-label="前往我們的 Facebook 粉絲專頁"><svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg></a>
+                <a href="https://www.instagram.com/green_health_olive/" target="_blank" rel="noopener noreferrer" aria-label="前往我們的 Instagram 專頁"><svg viewBox="0 0 24 24"><path d="M7.8,2H16.2C19.4,2 22,4.6 22,7.8V16.2A5.8,5.8 0 0,1 16.2,22H7.8C4.6,22 2,19.4 2,16.2V7.8A5.8,5.8 0 0,1 7.8,2M7.6,4A3.6,3.6 0 0,0 4,7.6V16.4C4,18.39 5.61,20 7.6,20H16.4A3.6,3.6 0 0,0 20,16.4V7.6C20,5.61 18.39,4 16.4,4H7.6M17.25,5.5A1.25,1.25 0 0,1 18.5,6.75A1.25,1.25 0 0,1 17.25,8A1.25,1.25 0 0,1 16,6.75A1.25,1.25 0 0,1 17.25,5.5M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z"></path></svg></a>
+                <a href="https://shopee.tw/_a9_5vmt07" target="_blank" rel="noopener noreferrer" aria-label="前往我們的蝦皮賣場"><svg viewBox="0 0 24 24"><path d="M10 21.654c-1.155 0-2.09-.935-2.09-2.09s.935-2.09 2.09-2.09 2.09.935 2.09 2.09-.935 2.09-2.09 2.09zm8.354 0c-1.155 0-2.09-.935-2.09-2.09s.935-2.09 2.09-2.09 2.09.935 2.09 2.09-.935 2.09-2.09 2.09zM.917 1.583h2.646l.542 2.09h18.104l-2.917 9.167H7.208l.625 2.646h11.25v2.09H7.208c-1.156 0-2.2-.823-2.3-1.927l-1.375-7.292H.917v-2.09zM18.979 5.76H5.75l1.458 6.521h10.313L18.98 5.76z"></path></svg></a>
+            </div>
+            <p class="c-site-footer__copyright">© 2025 GREEN HEALTH LTD. All Rights Reserved.</p>
+        </div>
+    </footer>
+    
+    <a href="#" class="c-back-to-top-button" aria-label="回到頂部">↑</a>
+
+    <!-- External Scripts -->
+    <script src="ScrollPathAnimator.js" defer></script>
+    <script src="script.js" defer></script>
+    <script type="module" src="hero-animation.js" defer></script>
+
+</body>
+</html>
