@@ -24,7 +24,7 @@
    2. Generic - Reset, Normalize, Box-sizing
    ========================================================================== */
 html { 
-    cursor: url('images/cursor-gold-tear.png') 16 0, auto;
+    cursor: url('/images/cursor-gold-tear.png') 16 0, auto;
     scroll-behavior: smooth; 
 }
 
@@ -1184,3 +1184,33 @@ details[open] .c-icon--faq-expander { transform: rotate(135deg); }
 }
 
 /* ✨ END: 從 HTML 內嵌樣式整合過來的 CSS 規則 */
+
+/* --- Development Environment Warning --- */
+.dev-warning {
+  display: none; /* 預設隱藏 */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 8px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: bold;
+  z-index: 9999;
+  border-left: 4px solid;
+}
+
+[data-domain="staging"] .dev-warning {
+  display: block;
+  background: #fff3cd;
+  color: #856404;
+  border-left-color: #ffeeba;
+}
+
+[data-domain="local"] .dev-warning,
+[data-domain="other"] .dev-warning {
+  display: block;
+  background: #f8d7da;
+  color: #721c24;
+  border-left-color: #f5c6cb;
+}

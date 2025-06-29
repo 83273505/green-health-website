@@ -1,3 +1,41 @@
+(function() {
+    // 環境設定檔
+    const ENVIRONMENTS = {
+        'greenhealthtw.com.tw': 'production',
+        'www.greenhealthtw.com.tw': 'production',
+        'staging.greenhealthtw.com.tw': 'staging', // for future use
+        'localhost': 'local',
+        '127.0.0.1': 'local',
+    };
+
+    const currentHostname = location.hostname;
+    const domainType = ENVIRONMENTS[currentHostname] || 'other';
+    document.body.dataset.domain = domainType;
+
+    // production 環境的保護提示
+    if (domainType === 'production') {
+        console.log('%c✅ Production Mode: Ensure all debug tools are removed.', 'color: green; font-weight: bold;');
+        return; // 正式環境下，後續的警告邏輯不需要執行
+    }
+    
+    // 非 production 環境的視覺警告橫幅
+    const warningBanner = document.querySelector('.dev-warning');
+    if (warningBanner) {
+        let message = '';
+        switch(domainType) {
+            case 'staging':
+                message = '⚠️ 注意：您目前正在【預覽測試版】環境。僅供內部預覽。';
+                break;
+            case 'local':
+                message = '🔧 您目前正在【本機開發】環境。';
+                break;
+            default:
+                 message = '❓ 您目前在一個【未知的】環境中，請確認網址。';
+        }
+        warningBanner.textContent = message;
+    }
+})();
+
 function initLadybugAnimation() {
     gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
 
@@ -110,7 +148,7 @@ function initLadybugAnimation() {
             tl.set(ladybug, { 
                 opacity: 1, 
                 visibility: 'visible',
-                attr: { src: 'images/ladybug-flying.webp' }
+                attr: { src: '/images/ladybug-flying.webp' }
             })
             .to(ladybug, {
                 motionPath: {
