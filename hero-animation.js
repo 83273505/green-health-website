@@ -1,16 +1,15 @@
 /**
  * @file hero-animation.js
  * @description Green Health 網站英雄區的 3D 水滴與波紋動畫模組。
- * @version 1.1.0 (Refactored for Module Loading)
+ * @version 1.3.0 (Refactored for Module Loading & Removed Audio)
  * @author [Your Name/Team]
  * @see https://threejs.org/
  */
 
-// ✨ 修改點 1: 將 'three' 的裸模組路徑，改為瀏覽器可直接解析的完整 CDN URL。
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.142.0/build/three.module.js';
-
-// ✨ 修改點 2: 同樣地，將附加元件的路徑也改為完整的 CDN URL。
-import { Water } from 'https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/objects/Water.js';
+// ✨ 修正 #1: 直接從 'three' 引入，路徑由 HTML 中的 importmap 解析。
+import * as THREE from 'three';
+// ✨ 修正 #2: 同樣地，附加元件也從 'three/addons/' 引入。
+import { Water } from 'three/addons/objects/Water.js';
 
 (function() {
     // 確保 DOM 載入完成後才執行，這是良好的實踐。
@@ -49,8 +48,7 @@ import { Water } from 'https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/o
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2(-10, -10);
 
-        let audioContext;
-        let coronationSoundBuffer;
+        // --- 音效相關變數已移除 ---
 
         /**
          * 初始化 3D 場景、相機、渲染器與所有物件
@@ -98,46 +96,12 @@ import { Water } from 'https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/o
             window.addEventListener('resize', onWindowResize, false);
             window.addEventListener('mousemove', onMouseMove, { passive: true });
             canvas.addEventListener('click', onCanvasClick);
-            document.body.addEventListener('click', initAudio, { once: true });
+            // --- 初始化音效的事件監聽已移除 ---
         }
         
-        /**
-         * 初始化音訊內容 (AudioContext)，在使用者首次互動後觸發
-         */
-        function initAudio() {
-            if (audioContext) return;
-            audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            
-            // ✨ 專業建議: 未來可將音效檔移至本地 (e.g., 'audio/chime.mp3') 以提高穩定性與載入速度。
-            fetch('https://dl.dropboxusercontent.com/s/n71ywhbqjo61brq/chime.mp3')
-                .then(res => res.arrayBuffer())
-                .then(buf => audioContext.decodeAudioData(buf))
-                .then(buffer => {
-                    coronationSoundBuffer = buffer;
-                    console.log('✔️ 音效檔 chime.mp3 加載成功。');
-                })
-                .catch(e => { 
-                    // ✨ 修改點 3: 增強錯誤日誌，而非靜默失敗
-                    console.error("❌ 音效檔加載失敗:", e);
-                });
-        }
+        // --- initAudio 函數已移除 ---
 
-        /**
-         * 播放音效
-         * @param {AudioBuffer} buffer - 已解碼的音訊緩衝區
-         * @param {number} [playbackRate=1.0] - 播放速率
-         * @param {number} [gain=0.5] - 音量
-         */
-        function playSound(buffer, playbackRate = 1.0, gain = 0.5) {
-            if (!audioContext || !buffer) return;
-            const source = audioContext.createBufferSource();
-            source.buffer = buffer;
-            source.playbackRate.value = playbackRate;
-            const gainNode = audioContext.createGain();
-            gainNode.gain.value = gain;
-            source.connect(gainNode).connect(audioContext.destination);
-            source.start(0);
-        }
+        // --- playSound 函數已移除 ---
 
         /**
          * 建立水面
@@ -183,7 +147,6 @@ import { Water } from 'https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/o
                 
                 setTimeout(triggerMainDrop, 1500); 
             }, undefined, (error) => {
-                // ✨ 修改點 4: 提供更具體的錯誤訊息
                 console.error(`❌ 核心紋理 '${imageUrl}' 載入失敗！動畫將無法正常啟動。`, error);
             });
         }
@@ -285,7 +248,7 @@ import { Water } from 'https://cdn.jsdelivr.net/npm/three@0.142.0/examples/jsm/o
                     triggeredCount++;
                 }
             }
-            playSound(coronationSoundBuffer, isMainEvent ? 1.0 : 1.5 + Math.random(), isMainEvent ? 0.7 : 0.2);
+            // --- 播放音效的呼叫已移除 ---
         }
 
         /**
