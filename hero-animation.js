@@ -1,8 +1,8 @@
 /**
  * @file hero-animation.js
  * @description Green Health 網站英雄區的 3D 水滴與波紋動畫模組。
- * @version 2.0.0 (Minimalist Performance Refactor: Single drop, persistent water waves)
- * @author [Your Name/Team]
+ * @version 2.1.0 (Performance Optimized: Animation auto-stops after initial sequence)
+ * @author Gemini
  * @see https://threejs.org/
  */
 
@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { Water } from 'three/addons/objects/Water.js';
 
 (function() {
+    // 確保在 DOM 載入完成後才執行
     if (document.readyState === 'complete' || document.readyState === 'interactive') {
         runAnimation();
     } else {
@@ -26,7 +27,7 @@ import { Water } from 'three/addons/objects/Water.js';
             return;
         }
 
-        // --- 變數定義 (已精簡) ---
+        // --- 變數定義 ---
         let scene, camera, renderer;
         let water, drop, impactLight;
         let coronationWaves = [];
@@ -39,6 +40,12 @@ import { Water } from 'three/addons/objects/Water.js';
         
         const raycaster = new THREE.Raycaster();
         const mouse = new THREE.Vector2(-10, -10);
+
+        // --- 性能優化變數 ---
+        let animationFrameId;
+        let isAnimationActive = true; // 動畫是否在執行的開關
+        const ANIMATION_LIFESPAN = 8000; // 動畫總生命週期 (毫秒)，例如 8 秒後停止
+        let animationStopTimer = null; // 用於停止動畫的計時器
 
         /**
          * 初始化 3D 場景、相機、渲染器與所有物件
@@ -57,9 +64,10 @@ import { Water } from 'three/addons/objects/Water.js';
             renderer = new THREE.WebGLRenderer({ 
                 canvas: canvas,
                 antialias: true,
+                powerPreference: "low-power" // 提示瀏覽器使用低功耗模式
             });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5)); // 稍微降低 pixel ratio 來提升性能
             renderer.outputEncoding = THREE.sRGBEncoding;
             
             const ambientLight = new THREE.AmbientLight(0xcccccc, 0.2);
@@ -77,18 +85,23 @@ import { Water } from 'three/addons/objects/Water.js';
             
             createMirrorSurface();
             createQueenTear();
-            createCoronationWaves(); // 只建立波紋物件池
+            createCoronationWaves();
 
             window.addEventListener('resize', onWindowResize, false);
-            window.addEventListener('mousemove', onMouseMove, { passive: true });
+            // 點擊事件保持不變，讓使用者仍可互動
             canvas.addEventListener('click', onCanvasClick);
         }
         
+        /**
+         * 建立水面
+         */
         function createMirrorSurface() {
             const waterGeometry = new THREE.PlaneGeometry(100, 100);
             water = new Water(waterGeometry, {
                 textureWidth: 512, textureHeight: 512,
-                waterNormals: new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg'),
+                waterNormals: new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg', (texture) => {
+                    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+                }),
                 sunDirection: new THREE.Vector3(0, 10, 5).normalize(),
                 sunColor: 0xffe082,
                 waterColor: 0x004060,
@@ -99,9 +112,12 @@ import { Water } from 'three/addons/objects/Water.js';
             scene.add(water);
         }
 
+        /**
+         * 建立皇后之淚 (水滴)
+         */
         function createQueenTear() {
             const textureLoader = new THREE.TextureLoader();
-            const imageUrl = 'images/gold_tear_icon.webp'; // 使用相對路徑以利本地測試
+            const imageUrl = '/images/gold_tear_icon.webp';
             
             textureLoader.load(imageUrl, (texture) => {
                 textureLoaded = true;
@@ -119,12 +135,16 @@ import { Water } from 'three/addons/objects/Water.js';
                 drop.visible = false;
                 scene.add(drop);
                 
+                // 延遲觸發主水滴動畫
                 setTimeout(triggerMainDrop, 1500); 
             }, undefined, (error) => {
                 console.error(`❌ 核心紋理 '${imageUrl}' 載入失敗！動畫將無法正常啟動。`, error);
             });
         }
         
+        /**
+         * 建立波紋物件池
+         */
         function createCoronationWaves() {
             for (let i = 0; i < MAX_WAVES; i++) {
                 const geo = new THREE.RingGeometry(0.1, 0.2, 64);
@@ -142,6 +162,11 @@ import { Water } from 'three/addons/objects/Water.js';
             }
         }
 
+        /**
+         * 觸發波紋效果
+         * @param {THREE.Vector3} position - 波紋產生的位置
+         * @param {boolean} isMainEvent - 是否為主水滴觸發的事件
+         */
         function triggerCoronationWave(position, isMainEvent = false) {
             if (impactLight) {
                 impactLight.position.copy(position).setY(1.5);
@@ -152,6 +177,10 @@ import { Water } from 'three/addons/objects/Water.js';
             if(isMainEvent) {
                 const heroTitle = document.getElementById('heroTitle');
                 if(heroTitle) heroTitle.classList.add('is-unveiled');
+
+                // 主水滴落下後，設定計時器以停止動畫
+                if (animationStopTimer) clearTimeout(animationStopTimer);
+                animationStopTimer = setTimeout(stopAnimation, ANIMATION_LIFESPAN);
             }
 
             let triggeredCount = 0;
@@ -165,8 +194,10 @@ import { Water } from 'three/addons/objects/Water.js';
                         waveData.mesh.visible = true;
                         waveData.mesh.position.copy(position).setY(0.05);
                         waveData.mesh.scale.set(1, 1, 1);
+                        // 讓波紋在 2-3 秒內結束
+                        const duration = (isMainEvent ? 2.5 : 2.0) + Math.random();
                         waveData.mesh.material.opacity = isMainEvent ? 0.9 : 0.5;
-                        waveData.duration = (isMainEvent ? 3.0 : 2.0) + Math.random();
+                        waveData.duration = duration;
                         waveData.startTime = clock.getElapsedTime();
                     }, triggeredCount * 150);
                     triggeredCount++;
@@ -174,6 +205,9 @@ import { Water } from 'three/addons/objects/Water.js';
             }
         }
 
+        /**
+         * 觸發主水滴下落
+         */
         function triggerMainDrop() {
             if (!textureLoaded || !drop) return;
             if (mainDropActive) return;
@@ -183,20 +217,82 @@ import { Water } from 'three/addons/objects/Water.js';
             drop.material.opacity = 1; 
         }
 
-        function onMouseMove(event) { mouse.x = (event.clientX / window.innerWidth) * 2 - 1; mouse.y = -(event.clientY / window.innerHeight) * 2 + 1; }
-        function onCanvasClick() { if (!water) return; raycaster.setFromCamera(mouse, camera); const intersects = raycaster.intersectObject(water); if (intersects.length > 0) { triggerCoronationWave(intersects[0].point, false); } }
-        function onWindowResize() { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); }
+        /**
+         * 處理視窗大小變更
+         */
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            // 如果動畫已停止，需要手動重新渲染一次以更新畫面
+            if (!isAnimationActive) {
+                renderer.render(scene, camera);
+            }
+        }
 
         /**
-         * 動畫循環 (Game Loop) - 已精簡
+         * 處理畫布點擊事件，產生互動波紋
+         */
+        function onCanvasClick(event) {
+            if (!water) return;
+            
+            // 更新 mouse vector
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(water);
+            if (intersects.length > 0) {
+                triggerCoronationWave(intersects[0].point, false);
+
+                // 如果動畫已停止，點擊後短暫重啟
+                if (!isAnimationActive) {
+                    isAnimationActive = true;
+                    animate(); // 重新啟動動畫循環
+                    // 設定一個較短的計時器再次停止它
+                    if (animationStopTimer) clearTimeout(animationStopTimer);
+                    animationStopTimer = setTimeout(stopAnimation, 3000); // 互動後 3 秒停止
+                }
+            }
+        }
+
+        /**
+         * 停止動畫循環以節省效能
+         */
+        function stopAnimation() {
+            isAnimationActive = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+            // 確保所有動態物件在最後一幀被隱藏
+            if(drop) drop.visible = false;
+            coronationWaves.forEach(wave => wave.mesh.visible = false);
+            if(impactLight) impactLight.visible = false;
+            
+            // 最後再渲染一次，確保畫面是乾淨的靜態水面
+            renderer.render(scene, camera);
+            console.log('✅ Hero animation stopped to save performance.');
+        }
+
+        /**
+         * 動畫循環 (Game Loop)
          */
         function animate() {
-            requestAnimationFrame(animate);
+            // 如果動畫開關為 false，則停止循環
+            if (!isAnimationActive) {
+                return;
+            }
+
+            animationFrameId = requestAnimationFrame(animate);
+            
             const deltaTime = clock.getDelta();
             const elapsedTime = clock.getElapsedTime();
 
-            // 只保留水面動畫
-            if (water) water.material.uniforms['time'].value += deltaTime * 0.4;
+            // 持續更新水面材質的時間，使其看起來流動
+            if (water) {
+                water.material.uniforms['time'].value += deltaTime * 0.4;
+            }
 
             // 主水滴下落動畫 (只執行一次)
             if (mainDropActive && drop) {
@@ -224,17 +320,18 @@ import { Water } from 'three/addons/objects/Water.js';
                         wave.active = false;
                         wave.mesh.visible = false;
                     } else {
-                        const scale = 1 + progress * 35; 
+                        // 使用 easeOutCubic 函式讓擴散速度由快變慢
+                        const easedProgress = 1 - Math.pow(1 - progress, 3);
+                        const scale = 1 + easedProgress * 35; 
                         wave.mesh.scale.set(scale, scale, scale);
-                        wave.mesh.material.opacity *= 0.98;
+                        // 透明度衰減
+                        wave.mesh.material.opacity = Math.max(0, (1 - progress) * 0.9);
                     }
                 }
             });
 
             // 渲染場景
-            if (renderer && scene && camera) {
-                renderer.render(scene, camera);
-            }
+            renderer.render(scene, camera);
         }
 
         // --- 啟動動畫 ---
