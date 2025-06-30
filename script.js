@@ -15,24 +15,23 @@
     // production 環境的保護提示
     if (domainType === 'production') {
         console.log('%c✅ Production Mode: Ensure all debug tools are removed.', 'color: green; font-weight: bold;');
-        return; // 正式環境下，後續的警告邏輯不需要執行
-    }
-    
-    // 非 production 環境的視覺警告橫幅
-    const warningBanner = document.querySelector('.dev-warning');
-    if (warningBanner) {
-        let message = '';
-        switch(domainType) {
-            case 'staging':
-                message = '⚠️ 注意：您目前正在【預覽測試版】環境。僅供內部預覽。';
-                break;
-            case 'local':
-                message = '🔧 您目前正在【本機開發】環境。';
-                break;
-            default:
-                 message = '❓ 您目前在一個【未知的】環境中，請確認網址。';
+    } else {
+        // 非 production 環境的視覺警告橫幅
+        const warningBanner = document.querySelector('.dev-warning');
+        if (warningBanner) {
+            let message = '';
+            switch(domainType) {
+                case 'staging':
+                    message = '⚠️ 注意：您目前正在【預覽測試版】環境。僅供內部預覽。';
+                    break;
+                case 'local':
+                    message = '🔧 您目前正在【本機開發】環境。';
+                    break;
+                default:
+                     message = '❓ 您目前在一個【未知的】環境中，請確認網址。';
+            }
+            warningBanner.textContent = message;
         }
-        warningBanner.textContent = message;
     }
 })();
 
@@ -513,6 +512,37 @@ document.addEventListener('DOMContentLoaded', function() {
         sections.forEach(section => observer.observe(section));
     }
 
+    /**
+     * ✨ NEW: Lazy loading for videos
+     * This function uses IntersectionObserver to only load videos when they are about to enter the viewport.
+     */
+    function initLazyLoadVideo() {
+        const lazyVideo = document.querySelector('video[data-src]');
+        if (!lazyVideo) return;
+
+        const lazyVideoObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const video = entry.target;
+                    // Assign the real source from data-src to start downloading
+                    video.src = video.dataset.src;
+                    video.load(); // Advise the browser to load the video
+                    video.play().catch(error => {
+                        console.log("影片自動播放失敗，這通常是因為瀏覽器政策需要使用者先進行互動。", error);
+                    });
+                    
+                    // Once the task is done, stop observing
+                    observer.unobserve(video);
+                }
+            });
+        }, {
+            // Start loading when the video is 200px away from the viewport
+            rootMargin: "200px" 
+        });
+
+        lazyVideoObserver.observe(lazyVideo);
+    }
+
     function initApp() {
         try {
             initLadybugAnimation();
@@ -531,6 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initScrollNarrative();
         initCustomVideoPlayer();
         initThemeSwitcher();
+        initLazyLoadVideo(); // ✨ Call the new lazy load function
         
         if (typeof ScrollPathAnimator !== 'undefined') {
             new ScrollPathAnimator({
