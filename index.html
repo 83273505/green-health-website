@@ -148,7 +148,6 @@
                 <div class="c-brand-statement__image-container">
                     <picture>
                         <source srcset="/images/green-health-koroneiki-olive-oil.webp" type="image/webp">
-                        <!-- ✨ MODIFICATION: Added loading="lazy" to the first non-critical image below the fold. -->
                         <img src="/images/green-health-koroneiki-olive-oil.jpg" alt="Green Health 綠健精選 Koroneiki 單一品種特級初榨橄欖油，作為品牌形象主圖" width="1200" height="800" loading="lazy">
                     </picture>
                 </div>
@@ -290,8 +289,9 @@
 
             <h4 id="video-journey-anchor" class="u-text-center u-mb-sm u-mt-lg">🎥 一起見證風味的起點</h4>
             <div class="c-video-container">
-                <video id="main-video" muted playsinline loading="lazy" poster="/images/video-poster.webp" preload="metadata">
-                    <source src="/video/OLYFO VIDEO.mp4" type="video/mp4">
+                <!-- ✨ MODIFICATION: Unified lazy load strategy. Removed loading="lazy" and src, added class and data-src. -->
+                <video id="main-video" class="js-lazy-video" muted playsinline poster="/images/video-poster.webp" preload="metadata">
+                    <source data-src="/video/OLYFO VIDEO.mp4" type="video/mp4">
                     您的瀏覽器不支援影片播放。
                 </video>
                 <button class="c-video-container__play-btn" id="videoPlayBtn" aria-label="播放影片">▶</button>
@@ -312,7 +312,8 @@
                                 </div>
                             </div>
                             <div class="c-video-feature">
-                                <video data-src="/video/ladybug.mp4" poster="/images/ladybug-poster.webp" autoplay muted loop playsinline preload="none"></video>
+                                <!-- ✨ MODIFICATION: Unified lazy load strategy. Added class for JS targeting. -->
+                                <video class="js-lazy-video" data-src="/video/ladybug.mp4" poster="/images/ladybug-poster.webp" autoplay muted loop playsinline preload="none"></video>
                                 <div class="c-video-feature__overlay">
                                     <h5>友善農業的最佳代言</h5>
                                     <p>我們莊園的瓢蟲，是我們堅持友善農業、與自然共生的最好證明。</p>

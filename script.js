@@ -545,19 +545,42 @@ document.addEventListener('DOMContentLoaded', function() {
         sections.forEach(section => observer.observe(section));
     }
 
+    // ✨ MODIFICATION: Patched to handle both video structures (with <source> and with src attribute)
     function initLazyLoadVideo() {
-        const lazyVideo = document.querySelector('video[data-src]');
-        if (!lazyVideo) return;
+        const lazyVideos = document.querySelectorAll('.js-lazy-video');
+        if (lazyVideos.length === 0) return;
 
         const lazyVideoObserver = new IntersectionObserver((entries, observer) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const video = entry.target;
-                    video.src = video.dataset.src;
+                    
+                    // Case 1: Handle <source> elements inside <video>
+                    const sources = video.querySelectorAll("source[data-src]");
+                    if (sources.length > 0) {
+                        sources.forEach(source => {
+                            source.src = source.dataset.src;
+                        });
+                    } 
+                    // Case 2: Handle data-src directly on the <video> element itself
+                    else if (video.dataset.src) {
+                        video.src = video.dataset.src;
+                    }
+
                     video.load();
-                    video.play().catch(error => {
-                        console.log("影片自動播放失敗，這通常是因為瀏覽器政策需要使用者先進行互動。", error);
-                    });
+                    
+                    // Autoplay if specified
+                    if (video.hasAttribute('autoplay')) {
+                        const playPromise = video.play();
+                        if (playPromise !== undefined) {
+                            playPromise.catch(error => {
+                                console.log("影片自動播放因瀏覽器政策被阻止。", error);
+                                // A common fix for autoplay issues is to ensure the video is muted.
+                                video.muted = true;
+                                video.play();
+                            });
+                        }
+                    }
                     
                     observer.unobserve(video);
                 }
@@ -566,13 +589,12 @@ document.addEventListener('DOMContentLoaded', function() {
             rootMargin: "200px" 
         });
 
-        lazyVideoObserver.observe(lazyVideo);
+        lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
 
     function initApp() {
         try {
             initLadybugAnimation();
-            // ✨ MODIFICATION: Call the new GSAP-based animation for the oil drop
             initOilDropPathAnimation();
         } catch (error) {
             console.error("GSAP 動畫初始化失敗:", error);
