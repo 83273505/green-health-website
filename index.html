@@ -34,7 +34,12 @@
     
     <!-- All CSS is loaded synchronously in the head for reliability -->
     <link rel="stylesheet" href="/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap" rel="stylesheet">
+
+    <!-- ✨ START: 字型載入優化 (非同步載入) ✨ -->
+    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap" media="print" onload="this.media='all'">
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap"></noscript>
+    <!-- ✨ END: 字型載入優化 ✨ -->
     
     <script type="application/ld+json">
     [

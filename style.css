@@ -29,8 +29,9 @@ html {
 }
 
 body { 
-    margin: 0; 
-    font-family: 'Noto Sans TC', sans-serif;
+    margin: 0;
+    /* ✨ MODIFICATION: Improved font stack for better fallback and reduced layout shift. */
+    font-family: 'Noto Sans TC', -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", "PingFang TC", "Helvetica Neue", sans-serif;
     background-color: var(--color-sandy-beige); 
     color: var(--color-dark-text); 
     line-height: 1.8;
@@ -55,7 +56,8 @@ body.no-scroll {
    3. Elements - 基本 HTML 標籤樣式 (h1, p, a...)
    ========================================================================== */
 h1, h2, h3, h4, h5 { 
-    font-family: 'Lora', serif;
+    /* ✨ MODIFICATION: Improved font stack for better fallback and reduced layout shift. */
+    font-family: 'Lora', Georgia, serif;
     color: var(--color-olive-green); 
     margin: 0 0 0.5em 0;
     line-height: 1.4;
