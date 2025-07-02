@@ -43,6 +43,7 @@ function initLadybugAnimation() {
     const desktopPaths = document.querySelectorAll("path[data-path='desktop']");
 
     if (!ladybug || !container || desktopPaths.length === 0) {
+        console.warn("瓢蟲動畫所需元素未找到，動畫已跳過。");
         return;
     }
 
@@ -130,6 +131,7 @@ function initLadybugAnimation() {
             if (!desktopPaths || desktopPaths.length === 0) return;
             const randomIndex = Math.floor(Math.random() * desktopPaths.length);
             const randomPath = desktopPaths[randomIndex];
+            console.log(`🐞瓢蟲動畫選用路徑: ${randomPath.id}`);
 
             const tl = gsap.timeline({
                 scrollTrigger: {
@@ -156,7 +158,8 @@ function initLadybugAnimation() {
                     alignOrigin: [0.5, 0.5],
                     autoRotate: true,
                 },
-                duration: 100
+                duration: 100, // Duration is less important with scrub
+                ease: "none"
             });
         },
         "(max-width: 767px)": function() {
@@ -180,9 +183,39 @@ function initLadybugAnimation() {
                     alignOrigin: [0.5, 0.5],
                     autoRotate: true,
                 },
-                duration: 100
+                duration: 100,
+                ease: "none"
             });
         }
+    });
+}
+
+// ✨ MODIFICATION: Replaces the old ScrollPathAnimator with a more performant GSAP implementation.
+function initOilDropPathAnimation() {
+    gsap.registerPlugin(ScrollTrigger);
+    const drop = document.getElementById("svg-oil-drop");
+    const path = document.getElementById("svg-oil-track");
+    const section = document.getElementById("quality");
+
+    if (!drop || !path || !section) {
+        console.warn("油滴路徑動畫所需元素未找到，動畫已跳過。");
+        return;
+    }
+
+    gsap.to(drop, {
+        motionPath: {
+            path: path,
+            align: path,
+            alignOrigin: [0.5, 0.5],
+            autoRotate: true
+        },
+        scrollTrigger: {
+            trigger: section,
+            start: "top bottom",
+            end: "bottom top",
+            scrub: 1.2
+        },
+        ease: "none"
     });
 }
 
@@ -512,10 +545,6 @@ document.addEventListener('DOMContentLoaded', function() {
         sections.forEach(section => observer.observe(section));
     }
 
-    /**
-     * ✨ NEW: Lazy loading for videos
-     * This function uses IntersectionObserver to only load videos when they are about to enter the viewport.
-     */
     function initLazyLoadVideo() {
         const lazyVideo = document.querySelector('video[data-src]');
         if (!lazyVideo) return;
@@ -524,19 +553,16 @@ document.addEventListener('DOMContentLoaded', function() {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const video = entry.target;
-                    // Assign the real source from data-src to start downloading
                     video.src = video.dataset.src;
-                    video.load(); // Advise the browser to load the video
+                    video.load();
                     video.play().catch(error => {
                         console.log("影片自動播放失敗，這通常是因為瀏覽器政策需要使用者先進行互動。", error);
                     });
                     
-                    // Once the task is done, stop observing
                     observer.unobserve(video);
                 }
             });
         }, {
-            // Start loading when the video is 200px away from the viewport
             rootMargin: "200px" 
         });
 
@@ -546,8 +572,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function initApp() {
         try {
             initLadybugAnimation();
+            // ✨ MODIFICATION: Call the new GSAP-based animation for the oil drop
+            initOilDropPathAnimation();
         } catch (error) {
-            // Errors in production should be handled by a dedicated service, not console.
+            console.error("GSAP 動畫初始化失敗:", error);
         }
         
         initScrollReveal();
@@ -561,16 +589,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initScrollNarrative();
         initCustomVideoPlayer();
         initThemeSwitcher();
-        initLazyLoadVideo(); // ✨ Call the new lazy load function
-        
-        if (typeof ScrollPathAnimator !== 'undefined') {
-            new ScrollPathAnimator({
-                svgId: "svg-oil-path-container",
-                pathId: "svg-oil-track",
-                dropId: "svg-oil-drop",
-                sectionId: "quality"
-            });
-        }
+        initLazyLoadVideo();
     }
 
     initApp();
