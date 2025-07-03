@@ -1,4 +1,72 @@
 /* ==========================================================================
+   ✨ START: Self-Hosted Fonts Definition ✨
+   ========================================================================== */
+
+/* --- Lora Font --- */
+/* Regular 400 */
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/lora-v36-latin-regular.woff2') format('woff2');
+}
+/* Italic 400 */
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/lora-v36-latin-italic.woff2') format('woff2');
+}
+/* Bold 700 */
+@font-face {
+  font-family: 'Lora';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/lora-v36-latin-700.woff2') format('woff2');
+}
+/* Bold Italic 700 */
+@font-face {
+  font-family: 'Lora';
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/lora-v36-latin-700italic.woff2') format('woff2');
+}
+
+/* --- Noto Sans TC Font --- */
+/* Light 300 */
+@font-face {
+  font-family: 'Noto Sans TC';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src: url('/fonts/noto-sans-tc-300.woff2') format('woff2');
+}
+/* Regular 400 */
+@font-face {
+  font-family: 'Noto Sans TC';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/noto-sans-tc-400.woff2') format('woff2');
+}
+/* Bold 700 */
+@font-face {
+  font-family: 'Noto Sans TC';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/noto-sans-tc-700.woff2') format('woff2');
+}
+
+/* ==========================================================================
+   ✨ END: Self-Hosted Fonts Definition ✨
+   ========================================================================== */
+
+/* ==========================================================================
    1. Settings - 變數、字型、全域設定
    ========================================================================== */
 :root {

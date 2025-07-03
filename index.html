@@ -5,10 +5,10 @@
     <meta http-equiv="Content-Security-Policy" 
           content="default-src 'self' data: blob:; 
                    script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net blob:;
-                   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; 
-                   font-src 'self' https://fonts.gstatic.com; 
+                   style-src 'self' 'unsafe-inline'; 
+                   font-src 'self'; 
                    img-src 'self' data: https://threejs.org;
-                   connect-src 'self' https://fonts.googleapis.com https://threejs.org https://dl.dropboxusercontent.com;
+                   connect-src 'self' https://threejs.org https://dl.dropboxusercontent.com;
                    object-src 'none'; 
                    frame-ancestors 'none';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,7 +19,8 @@
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://www.greenhealthtw.com.tw/">
     <link rel="alternate" hreflang="zh-Hant" href="https://www.greenhealthtw.com.tw/" />
-    <link rel="icon" href="/images/favicon.ico" sizes="any">
+    <!-- ✨ FIX: Corrected favicon path to the standard root directory -->
+    <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
     <meta name="theme-color" content="#05141c" />
     <meta property="og:title" content="Green Health 綠健｜突尼西亞特級初榨橄欖油專家">
@@ -28,18 +29,8 @@
     <meta property="og:url" content="https://www.greenhealthtw.com.tw/">
     <meta property="og:type" content="website">
 
-    <!-- Preconnect for performance -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    
     <!-- All CSS is loaded synchronously in the head for reliability -->
     <link rel="stylesheet" href="/style.css">
-
-    <!-- ✨ START: 字型載入優化 (非同步載入) ✨ -->
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap">
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap" media="print" onload="this.media='all'">
-    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&family=Noto+Sans+TC:wght@300;400;700&display=swap"></noscript>
-    <!-- ✨ END: 字型載入優化 ✨ -->
     
     <script type="application/ld+json">
     [
