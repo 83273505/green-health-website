@@ -25,7 +25,7 @@
                     message = '⚠️ 注意：您目前正在【預覽測試版】環境。僅供內部預覽。';
                     break;
                 case 'local':
-                    message = '🔧 您目前正在【本機開發】環境。';
+                    message = '💻 您目前正在【本機開發】環境。';
                     break;
                 default:
                      message = '❓ 您目前在一個【未知的】環境中，請確認網址。';
@@ -35,114 +35,38 @@
     }
 })();
 
+// [MODIFIED] Refactored for natural, non-scrubbing animation
 function initLadybugAnimation() {
     gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
 
     const ladybug = document.querySelector("#ladybug-actor");
     const container = document.querySelector("#farm-to-table .o-container");
-    const desktopPaths = document.querySelectorAll("path[data-path='desktop']");
+    const desktopPath = document.querySelector("#path-desk-6"); // Use one reliable path
+    const mobilePath = document.querySelector("#ladybug-path-mobile");
 
-    if (!ladybug || !container || desktopPaths.length === 0) {
+    if (!ladybug || !container || !desktopPath || !mobilePath) {
         console.warn("瓢蟲動畫所需元素未找到，動畫已跳過。");
         return;
     }
 
-    const ladybugState = {
-        dodgeRadius: 80,
-        dodgeTween: null,
-        flyAwayTimer: null,
-        hasFlownAway: false,
-        isMouseInside: false,
-    };
+    // [NEW] Add a continuous, subtle hover animation for a lifelike effect
+    gsap.to(ladybug, {
+        y: '+=6',
+        duration: 2,
+        repeat: -1,
+        yoyo: true,
+        ease: 'sine.inOut'
+    });
 
-    const handleMouseMove = (e) => {
-        if (ladybugState.hasFlownAway) return;
-
-        const matrix = gsap.getProperty(ladybug, "matrix");
-        const centerX = matrix.e;
-        const centerY = matrix.f;
-        
-        const containerRect = container.getBoundingClientRect();
-        const mouseX = e.clientX - containerRect.left;
-        const mouseY = e.clientY - containerRect.top;
-
-        const dx = mouseX - centerX;
-        const dy = mouseY - centerY;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        if (distance < ladybugState.dodgeRadius) {
-            const angle = Math.atan2(dy, dx);
-            const dodgeX = -Math.cos(angle) * 30;
-            const dodgeY = -Math.sin(angle) * 30;
-            
-            if (ladybugState.dodgeTween) ladybugState.dodgeTween.kill();
-            
-            ladybugState.dodgeTween = gsap.to(ladybug, {
-                x: dodgeX,
-                y: dodgeY,
-                rotation: gsap.utils.random(-25, 25),
-                scale: 0.85,
-                duration: 0.2,
-                ease: "power2.out",
-            });
-
-            if (!ladybugState.isMouseInside) {
-                ladybugState.isMouseInside = true;
-                
-                if (ladybugState.flyAwayTimer) clearTimeout(ladybugState.flyAwayTimer);
-                ladybugState.flyAwayTimer = setTimeout(() => {
-                    ladybugState.hasFlownAway = true;
-                    container.removeEventListener('mousemove', handleMouseMove);
-                    
-                    gsap.to(ladybug, {
-                        x: dx > 0 ? -400 : 400,
-                        y: dy > 0 ? -300 : 300,
-                        opacity: 0,
-                        scale: 0.5,
-                        rotation: gsap.utils.random(360, 720),
-                        duration: 1.2,
-                        ease: "power2.in",
-                        onComplete: () => ladybug.remove()
-                    });
-                }, 2000);
-            }
-        } else {
-            if (ladybugState.isMouseInside) {
-                ladybugState.isMouseInside = false;
-                
-                clearTimeout(ladybugState.flyAwayTimer);
-                ladybugState.flyAwayTimer = null;
-                
-                if (ladybugState.dodgeTween) ladybugState.dodgeTween.kill();
-                ladybugState.dodgeTween = gsap.to(ladybug, {
-                    x: 0,
-                    y: 0,
-                    rotation: 0,
-                    scale: 1,
-                    duration: 0.6,
-                    ease: "elastic.out(1, 0.75)",
-                });
-            }
-        }
-    };
-    
     ScrollTrigger.matchMedia({
         "(min-width: 768px)": function() {
-            if (!desktopPaths || desktopPaths.length === 0) return;
-            const randomIndex = Math.floor(Math.random() * desktopPaths.length);
-            const randomPath = desktopPaths[randomIndex];
-            console.log(`🐞瓢蟲動畫選用路徑: ${randomPath.id}`);
-
             const tl = gsap.timeline({
                 scrollTrigger: {
                     trigger: "#farm-to-table",
-                    start: "top 20%",
-                    end: "bottom 80%",
-                    scrub: 1.5,
-                    onEnter: () => container.addEventListener('mousemove', handleMouseMove),
-                    onLeave: () => container.removeEventListener('mousemove', handleMouseMove),
-                    onEnterBack: () => container.addEventListener('mousemove', handleMouseMove),
-                    onLeaveBack: () => container.removeEventListener('mousemove', handleMouseMove),
+                    start: "top center",
+                    end: "bottom center",
+                    // [MODIFIED] Trigger animation on enter, reverse on leave back up
+                    toggleActions: "play none none reverse",
                 },
             });
 
@@ -153,22 +77,22 @@ function initLadybugAnimation() {
             })
             .to(ladybug, {
                 motionPath: {
-                    path: randomPath,
+                    path: desktopPath,
                     align: container,
                     alignOrigin: [0.5, 0.5],
                     autoRotate: true,
                 },
-                duration: 100, // Duration is less important with scrub
-                ease: "none"
+                duration: 12, // A fixed duration for a natural flight speed
+                ease: "power1.inOut"
             });
         },
         "(max-width: 767px)": function() {
              const tl = gsap.timeline({
                 scrollTrigger: {
                     trigger: "#farm-to-table",
-                    start: "top center",
-                    end: "bottom top",
-                    scrub: 1.5,
+                    start: "top 60%", // Start a bit lower on mobile
+                    end: "bottom center",
+                    toggleActions: "play none none reverse",
                 },
             });
 
@@ -178,19 +102,18 @@ function initLadybugAnimation() {
             })
             .to(ladybug, {
                 motionPath: {
-                    path: "#ladybug-path-mobile",
+                    path: mobilePath,
                     align: container,
                     alignOrigin: [0.5, 0.5],
                     autoRotate: true,
                 },
-                duration: 100,
-                ease: "none"
+                duration: 10,
+                ease: "power1.inOut"
             });
         }
     });
 }
 
-// ✨ MODIFICATION: Replaces the old ScrollPathAnimator with a more performant GSAP implementation.
 function initOilDropPathAnimation() {
     gsap.registerPlugin(ScrollTrigger);
     const drop = document.getElementById("svg-oil-drop");
@@ -221,6 +144,26 @@ function initOilDropPathAnimation() {
 
 
 document.addEventListener('DOMContentLoaded', function() {
+
+    // Unified hero experience initialization.
+    function initializeHeroExperience() {
+        const heroSection = document.getElementById('hero-section');
+        if (!heroSection) return;
+
+        console.log('🚀 準備載入智慧型 3D 動畫模組...');
+        import('/hero-animation.js')
+            .then(module => {
+                if (module.bootstrapAnimation) {
+                    console.log('✅ 3D 動畫模組載入成功，開始執行。');
+                    module.bootstrapAnimation();
+                } else {
+                    console.error('❌ 3D 動畫模組載入失敗：找不到 bootstrapAnimation 函數。');
+                }
+            })
+            .catch(error => {
+                console.error('❌ 動態載入 3D 動畫模組失敗:', error);
+            });
+    }
 
     function initScrollReveal() {
         const revealElements = document.querySelectorAll('.u-reveal');
@@ -545,7 +488,6 @@ document.addEventListener('DOMContentLoaded', function() {
         sections.forEach(section => observer.observe(section));
     }
 
-    // ✨ MODIFICATION: Patched to handle both video structures (with <source> and with src attribute)
     function initLazyLoadVideo() {
         const lazyVideos = document.querySelectorAll('.js-lazy-video');
         if (lazyVideos.length === 0) return;
@@ -555,27 +497,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (entry.isIntersecting) {
                     const video = entry.target;
                     
-                    // Case 1: Handle <source> elements inside <video>
                     const sources = video.querySelectorAll("source[data-src]");
                     if (sources.length > 0) {
                         sources.forEach(source => {
                             source.src = source.dataset.src;
                         });
                     } 
-                    // Case 2: Handle data-src directly on the <video> element itself
                     else if (video.dataset.src) {
                         video.src = video.dataset.src;
                     }
 
                     video.load();
                     
-                    // Autoplay if specified
                     if (video.hasAttribute('autoplay')) {
                         const playPromise = video.play();
                         if (playPromise !== undefined) {
                             playPromise.catch(error => {
                                 console.log("影片自動播放因瀏覽器政策被阻止。", error);
-                                // A common fix for autoplay issues is to ensure the video is muted.
                                 video.muted = true;
                                 video.play();
                             });
@@ -613,6 +551,9 @@ document.addEventListener('DOMContentLoaded', function() {
         initThemeSwitcher();
         initLazyLoadVideo();
     }
-
+    
+    // 立即執行英雄區體驗決策
+    initializeHeroExperience();
+    // 執行其他 App 初始化
     initApp();
 });

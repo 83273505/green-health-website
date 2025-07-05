@@ -19,7 +19,6 @@
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://www.greenhealthtw.com.tw/">
     <link rel="alternate" hreflang="zh-Hant" href="https://www.greenhealthtw.com.tw/" />
-    <!-- ✨ FIX: Corrected favicon path to the standard root directory -->
     <link rel="icon" href="/favicon.ico" sizes="any">
     <link rel="apple-touch-icon" href="/images/apple-touch-icon.png">
     <meta name="theme-color" content="#05141c" />
@@ -111,7 +110,7 @@
         </div>
     </nav>
 
-    <header class="c-hero">
+    <header class="c-hero" id="hero-section">
         <div class="c-hero__video-wrapper">
             <canvas id="hero-canvas"></canvas>
         </div>
@@ -127,6 +126,7 @@
                 <a href="https://shopee.tw/_a9_5vmt07" class="c-cta-button c-cta-button--secondary" target="_blank" rel="noopener noreferrer">帶回地中海的陽光</a>
             </div>
         </div>
+        
         <a href="#quality" class="c-hero__scroll-hint" aria-label="向下滾動探索我們的故事">
             <span class="c-hero__scroll-text">滑下來，感受地中海的風味旅程</span>
             <span class="c-hero__scroll-arrow">&#8595;</span>
@@ -134,6 +134,7 @@
     </header>
 
     <main>
+        <!-- The rest of the main content remains the same... -->
         <section id="brand-statement" class="c-brand-statement u-reveal c-section-transition">
             <div class="o-container">
                 <div class="c-brand-statement__image-container">
@@ -280,7 +281,6 @@
 
             <h4 id="video-journey-anchor" class="u-text-center u-mb-sm u-mt-lg">🎥 一起見證風味的起點</h4>
             <div class="c-video-container">
-                <!-- ✨ MODIFICATION: Unified lazy load strategy. Removed loading="lazy" and src, added class and data-src. -->
                 <video id="main-video" class="js-lazy-video" muted playsinline poster="/images/video-poster.webp" preload="metadata">
                     <source data-src="/video/OLYFO VIDEO.mp4" type="video/mp4">
                     您的瀏覽器不支援影片播放。
@@ -303,7 +303,6 @@
                                 </div>
                             </div>
                             <div class="c-video-feature">
-                                <!-- ✨ MODIFICATION: Unified lazy load strategy. Added class for JS targeting. -->
                                 <video class="js-lazy-video" data-src="/video/ladybug.mp4" poster="/images/ladybug-poster.webp" autoplay muted loop playsinline preload="none"></video>
                                 <div class="c-video-feature__overlay">
                                     <h5>友善農業的最佳代言</h5>
@@ -937,8 +936,7 @@
     
     <a href="#" class="c-back-to-top-button" aria-label="回到頂部">↑</a>
 
-    <!-- ✨ MODIFICATION: All scripts are moved to the end of the body to ensure DOM and CSS are ready -->
-    <!-- Libraries -->
+    <!-- Libraries and Application Scripts -->
     <script type="importmap">
         {
             "imports": {
@@ -951,9 +949,8 @@
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/MotionPathPlugin.min.js"></script>
     
-    <!-- Application Scripts (no defer needed when at the end of body) -->
     <script src="/script.js"></script>
-    <script type="module" src="/hero-animation.js"></script>
+    <!-- The hero-animation.js script is now loaded dynamically by script.js -->
 
 </body>
 </html>
