@@ -145,24 +145,38 @@ function initOilDropPathAnimation() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-    // Unified hero experience initialization.
+    // [MODIFIED] Implemented Lazy Loading for the 3D animation module.
     function initializeHeroExperience() {
         const heroSection = document.getElementById('hero-section');
         if (!heroSection) return;
 
-        console.log('🚀 準備載入智慧型 3D 動畫模組...');
-        import('/hero-animation.js')
-            .then(module => {
-                if (module.bootstrapAnimation) {
-                    console.log('✅ 3D 動畫模組載入成功，開始執行。');
-                    module.bootstrapAnimation();
-                } else {
-                    console.error('❌ 3D 動畫模組載入失敗：找不到 bootstrapAnimation 函數。');
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    console.log('🚀 Hero section is visible. Loading 3D animation module...');
+                    
+                    import('/hero-animation.js')
+                        .then(module => {
+                            if (module.bootstrapAnimation) {
+                                console.log('✅ 3D 動畫模組載入成功，開始執行。');
+                                module.bootstrapAnimation();
+                            } else {
+                                console.error('❌ 3D 動畫模組載入失敗：找不到 bootstrapAnimation 函數。');
+                            }
+                        })
+                        .catch(error => {
+                            console.error('❌ 動態載入 3D 動畫模組失敗:', error);
+                        });
+                    
+                    // Stop observing after the module is loaded.
+                    observer.unobserve(heroSection);
                 }
-            })
-            .catch(error => {
-                console.error('❌ 動態載入 3D 動畫模組失敗:', error);
             });
+        }, {
+            rootMargin: '50px' // Pre-load slightly before it's fully in view
+        });
+
+        observer.observe(heroSection);
     }
 
     function initScrollReveal() {

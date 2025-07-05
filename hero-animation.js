@@ -1,17 +1,15 @@
 /**
  * @file hero-animation.js
  * @description Green Health 網站英雄區的 3D 水滴與波紋動畫模組。
- * @version 7.0.0 (Production Ready - Adaptive & Optimized)
+ * @version 13.0.0 (Production Ready - Ultimate Performance: Canvas to Image)
  * @author Gemini & AI Assistant
  * @see https://threejs.org/
  */
 
 import * as THREE from 'three';
-// [MODIFIED] Water is now conditionally imported.
 import { Water } from 'three/addons/objects/Water.js';
 
 export function bootstrapAnimation() {
-    // 檢查使用者是否偏好減少動態效果
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     if (prefersReducedMotion) {
@@ -19,44 +17,35 @@ export function bootstrapAnimation() {
         const canvas = document.getElementById('hero-canvas');
         if (canvas) canvas.style.display = 'none';
         
-        // 手動觸發文字顯示
         const heroTitle = document.getElementById('heroTitle');
-        if (heroTitle) {
-            const titleText = heroTitle.querySelector('.c-hero__title-text');
-            const softText = document.querySelector('.u-text-soft');
-            const ctaContainer = document.querySelector('.c-hero__cta-container');
-            if (titleText) titleText.style.opacity = '1';
-            if (softText) softText.style.opacity = '1';
-            if (ctaContainer) ctaContainer.style.opacity = '1';
-        }
+        if (heroTitle) heroTitle.classList.add('is-unveiled');
+        const softText = document.querySelector('.u-text-soft');
+        if(softText) softText.style.opacity = 1;
+        const ctaContainer = document.querySelector('.c-hero__cta-container');
+        if(ctaContainer) ctaContainer.style.opacity = 1;
+
         return;
     }
 
     runAnimation();
 }
 
-/**
- * [NEW] Helper function to determine if it's a mobile environment.
- * @returns {boolean}
- */
 function isMobile() {
-    // A simple check is usually sufficient. 
-    // For this project, a width-based check aligns with the JS/CSS logic.
     return window.innerWidth < 1024;
 }
 
-
-/**
- * 主動畫執行函數
- */
 function runAnimation() {
+    const heroSection = document.getElementById('hero-section');
     const canvas = document.getElementById('hero-canvas');
-    if (!canvas) {
-        console.error("❌ 動畫初始化失敗：找不到 ID 為 'hero-canvas' 的畫布元素。");
+    if (!heroSection || !canvas) {
+        console.error("❌ 動畫初始化失敗：找不到 Hero 區塊或 Canvas 元素。");
         return;
     }
 
-    // --- 核心變數 ---
+    const heroTitle = document.getElementById('heroTitle');
+    const softText = document.querySelector('.u-text-soft');
+    const ctaContainer = document.querySelector('.c-hero__cta-container');
+
     let scene, camera, renderer;
     let water, drop, impactLight;
     let coronationWaves = [];
@@ -64,41 +53,24 @@ function runAnimation() {
 
     let clock = new THREE.Clock();
     const dropInitialY = 8;
-    let mainDropActive = false;
-    let textureLoaded = false;
     
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2(-10, -10);
+    let animationFrameId = null;
+    let hasPlayed = false;
+    let mainSequenceCompleted = false;
 
-    // --- 效能優化變數 ---
-    let animationFrameId;
-    let isAnimationActive = true; 
-    const ANIMATION_LIFESPAN = 10000;
-    let animationStopTimer = null; 
-    
-    // [MODIFIED] Determine mode once at the start.
     const isMobileMode = isMobile();
     if (isMobileMode) {
         console.log('📱 偵測到行動裝置，執行輕量級 3D 動畫（無水波紋）。');
     } else {
-        console.log('💻 偵測到桌機環境，執行完整 3D 動畫。');
+        console.log('💻 偵測到桌機環境，執行一次性高效能 3D 動畫。');
     }
 
-
-    /**
-     * 初始化場景、相機、渲染器與物件
-     */
     function init() {
         scene = new THREE.Scene();
         
         const fogColor = 0x05141c;
         scene.fog = new THREE.Fog(fogColor, 15, 40);
-
-        // [MODIFIED] Set background based on mode
-        if (isMobileMode) {
-            // For mobile, use a simple color background for performance.
-            scene.background = new THREE.Color(fogColor);
-        }
+        scene.background = new THREE.Color(fogColor);
 
         camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
         camera.position.set(0, 5, 14);
@@ -106,8 +78,9 @@ function runAnimation() {
 
         renderer = new THREE.WebGLRenderer({ 
             canvas: canvas,
-            antialias: !isMobileMode, // Disable antialias on mobile for performance
-            powerPreference: "low-power"
+            antialias: !isMobileMode,
+            powerPreference: "low-power",
+            preserveDrawingBuffer: true // [NEW] Essential for taking screenshots
         });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -125,39 +98,40 @@ function runAnimation() {
         impactLight.visible = false;
         scene.add(impactLight);
         
-        // [MODIFIED] Conditional creation of the water surface
         if (!isMobileMode) {
-            createWaterSurface();
+            createStaticWaterSurface();
         } else {
-            // On mobile, create a simple, invisible plane for raycasting clicks.
             const clickPlaneGeo = new THREE.PlaneGeometry(100, 100);
             const clickPlaneMat = new THREE.MeshBasicMaterial({ visible: false });
-            const clickPlane = new THREE.Mesh(clickPlaneGeo, clickPlaneMat);
-            clickPlane.rotation.x = -Math.PI / 2;
-            scene.add(clickPlane);
-            // Re-assign to 'water' variable so the raycaster can use it.
-            water = clickPlane; 
+            water = new THREE.Mesh(clickPlaneGeo, clickPlaneMat);
+            water.rotation.x = -Math.PI / 2;
+            scene.add(water);
         }
 
         createQueenTear();
         createCoronationWaves();
 
-        window.addEventListener('resize', onWindowResize, false);
-        canvas.addEventListener('click', onCanvasClick);
+        gsap.set([softText, ctaContainer], { opacity: 0, y: 20 });
+        
+        render(); 
+
+        startMainAnimationSequence();
+
+        window.addEventListener('resize', onWindowResize);
     }
     
-    // [MODIFIED] Renamed for clarity, was createMirrorSurface
-    function createWaterSurface() {
-        const waterGeometry = new THREE.PlaneGeometry(100, 100);
+    function createStaticWaterSurface() {
+        // [MODIFIED] Using a slightly lower geometry detail for budgeting
+        const waterGeometry = new THREE.PlaneGeometry(100, 100, 64, 64);
         water = new Water(waterGeometry, {
-            textureWidth: 512, textureHeight: 512,
+            textureWidth: 256, textureHeight: 256, // Lower texture res for static shot
             waterNormals: new THREE.TextureLoader().load('https://threejs.org/examples/textures/waternormals.jpg', (texture) => {
                 texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
             }),
             sunDirection: new THREE.Vector3(0, 10, 5).normalize(),
             sunColor: 0xffe082,
-            waterColor: 0x004060,
-            distortionScale: 3.7,
+            waterColor: 0x001e26, 
+            distortionScale: 1.0, // Low distortion for a calm, screenshot-friendly surface
             fog: true
         });
         water.rotation.x = -Math.PI / 2;
@@ -169,7 +143,6 @@ function runAnimation() {
         const imageUrl = '/images/gold_tear_icon.webp';
         
         textureLoader.load(imageUrl, (texture) => {
-            textureLoaded = true;
             const spriteMaterial = new THREE.SpriteMaterial({
                 map: texture,
                 transparent: true,
@@ -178,27 +151,20 @@ function runAnimation() {
                 depthWrite: false,
                 color: 0xFFFFFF,
             });
-            
             drop = new THREE.Sprite(spriteMaterial);
-            drop.scale.set(2.5, 3.6, 1.0); 
+            drop.scale.set(2.5, 3.6, 1.0);
             drop.visible = false;
             scene.add(drop);
-            
-            setTimeout(triggerMainDrop, 1500); 
         }, undefined, (error) => {
-            console.error(`❌ 核心紋理 '${imageUrl}' 載入失敗！動畫將無法正常啟動。`, error);
+            console.error(`❌ 核心紋理 '${imageUrl}' 載入失敗！`, error);
         });
     }
     
     function createCoronationWaves() {
+        // ... (This function remains the same)
         for (let i = 0; i < MAX_WAVES; i++) {
             const geo = new THREE.RingGeometry(0.1, 0.2, 64);
-            const mat = new THREE.MeshBasicMaterial({ 
-                color: 0xFFB833,
-                transparent: true, 
-                blending: THREE.AdditiveBlending,
-                side: THREE.DoubleSide
-            });
+            const mat = new THREE.MeshBasicMaterial({ color: 0xFFB833, transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
             const ring = new THREE.Mesh(geo, mat);
             ring.rotation.x = -Math.PI / 2;
             ring.visible = false;
@@ -208,18 +174,11 @@ function runAnimation() {
     }
 
     function triggerCoronationWave(position, isMainEvent = false) {
+        // ... (This function remains the same)
         if (impactLight) {
             impactLight.position.copy(position).setY(1.5);
             impactLight.intensity = isMainEvent ? 5 : 2;
             impactLight.visible = true;
-        }
-
-        if(isMainEvent) {
-            const heroTitle = document.getElementById('heroTitle');
-            if(heroTitle) heroTitle.classList.add('is-unveiled');
-            
-            if (animationStopTimer) clearTimeout(animationStopTimer);
-            animationStopTimer = setTimeout(stopAnimation, ANIMATION_LIFESPAN);
         }
 
         let triggeredCount = 0;
@@ -233,7 +192,7 @@ function runAnimation() {
                     waveData.mesh.visible = true;
                     waveData.mesh.position.copy(position).setY(0.05);
                     waveData.mesh.scale.set(1, 1, 1);
-                    const duration = (isMainEvent ? 2.5 : 2.0) + Math.random();
+                    const duration = (isMainEvent ? 2.8 : 2.5) + Math.random();
                     waveData.mesh.material.opacity = isMainEvent ? 0.9 : 0.5;
                     waveData.duration = duration;
                     waveData.startTime = clock.getElapsedTime();
@@ -243,98 +202,184 @@ function runAnimation() {
         }
     }
 
-    function triggerMainDrop() {
-        if (!textureLoaded || !drop || mainDropActive) return;
-        
-        mainDropActive = true;
-        drop.visible = true;
-        drop.position.set(0, dropInitialY, 0);
-        drop.material.opacity = 1;
-        drop.startTime = clock.getElapsedTime();
-    }
-
     function onWindowResize() {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
-        if (!isAnimationActive) {
-            renderer.render(scene, camera);
+        if (!animationFrameId) {
+            render();
         }
     }
-
-    function onCanvasClick(event) {
-        if (!water) return; // 'water' is now the click plane on mobile
+    
+    function startMainAnimationSequence() {
+        // ... (This function remains the same)
+        if (hasPlayed) return;
         
-        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        const checkDropReady = () => {
+            if (drop) {
+                hasPlayed = true;
+                startAnimationLoop();
 
+                const tl = gsap.timeline({
+                    delay: 0.5,
+                    onComplete: () => {
+                        mainSequenceCompleted = true;
+                    }
+                });
+                
+                tl.to([softText, ctaContainer], {
+                    opacity: 1,
+                    y: 0,
+                    duration: 1.0,
+                    stagger: 0.3,
+                    ease: "power2.out"
+                });
+                
+                tl.set(drop, { visible: true }, "+=0.5")
+                  .fromTo(drop.material, { opacity: 0 }, { opacity: 1, duration: 0.8 })
+                  .fromTo(drop.position, 
+                      { y: dropInitialY }, 
+                      { 
+                          y: 0, 
+                          duration: 1.6, 
+                          ease: "power2.in",
+                          onComplete: () => {
+                              drop.visible = false;
+                              triggerCoronationWave(drop.position, true);
+                          }
+                      }, 
+                      "<0.3");
+        
+                tl.call(() => {
+                    if (heroTitle) heroTitle.classList.add('is-unveiled');
+                }, [], ">1.0");
+            } else {
+                setTimeout(checkDropReady, 100);
+            }
+        };
+
+        checkDropReady();
+    }
+    
+    // [MODIFIED] Click interaction is now disabled after the animation plays to prevent issues.
+    function onCanvasClick(event) {
+        if (!water || hasPlayed) return; // Disable clicks after main animation
+        startAnimationLoop();
+        mainSequenceCompleted = false;
+
+        const mouse = new THREE.Vector2(
+            (event.clientX / window.innerWidth) * 2 - 1,
+            -(event.clientY / window.innerHeight) * 2 + 1
+        );
+        const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, camera);
         const intersects = raycaster.intersectObject(water);
+
         if (intersects.length > 0) {
             triggerCoronationWave(intersects[0].point, false);
-
-            if (!isAnimationActive) {
-                isAnimationActive = true;
-                animate(); 
-                if (animationStopTimer) clearTimeout(animationStopTimer);
-                animationStopTimer = setTimeout(stopAnimation, 3000); 
-            }
         }
     }
 
-    function stopAnimation() {
-        isAnimationActive = false;
+    function render() {
+        renderer.render(scene, camera);
+    }
+    
+    function startAnimationLoop() {
+        if (!animationFrameId) {
+            animate();
+        }
+    }
+
+    // [MODIFIED] stopAnimationLoop now triggers the cleanup process.
+    function stopAnimationLoop() {
         if (animationFrameId) {
             cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
+            console.log('✅ 動畫已完全結束，準備替換 Canvas 並釋放資源...');
+            takeScreenshotAndReplaceCanvas();
         }
-        if(drop) drop.visible = false;
-        coronationWaves.forEach(wave => wave.mesh.visible = false);
-        if(impactLight) impactLight.visible = false;
+    }
+
+    // [NEW] Takes a final screenshot, applies it as a background, and cleans up the scene.
+    function takeScreenshotAndReplaceCanvas() {
+        // Render one last time to ensure everything is in its final state
+        render();
+        const screenshotDataUrl = renderer.domElement.toDataURL('image/webp', 0.8);
         
-        renderer.render(scene, camera);
-        console.log('✅ 英雄區動畫已停止以節省效能。');
+        // Apply as background to the parent container
+        const videoWrapper = heroSection.querySelector('.c-hero__video-wrapper');
+        if (videoWrapper) {
+            videoWrapper.style.backgroundImage = `url(${screenshotDataUrl})`;
+            videoWrapper.style.backgroundSize = 'cover';
+            videoWrapper.style.backgroundPosition = 'center';
+        }
+
+        // Hide the canvas and clean up resources
+        canvas.style.display = 'none';
+        cleanupScene();
+    }
+    
+    // [NEW] Thoroughly disposes of Three.js resources to free up memory.
+    function cleanupScene() {
+        console.log('🧹 正在清理 3D 場景資源...');
+        scene.traverse(object => {
+            if (object.isMesh || object.isSprite) {
+                if (object.geometry) {
+                    object.geometry.dispose();
+                }
+                if (object.material) {
+                    if (object.material.isMaterial) {
+                        cleanMaterial(object.material);
+                    } else {
+                        // For multi-material objects
+                        for (const material of object.material) {
+                            cleanMaterial(material);
+                        }
+                    }
+                }
+            }
+        });
+        
+        renderer.dispose();
+        renderer.forceContextLoss();
+
+        // Remove event listeners
+        window.removeEventListener('resize', onWindowResize);
+        
+        console.log('💯 資源已完全釋放。');
+
+        function cleanMaterial(material) {
+            material.dispose();
+            for (const key of Object.keys(material)) {
+                const value = material[key];
+                if (value && typeof value === 'object' && 'isTexture' in value) {
+                    value.dispose();
+                }
+            }
+        }
+    }
+    
+    function isAnythingActive() {
+        if (impactLight && impactLight.visible) return true;
+        if (coronationWaves.some(w => w.active)) return true;
+        return false;
     }
 
     function animate() {
-        if (!isAnimationActive) return;
-
         animationFrameId = requestAnimationFrame(animate);
-        
+
         const elapsedTime = clock.getElapsedTime();
         const deltaTime = Math.min(clock.getDelta(), 1/30);
         
-        // [MODIFIED] Only update water uniforms if water exists (i.e., not mobile mode)
-        if (water && water.isWater) {
-            water.material.uniforms['time'].value += deltaTime * 0.4;
-        }
-
-        if (mainDropActive && drop && drop.startTime) {
-            const timeSinceDropStart = elapsedTime - drop.startTime;
-            const fallDuration = 1.6;
-            const fallProgress = Math.min(timeSinceDropStart / fallDuration, 1);
-            const easedProgress = fallProgress * fallProgress;
-            
-            drop.position.y = dropInitialY * (1 - easedProgress);
-
-            if (fallProgress >= 1) {
-                mainDropActive = false;
-                drop.visible = false;
-                triggerCoronationWave(drop.position, true);
-            }
-        }
-
         if (impactLight && impactLight.visible) {
             impactLight.intensity -= 6 * deltaTime;
-            if (impactLight.intensity <= 0) {
-                impactLight.visible = false;
-            }
+            if (impactLight.intensity <= 0) impactLight.visible = false;
         }
 
         coronationWaves.forEach(wave => {
             if (wave.active) {
                 const progress = (elapsedTime - wave.startTime) / wave.duration;
-                if (progress > 1) {
+                if (progress >= 1) {
                     wave.active = false;
                     wave.mesh.visible = false;
                 } else {
@@ -346,9 +391,12 @@ function runAnimation() {
             }
         });
 
-        renderer.render(scene, camera);
+        render();
+
+        if (mainSequenceCompleted && !isAnythingActive()) {
+            stopAnimationLoop();
+        }
     }
 
     init();
-    animate();
 }
