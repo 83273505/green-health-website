@@ -35,136 +35,26 @@
     }
 })();
 
-function initLadybugAnimation() {
-    gsap.registerPlugin(MotionPathPlugin); // ScrollTrigger is already registered
+// [NEW] Lightweight CSS animation trigger
+function initCssAnimations() {
+    const animatedSections = document.querySelectorAll('.js-anim-trigger');
+    if (animatedSections.length === 0) return;
 
-    const ladybug = document.querySelector("#ladybug-actor");
-    const container = document.querySelector("#farm-to-table .o-container");
-    const desktopPath = document.querySelector("#path-desk-6");
-    const mobilePath = document.querySelector("#ladybug-path-mobile");
-
-    if (!ladybug || !container || !desktopPath || !mobilePath) {
-        console.warn("瓢蟲動畫所需元素未找到，動畫已跳過。");
-        return;
-    }
-
-    gsap.to(ladybug, {
-        y: '+=6',
-        duration: 2,
-        repeat: -1,
-        yoyo: true,
-        ease: 'sine.inOut'
+    const observer = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('is-in-view');
+                observer.unobserve(entry.target); // Animate only once
+            }
+        });
+    }, {
+        threshold: 0.2 // Trigger when 20% of the element is visible
     });
 
-    ScrollTrigger.matchMedia({
-        "(min-width: 768px)": function() {
-            const tl = gsap.timeline({
-                scrollTrigger: {
-                    trigger: "#farm-to-table",
-                    start: "top center",
-                    end: "bottom center",
-                    toggleActions: "play none none reverse",
-                },
-            });
-
-            tl.set(ladybug, { 
-                opacity: 1, 
-                visibility: 'visible',
-                attr: { src: '/images/ladybug-flying.webp' }
-            })
-            .to(ladybug, {
-                motionPath: {
-                    path: desktopPath,
-                    align: container,
-                    alignOrigin: [0.5, 0.5],
-                    autoRotate: true,
-                },
-                duration: 12,
-                ease: "power1.inOut"
-            });
-        },
-        "(max-width: 767px)": function() {
-             const tl = gsap.timeline({
-                scrollTrigger: {
-                    trigger: "#farm-to-table",
-                    start: "top 60%",
-                    end: "bottom center",
-                    toggleActions: "play none none reverse",
-                },
-            });
-
-            tl.set(ladybug, { 
-                opacity: 1, 
-                visibility: 'visible'
-            })
-            .to(ladybug, {
-                motionPath: {
-                    path: mobilePath,
-                    align: container,
-                    alignOrigin: [0.5, 0.5],
-                    autoRotate: true,
-                },
-                duration: 10,
-                ease: "power1.inOut"
-            });
-        }
+    animatedSections.forEach(section => {
+        observer.observe(section);
     });
 }
-
-function initOilDropPathAnimation() {
-    gsap.registerPlugin(ScrollTrigger);
-    const drop = document.getElementById("svg-oil-drop");
-    const path = document.getElementById("svg-oil-track");
-    const section = document.getElementById("quality");
-
-    if (!drop || !path || !section) {
-        console.warn("油滴路徑動畫所需元素未找到，動畫已跳過。");
-        return;
-    }
-
-    gsap.to(drop, {
-        motionPath: {
-            path: path,
-            align: path,
-            alignOrigin: [0.5, 0.5],
-            autoRotate: true
-        },
-        scrollTrigger: {
-            trigger: section,
-            start: "top bottom",
-            end: "bottom top",
-            scrub: 1.2
-        },
-        ease: "none"
-    });
-}
-
-// [NEW] Wrapper for all scroll-dependent GSAP animations
-function initScrollAnimations() {
-    console.log('🚀 User interaction detected. Initializing scroll-based animations...');
-    try {
-        initLadybugAnimation();
-        initOilDropPathAnimation();
-    } catch (error) {
-        console.error("GSAP 滾動動畫初始化失敗:", error);
-    }
-}
-
-// [NEW] Controller to ensure scroll animations are initialized only once
-const initScrollAnimationsOnce = (function() {
-    let hasBeenCalled = false;
-    return function() {
-        if (!hasBeenCalled) {
-            hasBeenCalled = true;
-            
-            // Unregistering the old listeners
-            window.removeEventListener('scroll', initScrollAnimationsOnce);
-            window.removeEventListener('pointerdown', initScrollAnimationsOnce);
-
-            initScrollAnimations();
-        }
-    };
-})();
 
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -566,9 +456,8 @@ document.addEventListener('DOMContentLoaded', function() {
         lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
 
-    // [MODIFIED] App initialization is now split.
+    // [MODIFIED] Simplified App initialization.
     function initApp() {
-        // Functions that can run immediately without performance impact.
         initScrollReveal();
         initMobileNav();
         initShrinkingNav();
@@ -581,13 +470,10 @@ document.addEventListener('DOMContentLoaded', function() {
         initCustomVideoPlayer();
         initThemeSwitcher();
         initLazyLoadVideo();
+        initCssAnimations(); // Add the new lightweight animation trigger
     }
     
     // Start the main sequence
     initializeHeroExperience();
     initApp();
-
-    // [NEW] Defer heavy scroll-based animations until the first user interaction.
-    window.addEventListener('scroll', initScrollAnimationsOnce, { once: true, passive: true });
-    window.addEventListener('pointerdown', initScrollAnimationsOnce, { once: true, passive: true });
 });

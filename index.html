@@ -146,20 +146,17 @@
             </div>
         </section>
         
-        <section id="quality" class="u-reveal c-section-transition">
+        <!-- [MODIFIED] Added js-anim-trigger class and placeholder for CSS animation -->
+        <section id="quality" class="u-reveal c-section-transition js-anim-trigger">
+            <div class="c-css-oil-drop"></div>
             <div class="o-container">
                 <h2 class="u-section-title">我們的品質旅程</h2>
                 <p class="u-section-intro">
                     跟隨這滴純淨之源，探索一瓶頂級橄欖油的誕生之旅。
                 </p>
                 
+                <!-- [MODIFIED] Simplified the wrapper, removed the SVG animation track -->
                 <div class="c-scroll-narrative__wrapper">
-                    <div class="c-scroll-narrative__animation-track">
-                        <svg id="svg-oil-path-container" class="c-svg-oil-path" viewBox="0 0 100 1200" preserveAspectRatio="none">
-                            <path id="svg-oil-track" d="M50,0 C60,200 40,400 50,600 C60,800 40,1000 50,1200" fill="none" stroke="rgba(184, 134, 11, 0.2)" stroke-width="2" />
-                            <image id="svg-oil-drop" href="/images/gold_tear_icon.webp" width="40" height="60" x="30" y="-30" />
-                        </svg>
-                    </div>
                     <div class="c-timeline">
                         <details class="c-timeline__item u-reveal" data-step="1">
                             <summary class="c-timeline__summary">
@@ -264,7 +261,7 @@
                   </figure>
                   <h4 class="c-product-region__section-title">🌿 橄欖的古老搖籃</h4>
                   <p class="c-product-region__text">
-                    三千年的風土洗禮，孕育出一份來自時光的純淨禮物。
+                    三千年的風土洗禮，孕育出一份來自時光的純粹禮物。
                   </p>
                   <p class="c-product-region__text">
                     在地中海心臟地帶的北非海岸，陽光灑落在赤紅土地與蔚藍海岸之間，這裡是突尼西亞——一個擁有超過三千年橄欖種植歷史的文明古國。得天獨厚的地理位置與氣候條件，使這片土地成為全球最卓越的特級初榨橄欖油原產地之一。
@@ -288,7 +285,9 @@
                 <button class="c-video-container__play-btn" id="videoPlayBtn" aria-label="播放影片">▶</button>
             </div>
             
-            <section class="c-journey u-reveal" id="farm-to-table">
+            <!-- [MODIFIED] Added js-anim-trigger class and placeholder for CSS animation -->
+            <section class="c-journey u-reveal js-anim-trigger" id="farm-to-table">
+                <div class="c-css-ladybug"></div>
                 <div class="o-container">
                     <div class="c-journey__grid">
                         <div class="c-journey__visuals">
@@ -313,7 +312,7 @@
                         <article class="c-journey__content">
                             <h3 class="c-journey__subtitle">🏞️ 我們的故事，從陽光中的橄欖園開始</h3>
                             <p class="c-journey__text">
-                                在突尼西亞陽光普照的橄欖園，春風輕拂，千年古樹靜靜矗立。枝頭橄欖花含苞待放，預示著新一季的生命循環。這裡，孕育着我們堅持與初心的起點。
+                                在突尼西亞陽光普照的橄欖園，春風輕拂，千年古樹靜靜矗立。枝頭橄欖花含苞待放，預示着新一季的生命循環。這裡，孕育着我們堅持與初心的起點。
                             </p>
                             <h3 class="c-journey__subtitle">👐 堅持，是為了守護純粹</h3>
                             <p class="c-journey__text">
@@ -330,24 +329,8 @@
                         </article>
                     </div>
                     
-                    <div id="ladybug-animation-container" class="c-ladybug-container">
-                        <svg width="0" height="0">
-                            <defs>
-                                <path data-path="desktop" id="path-desk-1" d="M -50 150 Q 150 50 400 200 T 700 250 Q 900 300 1000 500 T 1200 800 Q 1100 950 800 1000 T 400 950 Q 100 900 -50 1100" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-2" d="M 1200 100 Q 800 250 600 450 T 400 700 Q 200 900 50 1000 T -100 1200" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-3" d="M 50 200 C 150 150, 250 250, 300 300 S 400 450, 500 500 C 600 550, 750 450, 800 500 S 900 650, 850 750 T 700 900" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-4" d="M 1000 800 C 900 850, 800 750, 750 700 S 650 550, 550 500 C 450 450, 300 550, 250 600 S 150 750, 200 850 T 350 1000" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-5" d="M 200 1100 Q 400 950 500 800 T 600 500 Q 700 300 500 200 T 200 150" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-6" d="M -50 300 Q 200 400 400 300 T 600 400 Q 800 500 1250 450 Q 800 600 600 700 T 400 800 Q 200 900 -50 850" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-7" d="M 1250 800 Q 900 700 700 800 T 500 700 Q 300 600 -50 650 Q 300 500 500 400 T 700 300 Q 900 200 1250 250" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-8" d="M 500 50 C 400 250, 600 350, 500 500 S 400 650, 500 800 C 600 950, 700 1050, 500 1150" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-9" d="M 1100 200 Q 800 400 900 600 T 700 800 Q 500 1000 200 1100" fill="none" stroke="none"/>
-                                <path data-path="desktop" id="path-desk-10" d="M 100 1000 Q 400 800 300 600 T 500 400 Q 700 200 1000 100" fill="none" stroke="none"/>
-                                <path id="ladybug-path-mobile"  d="M 20 120 Q 80 200 50 400 T 150 600 Q 80 800 200 1000 T 50 1300 Q 150 1450 350 1600" fill="none" stroke="none"/>
-                            </defs>
-                        </svg>
-                        <img src="/images/ladybug-flying.webp" alt="Green Health 綠健的友善農業代言瓢蟲" id="ladybug-actor" class="c-ladybug-actor">
-                    </div>
+                    <!-- [REMOVED] The entire complex SVG path container for the ladybug animation is gone. -->
+
                 </div>
             </section>
 
@@ -947,7 +930,7 @@
     </script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/MotionPathPlugin.min.js"></script>
+    <!-- [REMOVED] MotionPathPlugin is no longer needed -->
     
     <script src="/script.js"></script>
     <!-- The hero-animation.js script is now loaded dynamically by script.js -->
