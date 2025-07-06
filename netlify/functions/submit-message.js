@@ -40,7 +40,7 @@ export const handler = async (event) => {
         const data = JSON.parse(event.body);
         const { customer_name, customer_email, phone, subject, message } = data;
 
-        // 伺服器端資料驗證
+        // 伺服器端的資料驗證
         if (!customer_name || !customer_email || !phone || !subject || !message) {
             return createResponse(400, { success: false, error: '所有欄位皆為必填。' });
         }
@@ -51,14 +51,12 @@ export const handler = async (event) => {
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
         const resend = new Resend(process.env.RESEND_API_KEY);
 
-        // --- 核心邏輯開始 ---
-
         // 1. 將資料插入到 Supabase
         const { error: dbError } = await supabase
             .from('customer_messages')
             .insert([{
                 "customer_name_顧客姓名": customer_name,
-                "customer_email_顧客email": customer_email,
+                "customer_email_顧客email": customer_email, // 確認欄位名稱與 DB 一致
                 "phone_聯絡電話": phone,
                 "subject_問題主題": subject,
                 "message_訊息內容": message
@@ -70,14 +68,17 @@ export const handler = async (event) => {
         }
 
         // 2. 發送 Email 通知
-        // ==================== 核心修改處 ====================
-        // 將 from 地址改成您自己的、已驗證的網域！
         try {
             await resend.emails.send({
-                from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>', // 使用您自己的網域，更專業！
+                from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>',
                 to: process.env.CONTACT_EMAIL_RECEIVER,
                 subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
-                reply_to: customer_email, // 【新增】讓您可以直接在信件上按「回覆」，就會自動回覆給客戶
+                
+                // ==================== 核心修改處 ====================
+                // 新增了這個 reply_to 欄位，值是客戶填寫的 Email
+                reply_to: customer_email,
+                // ====================================================
+
                 html: `
                     <div style="font-family: sans-serif; line-height: 1.6;">
                         <h2>您有一封來自 Green Health 網站的客服訊息！</h2>
@@ -97,7 +98,6 @@ export const handler = async (event) => {
         } catch (emailError) {
             console.error('[EMAIL][SEND_ERROR]', emailError);
         }
-        // ====================================================
 
         // 3. 回傳成功的訊息給前端
         return createResponse(200, { success: true, message: '訊息已成功送出！' });
