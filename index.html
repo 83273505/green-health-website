@@ -94,6 +94,7 @@
             <li><a href="#health" class="c-navbar__link">健康益處</a></li>
             <li><a href="#recipes" class="c-navbar__link">烹飪靈感</a></li>
             <li><a href="#faq" class="c-navbar__link">常見問題</a></li>
+            <li><a href="#contact-us" class="c-navbar__link">客服聯繫</a></li> <!-- 修改點 A -->
             <li><a href="#about-us" class="c-navbar__link">關於我們</a></li>
         </ul>
         <button class="c-navbar__toggle" aria-label="開啟選單" aria-expanded="false" aria-controls="nav-links">
@@ -891,6 +892,44 @@
           
             </div>
           </section>
+
+        <!-- 修改點 C: 新增客服表單 -->
+        <section id="contact-us" class="o-container u-reveal">
+            <h2 class="u-section-title">客服聯繫</h2>
+            <p class="u-section-intro">有任何問題或建議嗎？請填寫下表，我們會盡快與您聯繫。</p>
+            
+            <form id="contact-form" class="c-contact-form" novalidate>
+                <div class="c-contact-form__group">
+                    <label for="contact-name">您的姓名</label>
+                    <input type="text" id="contact-name" name="customer_name" required>
+                </div>
+                <div class="c-contact-form__group">
+                    <label for="contact-email">您的 Email</label>
+                    <input type="email" id="contact-email" name="customer_email" required>
+                </div>
+                <div class="c-contact-form__group">
+                    <label for="contact-phone">聯絡電話</label>
+                    <input type="tel" id="contact-phone" name="phone" required>
+                </div>
+                <div class="c-contact-form__group">
+                    <label for="contact-subject">問題主題</label>
+                    <select id="contact-subject" name="subject" required>
+                        <option value="" disabled selected>請選擇問題類型...</option>
+                        <option value="訂單問題">訂單問題</option>
+                        <option value="產品問題">產品問題</option>
+                        <option value="送貨問題">送貨問題</option>
+                        <option value="貨款問題">貨款問題</option>
+                        <option value="其他問題">其他問題</option>
+                    </select>
+                </div>
+                <div class="c-contact-form__group">
+                    <label for="contact-message">訊息內容</label>
+                    <textarea id="contact-message" name="message" rows="5" required></textarea>
+                </div>
+                <button type="submit" class="c-cta-button">確認送出</button>
+                <p id="contact-form-status" class="c-contact-form__status"></p>
+            </form>
+        </section>
     
     </main>
 
@@ -907,7 +946,8 @@
             <p><strong>綠健有限公司</strong></p>
             <p>電話：<a href="tel:033591696">(03) 359-1696</a></p>
             <p>地址：桃園市龍潭區中興路九龍段355巷30弄27號1樓</p>
-            <p>客服信箱：<a href="mailto:a896214@gmail.com">a896214@gmail.com</a></p>
+            <!-- 修改點 B -->
+            <p><a href="#contact-us" class="c-footer__contact-link">點此聯繫客服</a></p>
             <div class="c-site-footer__social-icons">
                 <a href="https://www.facebook.com/share/16NWCJL951/" target="_blank" rel="noopener noreferrer" aria-label="前往我們的 Facebook 粉絲專頁"><svg viewBox="0 0 24 24"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path></svg></a>
                 <a href="https://www.instagram.com/green_health_olive/" target="_blank" rel="noopener noreferrer" aria-label="前往我們的 Instagram 專頁"><svg viewBox="0 0 24 24"><path d="M7.8,2H16.2C19.4,2 22,4.6 22,7.8V16.2A5.8,5.8 0 0,1 16.2,22H7.8C4.6,22 2,19.4 2,16.2V7.8A5.8,5.8 0 0,1 7.8,2M7.6,4A3.6,3.6 0 0,0 4,7.6V16.4C4,18.39 5.61,20 7.6,20H16.4A3.6,3.6 0 0,0 20,16.4V7.6C20,5.61 18.39,4 16.4,4H7.6M17.25,5.5A1.25,1.25 0 0,1 18.5,6.75A1.25,1.25 0 0,1 17.25,8A1.25,1.25 0 0,1 16,6.75A1.25,1.25 0 0,1 17.25,5.5M12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9Z"></path></svg></a>

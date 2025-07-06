@@ -1250,3 +1250,76 @@ details[open] .c-icon--faq-expander { transform: rotate(135deg); }
   color: #721c24;
   border-left-color: #f5c6cb;
 }
+
+/* ==========================================================================
+   新增的客服表單樣式
+   ========================================================================== */
+.c-contact-form {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 25px;
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+}
+.c-contact-form__group {
+    margin-bottom: 20px;
+}
+.c-contact-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: bold;
+    color: var(--color-dark-text);
+}
+.c-contact-form input,
+.c-contact-form textarea,
+.c-contact-form select {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-family: 'Noto Sans TC', sans-serif;
+    box-sizing: border-box;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+.c-contact-form input:focus,
+.c-contact-form textarea:focus,
+.c-contact-form select:focus {
+    outline: none;
+    border-color: var(--color-terracotta);
+    box-shadow: 0 0 0 3px rgba(233, 150, 122, 0.2);
+}
+.c-contact-form .c-cta-button {
+    width: 100%;
+}
+.c-contact-form__status {
+    margin-top: 15px;
+    text-align: center;
+    font-weight: bold;
+    min-height: 1.2em; /* 避免成功/失敗訊息出現時版面跳動 */
+}
+.c-contact-form select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.75rem center;
+    background-size: 16px 12px;
+}
+
+/* Footer Contact Link */
+.c-footer__contact-link {
+    display: inline-block;
+    padding: 5px 15px;
+    border: 1px solid var(--color-sandy-beige);
+    border-radius: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    transition: background-color 0.3s, color 0.3s;
+}
+.c-footer__contact-link:hover {
+    background-color: var(--color-sandy-beige);
+    color: var(--color-olive-green);
+    border-color: var(--color-sandy-beige);
+}
