@@ -51,12 +51,14 @@ export const handler = async (event) => {
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
         const resend = new Resend(process.env.RESEND_API_KEY);
 
+        // --- 核心邏輯開始 ---
+
         // 1. 將資料插入到 Supabase
         const { error: dbError } = await supabase
             .from('customer_messages')
             .insert([{
                 "customer_name_顧客姓名": customer_name,
-                "customer_email_顧客email": customer_email, // 確認欄位名稱與 DB 一致
+                "customer_email_顧客email": customer_email,
                 "phone_聯絡電話": phone,
                 "subject_問題主題": subject,
                 "message_訊息內容": message
@@ -73,27 +75,28 @@ export const handler = async (event) => {
                 from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>',
                 to: process.env.CONTACT_EMAIL_RECEIVER,
                 subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
+                // 保留 reply_to，對某些郵件客戶端仍有效
+                reply_to: customer_email, 
                 
                 // ==================== 核心修改處 ====================
-                // 新增了這個 reply_to 欄位，值是客戶填寫的 Email
-                reply_to: customer_email,
-                // ====================================================
-
+                // 在信件內容的最頂部，加入一個醒目的、可點擊的客戶 Email 提示
                 html: `
-                    <div style="font-family: sans-serif; line-height: 1.6;">
-                        <h2>您有一封來自 Green Health 網站的客服訊息！</h2>
-                        <hr>
-                        <p><strong>顧客姓名:</strong> ${customer_name}</p>
-                        <p><strong>顧客Email:</strong> ${customer_email}</p>
-                        <p><strong>聯絡電話:</strong> ${phone}</p>
-                        <p><strong>問題主題:</strong> ${subject}</p>
-                        <hr>
-                        <h3>訊息內容:</h3>
-                        <p style="padding: 15px; background-color: #f4f4f4; border-radius: 5px;">
-                            ${message.replace(/\n/g, '<br>')}
-                        </p>
+                    <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #333;">
+                        <div style="background-color: #fff9e6; border: 1px solid #ffcc00; padding: 15px 20px; border-radius: 8px; margin-bottom: 25px;">
+                            <strong style="font-size: 16px; color: #594a00;">請直接回覆至此客戶 Email:</strong><br>
+                            <a href="mailto:${customer_email}" style="font-size: 18px; color: #0066cc; text-decoration: none;">${customer_email}</a>
+                        </div>
+                        <h2 style="color: #00562c; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">您有一封來自 Green Health 網站的客服訊息！</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold; width: 100px;">顧客姓名:</td><td style="padding: 8px 0;">${customer_name}</td></tr>
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold;">聯絡電話:</td><td style="padding: 8px 0;">${phone}</td></tr>
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold;">問題主題:</td><td style="padding: 8px 0;">${subject}</td></tr>
+                        </table>
+                        <h3 style="color: #00562c; margin-top: 25px;">訊息內容:</h3>
+                        <p style="padding: 20px; background-color: #f7f7f7; border-radius: 8px; white-space: pre-wrap;">${message}</p>
                     </div>
                 `
+                // ====================================================
             });
         } catch (emailError) {
             console.error('[EMAIL][SEND_ERROR]', emailError);
