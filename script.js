@@ -455,6 +455,51 @@ document.addEventListener('DOMContentLoaded', function() {
 
         lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
+    
+    // --- 新增的客服表單處理邏輯 ---
+    function initializeContactForm() {
+        const form = document.getElementById('contact-form');
+        if (!form) return;
+
+        let isSubmitting = false;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (isSubmitting) return;
+
+            isSubmitting = true;
+            const status = document.getElementById('contact-form-status');
+            const submitButton = form.querySelector('button[type="submit"]');
+            const data = Object.fromEntries(new FormData(form));
+
+            submitButton.disabled = true;
+            status.textContent = '訊息傳送中...';
+            status.style.color = 'inherit';
+
+            try {
+                const res = await fetch('/.netlify/functions/submit-message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const result = await res.json();
+                if (res.ok && result.success) {
+                    form.reset();
+                    status.textContent = '✅ 感謝您的來信，我們已收到您的訊息！';
+                    status.style.color = 'green';
+                } else {
+                    status.textContent = `❌ 傳送失敗：${result.error || '未知錯誤'}`;
+                    status.style.color = 'red';
+                }
+            } catch (err) {
+                console.error('[FORM][FETCH_ERROR]', err);
+                status.textContent = '❌ 發生網路連線錯誤，請檢查您的網路並重試。';
+            } finally {
+                isSubmitting = false;
+                submitButton.disabled = false;
+            }
+        });
+    }
 
     // [MODIFIED] Simplified App initialization.
     function initApp() {
@@ -470,7 +515,8 @@ document.addEventListener('DOMContentLoaded', function() {
         initCustomVideoPlayer();
         initThemeSwitcher();
         initLazyLoadVideo();
-        initCssAnimations(); // Add the new lightweight animation trigger
+        initCssAnimations();
+        initializeContactForm(); // 呼叫新的客服表單初始化函數
     }
     
     // Start the main sequence
