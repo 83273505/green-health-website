@@ -1,84 +1,112 @@
-// 假設您使用 Node.js + nodemailer 實現直接用 Gmail 寄信
-// 若您仍用 Resend API，也可類似改 from
+// 檔案路徑: /netlify/functions/submit-message.js
 
-import nodemailer from 'nodemailer';
+// 引入 Supabase 和 Resend 的 JavaScript 客戶端工具
+import { createClient } from '@supabase/supabase-js';
+import { Resend } from 'resend';
 
+// 輔助函式: 建立一個標準化的 JSON 回應，並處理 CORS 標頭
+const createResponse = (statusCode, body) => {
+    return {
+        statusCode,
+        headers: {
+            'Access-Control-Allow-Origin': process.env.ALLOWED_ORIGIN || '*',
+            'Access-Control-Allow-Headers': 'Content-Type',
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+    };
+};
+
+// Netlify Function 的主處理函式
 export const handler = async (event) => {
-    if (event.httpMethod !== 'POST') {
+    // 處理瀏覽器發送的 CORS 預檢請求
+    if (event.httpMethod === 'OPTIONS') {
         return {
-            statusCode: 405,
-            body: JSON.stringify({ success: false, error: 'Method Not Allowed' }),
+            statusCode: 204,
+            headers: {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'POST, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type',
+            },
         };
+    }
+
+    // 只接受 POST 方法的請求
+    if (event.httpMethod !== 'POST') {
+        return createResponse(405, { success: false, error: 'Method Not Allowed' });
     }
 
     try {
         const data = JSON.parse(event.body);
         const { customer_name, customer_email, phone, subject, message } = data;
 
+        // 伺服器端的資料驗證
         if (!customer_name || !customer_email || !phone || !subject || !message) {
-            return {
-                statusCode: 400,
-                body: JSON.stringify({ success: false, error: '所有欄位皆為必填。' }),
-            };
+            return createResponse(400, { success: false, error: '所有欄位皆為必填。' });
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer_email)) {
+            return createResponse(400, { success: false, error: 'Email 格式不正確。' });
         }
 
-        // 設定 Gmail 寄件
-        const transporter = nodemailer.createTransport({
-            service: 'gmail',
-            auth: {
-                user: process.env.GMAIL_ACCOUNT, // a896214@gmail.com
-                pass: process.env.GMAIL_APP_PASSWORD, // 建議使用 App Password
-            },
-        });
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+        const resend = new Resend(process.env.RESEND_API_KEY);
 
-        // 發給內部自己
-        await transporter.sendMail({
-            from: 'Green Health 客服中心 <a896214@gmail.com>',
-            to: process.env.CONTACT_EMAIL_RECEIVER,
-            subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
-            html: `
-                <div>
-                    <p>請回覆至客戶 Email: <a href="mailto:${customer_email}">${customer_email}</a></p>
-                    <p>顧客姓名: ${customer_name}</p>
-                    <p>聯絡電話: ${phone}</p>
-                    <p>問題主題: ${subject}</p>
-                    <p>訊息內容:</p>
-                    <pre>${message}</pre>
-                    <p style="color: #888; font-size: 12px;">此信由 Green Health 客服中心發送</p>
-                </div>
-            `,
-        });
+        // --- 核心邏輯開始 ---
 
-        // 回覆給客戶
-        await transporter.sendMail({
-            from: 'Green Health 客服中心 <a896214@gmail.com>',
-            to: customer_email,
-            subject: `Green Health 客服中心 已收到您的訊息：${subject}`,
-            html: `
-                <div>
-                    <p>親愛的 ${customer_name} 您好：</p>
-                    <p>我們已收到您的訊息，客服團隊將盡快與您聯繫。</p>
-                    <h3>您提交的訊息摘要：</h3>
-                    <ul>
-                        <li>問題主題：${subject}</li>
-                        <li>聯絡電話：${phone}</li>
-                    </ul>
-                    <p>訊息內容：</p>
-                    <pre>${message}</pre>
-                    <p style="color: #888; font-size: 12px;">此信由 Green Health 客服中心發送</p>
-                </div>
-            `,
-        });
+        // 1. 將資料插入到 Supabase
+        const { error: dbError } = await supabase
+            .from('customer_messages')
+            .insert([{
+                "customer_name_顧客姓名": customer_name,
+                "customer_email_顧客email": customer_email,
+                "phone_聯絡電話": phone,
+                "subject_問題主題": subject,
+                "message_訊息內容": message
+            }]);
 
-        return {
-            statusCode: 200,
-            body: JSON.stringify({ success: true, message: '訊息已成功送出！' }),
-        };
+        if (dbError) {
+            console.error('[MESSAGE][DB_ERROR]', dbError.message);
+            return createResponse(500, { success: false, error: '無法儲存您的訊息，請稍後再試。' });
+        }
+
+        // 2. 發送 Email 通知
+        try {
+            await resend.emails.send({
+                from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>',
+                to: process.env.CONTACT_EMAIL_RECEIVER,
+                subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
+                // 保留 reply_to，對某些郵件客戶端仍有效
+                reply_to: customer_email, 
+                
+                // ==================== 核心修改處 ====================
+                // 在信件內容的最頂部，加入一個醒目的、可點擊的客戶 Email 提示
+                html: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #333;">
+                        <div style="background-color: #fff9e6; border: 1px solid #ffcc00; padding: 15px 20px; border-radius: 8px; margin-bottom: 25px;">
+                            <strong style="font-size: 16px; color: #594a00;">請直接回覆至此客戶 Email:</strong><br>
+                            <a href="mailto:${customer_email}" style="font-size: 18px; color: #0066cc; text-decoration: none;">${customer_email}</a>
+                        </div>
+                        <h2 style="color: #00562c; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px;">您有一封來自 Green Health 網站的客服訊息！</h2>
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold; width: 100px;">顧客姓名:</td><td style="padding: 8px 0;">${customer_name}</td></tr>
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold;">聯絡電話:</td><td style="padding: 8px 0;">${phone}</td></tr>
+                            <tr style="border-bottom: 1px solid #eee;"><td style="padding: 8px 0; font-weight: bold;">問題主題:</td><td style="padding: 8px 0;">${subject}</td></tr>
+                        </table>
+                        <h3 style="color: #00562c; margin-top: 25px;">訊息內容:</h3>
+                        <p style="padding: 20px; background-color: #f7f7f7; border-radius: 8px; white-space: pre-wrap;">${message}</p>
+                    </div>
+                `
+                // ====================================================
+            });
+        } catch (emailError) {
+            console.error('[EMAIL][SEND_ERROR]', emailError);
+        }
+
+        // 3. 回傳成功的訊息給前端
+        return createResponse(200, { success: true, message: '訊息已成功送出！' });
+
     } catch (err) {
-        console.error('[GMAIL][SEND_ERROR]', err);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ success: false, error: '伺服器發生錯誤。' }),
-        };
+        console.error('[FUNCTION][FATAL]', err);
+        return createResponse(500, { success: false, error: '伺服器發生錯誤。' });
     }
 };
