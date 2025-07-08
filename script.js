@@ -456,7 +456,7 @@ document.addEventListener('DOMContentLoaded', function() {
         lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
     
-    // --- 新增的客服表單處理邏輯 ---
+    // --- [MODIFIED] Customer form logic with GA4 event tracking ---
     function initializeContactForm() {
         const form = document.getElementById('contact-form');
         if (!form) return;
@@ -483,17 +483,42 @@ document.addEventListener('DOMContentLoaded', function() {
                     body: JSON.stringify(data)
                 });
                 const result = await res.json();
+
                 if (res.ok && result.success) {
                     form.reset();
                     status.textContent = '✅ 感謝您的來信，我們已收到您的訊息！';
                     status.style.color = 'green';
+
+                    // GA4 Success Event: This is your primary conversion for Google Ads.
+                    if (typeof gtag === 'function') {
+                        gtag('event', 'generate_lead', {
+                            'event_category': 'contact',
+                            'event_label': 'form_submission_success'
+                        });
+                    }
                 } else {
                     status.textContent = `❌ 傳送失敗：${result.error || '未知錯誤'}`;
                     status.style.color = 'red';
+
+                    // GA4 Optional Event: Backend validation failed (e.g., fields not filled).
+                    if (typeof gtag === 'function') {
+                        gtag('event', 'form_submission_error', {
+                            'event_category': 'contact',
+                            'event_label': 'server_validation_error'
+                        });
+                    }
                 }
             } catch (err) {
                 console.error('[FORM][FETCH_ERROR]', err);
                 status.textContent = '❌ 發生網路連線錯誤，請檢查您的網路並重試。';
+                
+                // GA4 Optional Event: Network error or backend function is down.
+                if (typeof gtag === 'function') {
+                    gtag('event', 'form_submission_error', {
+                        'event_category': 'contact',
+                        'event_label': 'network_or_system_error'
+                    });
+                }
             } finally {
                 isSubmitting = false;
                 submitButton.disabled = false;
@@ -516,7 +541,7 @@ document.addEventListener('DOMContentLoaded', function() {
         initThemeSwitcher();
         initLazyLoadVideo();
         initCssAnimations();
-        initializeContactForm(); // 呼叫新的客服表單初始化函數
+        initializeContactForm(); // Call the updated contact form function
     }
     
     // Start the main sequence
