@@ -61,26 +61,31 @@ export const handler = async (event) => {
       return createResponse(500, { success: false, error: '無法儲存您的訊息，請稍後再試。' });
     }
 
-    // 【新版通知信】寄送通知信至客服信箱
+    // 【最終修改版】寄送通知信至客服信箱
     await resend.emails.send({
+      // from: 必須是您在 Resend 驗證過的網域，我們保持不變
       from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>', 
+      
+      // to: 通知信的收件人，依然是您的免費 Gmail
       to: 'a896214@gmail.com', 
+      
       subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
       
-      // 這裡設定 reply_to，讓您按「回覆」時，收件人自動變成客戶
-      reply_to: customer_email, 
+      // 【修改點】reply_to: 當您按「回覆」時，收件人會是 james_chang@...
+      reply_to: 'james_chang@celltechtw.com', 
       
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #333;">
           <h2 style="color: #00562c;">新客服訊息通知</h2>
           
           <div style="padding: 10px; background-color: #fffbe6; border-left: 4px solid #ffc107; margin-bottom: 20px;">
-            <strong>重要：</strong>當您直接回覆此信件時，將會以 <strong>a896214@gmail.com</strong> 的名義回覆給客戶 (<strong>${customer_email}</strong>)。
+            <strong>重要：</strong>此為系統通知信。如果要回覆給客戶，請手動複製客戶信箱： <strong>${customer_email}</strong>
           </div>
 
           <table style="width: 100%; border-collapse: collapse;">
             <tr><td style="padding: 8px; font-weight: bold;">顧客姓名:</td><td>${customer_name}</td></tr>
             <tr><td style="padding: 8px; font-weight: bold;">聯絡電話:</td><td>${phone}</td></tr>
+            <tr><td style="padding: 8px; font-weight: bold;">客戶 Email:</td><td><a href="mailto:${customer_email}">${customer_email}</a></td></tr>
             <tr><td style="padding: 8px; font-weight: bold;">問題主題:</td><td>${subject}</td></tr>
           </table>
           <h3 style="color: #00562c;">訊息內容</h3>
