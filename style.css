@@ -292,7 +292,6 @@ h1.is-unveiled .c-hero__title-text {
     overflow: hidden;
 }
 .c-scroll-narrative__wrapper {
-    /* [MODIFIED] Simplified layout */
     display: block;
     position: relative;
 }
@@ -1098,7 +1097,7 @@ body[data-active-theme] .c-product__specs:hover .c-product__spec-list li:hover {
    7. Animations & Effects - 動畫與特殊效果
    ========================================================================== */
 
-/* [NEW] Lightweight CSS Animations */
+/* Lightweight CSS Animations */
 .c-css-oil-drop, .c-css-ladybug {
     position: absolute;
     opacity: 0;
@@ -1178,8 +1177,9 @@ body[data-active-theme] .c-product__specs:hover .c-product__spec-list li:hover {
 
 
 /* Icon System */
-.c-icon { display: inline-block; vertical-align: middle; width: 1em; height: 1.5em; transition: all 0.3s ease; }
+.c-icon { display: inline-block; vertical-align: middle; width: 1em; height: 1em; transition: all 0.3s ease; }
 .c-icon--title { margin-left: 0.5em; vertical-align: -0.2em; height: 1.2em; width: auto; }
+h3 .c-icon { vertical-align: -0.15em; margin-right: 0.4em;}
 h3:hover .c-icon--title { transform: scale(1.1) rotate(5deg); filter: drop-shadow(0 0 8px rgba(184, 134, 11, 0.6)); }
 .c-icon--faq-expander { width: 0.8em; height: 1.2em; color: var(--color-terracotta); transform: rotate(0deg); transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1); flex-shrink: 0; stroke: currentColor; fill: none; }
 details[open] .c-icon--faq-expander { transform: rotate(135deg); }
@@ -1190,7 +1190,7 @@ details[open] .c-icon--faq-expander { transform: rotate(135deg); }
 .c-icon--bg-tear:nth-child(4) { width: 60px; bottom: 30%; right: 35%; animation-delay: -12s; animation-duration: 17s; }
 .c-icon--bg-tear:nth-child(5) { width: 90px; top: 60%; left: 15%; animation-delay: -1s; animation-duration: 23s; }
 .c-icon--bg-tear:nth-child(6) { width: 70px; bottom: 5%; right: 5%; animation-delay: -10s; animation-duration: 20s; }
-@keyframes float-tear { 0% { transform: translateY(0px) rotate(-5deg); } 50% { transform: translateY(-25px) rotate(5deg); } 100% { transform: translateY(0px) rotate(-5deg); } }
+@keyframes float-tear { 0% { transform: translateY(0px) rotate(-5deg); } 50% { transform: translateY(-25px) rotate(5deg); } 100% { translateY(0px) rotate(-5deg); } }
 
 /* ==========================================================================
    8. Overrides & Responsive - 響應式與樣式覆蓋
@@ -1252,7 +1252,7 @@ details[open] .c-icon--faq-expander { transform: rotate(135deg); }
 }
 
 /* ==========================================================================
-   新增的客服表單樣式
+   客服表單樣式
    ========================================================================== */
 .c-contact-form {
     max-width: 600px;
@@ -1322,4 +1322,184 @@ details[open] .c-icon--faq-expander { transform: rotate(135deg); }
     background-color: var(--color-sandy-beige);
     color: var(--color-olive-green);
     border-color: var(--color-sandy-beige);
+}
+
+/* [REVISED] Tabbed Contact Section Styles */
+/* ==========================================================================
+   客服中心頁籤樣式
+   ========================================================================== */
+.c-contact-container {
+    max-width: 800px;
+    margin: 0 auto;
+    background-color: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.05);
+    overflow: hidden;
+}
+
+.c-contact-tabs {
+    display: flex;
+    background-color: #f8f8f4;
+    border-bottom: 1px solid #eee;
+}
+
+.c-contact-tab {
+    flex-grow: 1;
+    padding: 15px 20px;
+    font-size: clamp(1rem, 3vw, 1.1rem);
+    font-weight: 600;
+    text-align: center;
+    color: var(--color-dark-text);
+    background-color: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-bottom: 3px solid transparent;
+}
+
+.c-contact-tab:hover {
+    background-color: #fdfdf4;
+    color: var(--color-terracotta);
+}
+
+.c-contact-tab.is-active {
+    color: var(--color-olive-green);
+    border-bottom-color: var(--color-terracotta);
+    background-color: #fff;
+}
+
+.c-contact-content {
+    padding: clamp(25px, 5vw, 40px);
+}
+
+.c-contact-panel {
+    display: none;
+}
+
+.c-contact-panel.is-active {
+    display: block;
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.c-contact-info-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 30px;
+    align-items: start;
+}
+
+@media (min-width: 768px) {
+    .c-contact-info-grid {
+        grid-template-columns: 1fr 1.5fr;
+    }
+}
+
+.c-faq-links-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 15px;
+}
+@media (min-width: 480px) {
+    .c-faq-links-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.c-contact-info-card, .c-faq-link-card {
+    text-decoration: none;
+    color: inherit;
+    background-color: #fdfaf6;
+    padding: 25px;
+    border-radius: 12px;
+    text-align: center;
+    border: 1px solid #f0e9dc;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.c-faq-link-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(85, 107, 47, 0.08);
+    border-color: var(--color-terracotta);
+}
+
+.c-contact-info-card h3, .c-faq-link-section h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+    color: var(--color-olive-green);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+.c-contact-info-card h3 .c-icon, .c-faq-link-section h3 .c-icon {
+    flex-shrink: 0;
+}
+
+.c-contact-info-card .info {
+    font-size: 1.2em;
+    font-weight: 600;
+    margin-bottom: 5px;
+    word-break: break-all;
+}
+
+.c-contact-info-card .hours, .c-faq-link-section .hours {
+    font-size: 0.9em;
+    color: #777;
+    margin-bottom: 20px;
+    flex-grow: 1;
+}
+
+.c-contact-info-card .c-cta-button {
+    width: auto;
+    padding: 10px 30px;
+    margin: 0 auto;
+}
+
+.c-faq-link-section {
+    text-align: center;
+}
+
+.c-faq-link-card {
+    padding: 15px;
+    justify-content: center;
+}
+
+.c-faq-link-card h4 {
+    color: var(--color-olive-green);
+    margin: 0 0 5px 0;
+    font-size: 1.1em;
+}
+.c-faq-link-card p {
+    font-size: 0.9em;
+    color: #666;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.c-contact-form {
+    padding: 0;
+    box-shadow: none;
+    max-width: none;
+    background-color: transparent;
+}
+
+.c-contact-service-hours {
+    margin-top: 25px;
+    text-align: center;
+    font-size: 0.9em;
+    padding: 15px;
+    background-color: #f8f8f4;
+    border-radius: 8px;
+    color: #666;
+}
+.c-contact-service-hours p {
+    margin: 0;
+    line-height: 1.6;
 }

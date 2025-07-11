@@ -35,7 +35,7 @@
     }
 })();
 
-// [NEW] Lightweight CSS animation trigger
+// Lightweight CSS animation trigger
 function initCssAnimations() {
     const animatedSections = document.querySelectorAll('.js-anim-trigger');
     if (animatedSections.length === 0) return;
@@ -456,7 +456,6 @@ document.addEventListener('DOMContentLoaded', function() {
         lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
     
-    // --- [MODIFIED] Customer form logic with GA4 event tracking ---
     function initializeContactForm() {
         const form = document.getElementById('contact-form');
         if (!form) return;
@@ -489,7 +488,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     status.textContent = '✅ 感謝您的來信，我們已收到您的訊息！';
                     status.style.color = 'green';
 
-                    // GA4 Success Event: This is your primary conversion for Google Ads.
                     if (typeof gtag === 'function') {
                         gtag('event', 'generate_lead', {
                             'event_category': 'contact',
@@ -500,7 +498,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     status.textContent = `❌ 傳送失敗：${result.error || '未知錯誤'}`;
                     status.style.color = 'red';
 
-                    // GA4 Optional Event: Backend validation failed (e.g., fields not filled).
                     if (typeof gtag === 'function') {
                         gtag('event', 'form_submission_error', {
                             'event_category': 'contact',
@@ -512,7 +509,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 console.error('[FORM][FETCH_ERROR]', err);
                 status.textContent = '❌ 發生網路連線錯誤，請檢查您的網路並重試。';
                 
-                // GA4 Optional Event: Network error or backend function is down.
                 if (typeof gtag === 'function') {
                     gtag('event', 'form_submission_error', {
                         'event_category': 'contact',
@@ -526,7 +522,31 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // [MODIFIED] Simplified App initialization.
+    // [NEW] Initialize the contact tabs functionality
+    function initContactTabs() {
+        const tabsContainer = document.querySelector('.c-contact-tabs');
+        if (!tabsContainer) return;
+
+        const tabs = tabsContainer.querySelectorAll('.c-contact-tab');
+        const panels = document.querySelectorAll('.c-contact-panel');
+
+        tabsContainer.addEventListener('click', (e) => {
+            const clickedTab = e.target.closest('.c-contact-tab');
+            if (!clickedTab) return;
+
+            const targetPanelId = 'panel-' + clickedTab.dataset.tab;
+
+            // Update tabs
+            tabs.forEach(tab => tab.classList.remove('is-active'));
+            clickedTab.classList.add('is-active');
+
+            // Update panels
+            panels.forEach(panel => {
+                panel.classList.toggle('is-active', panel.id === targetPanelId);
+            });
+        });
+    }
+
     function initApp() {
         initScrollReveal();
         initMobileNav();
@@ -541,7 +561,8 @@ document.addEventListener('DOMContentLoaded', function() {
         initThemeSwitcher();
         initLazyLoadVideo();
         initCssAnimations();
-        initializeContactForm(); // Call the updated contact form function
+        initializeContactForm();
+        initContactTabs();
     }
     
     // Start the main sequence
