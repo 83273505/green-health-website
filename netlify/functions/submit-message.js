@@ -61,25 +61,25 @@ export const handler = async (event) => {
       return createResponse(500, { success: false, error: '無法儲存您的訊息，請稍後再試。' });
     }
 
-    // 【最終修改版】寄送通知信至客服信箱
+    // --- 【最終更新版】---
     await resend.emails.send({
-      // from: 必須是您在 Resend 驗證過的網域，我們保持不變
+      // 寄件人：顯示為客服中心，使用 service@... 的名義
       from: 'Green Health 客服中心 <service@greenhealthtw.com.tw>', 
       
-      // to: 通知信的收件人，依然是您的免費 Gmail
-      to: 'a896214@gmail.com', 
+      // 收件人：寄到您的主帳號 sales@... (因為 service@... 的信本來就會到這裡)
+      to: 'sales@greenhealthtw.com.tw', 
       
       subject: `新客服訊息: [${subject}] 來自 ${customer_name}`,
       
-      // 【修改點】reply_to: 當您按「回覆」時，收件人會是 james_chang@...
-      reply_to: 'james_chang@celltechtw.com', 
+      // 當您直接回覆時，收件人會是客戶的 Email
+      reply_to: customer_email, 
       
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.7; color: #333;">
           <h2 style="color: #00562c;">新客服訊息通知</h2>
           
-          <div style="padding: 10px; background-color: #fffbe6; border-left: 4px solid #ffc107; margin-bottom: 20px;">
-            <strong>重要：</strong>此為系統通知信。如果要回覆給客戶，請手動複製客戶信箱： <strong>${customer_email}</strong>
+          <div style="padding: 10px; background-color: #e8f0fe; border-left: 4px solid #1a73e8; margin-bottom: 20px;">
+            <strong>提示：</strong> 您可以直接回覆此郵件，收件人將會是客戶 (${customer_email})。
           </div>
 
           <table style="width: 100%; border-collapse: collapse;">
