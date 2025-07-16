@@ -1,10 +1,13 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # 檔案路徑: /netlify.toml
 
 # ===============================================
 # ↓↓↓ 我們新增的攔截規則，放在最上面 ↓↓↓
 # ===============================================
 =======
+=======
+>>>>>>> Stashed changes
 # netlify.toml - 統一設定所有環境，靜態部署專用
 
 [build]
@@ -12,6 +15,9 @@
   publish = "/"                        # 根目錄即為靜態檔案目錄
   functions = "netlify/functions"      # 指定 Lambda 函式所在目錄
 
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
 [[redirects]]
   from = "/GreenHealth-Auth-Module/config.js"
@@ -19,12 +25,16 @@
   status = 404
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
 # ===============================================
 # ↓↓↓ 您原本就有的設定，維持不變 ↓↓↓
 # ===============================================
 
 # Netlify 開發環境設定
+=======
+# 本地開發環境設定（提供給 `netlify dev` 使用）
+>>>>>>> Stashed changes
 =======
 # 本地開發環境設定（提供給 `netlify dev` 使用）
 >>>>>>> Stashed changes
