@@ -1,25 +1,38 @@
+<<<<<<< Updated upstream
 # 檔案路徑: /netlify.toml
 
 # ===============================================
 # ↓↓↓ 我們新增的攔截規則，放在最上面 ↓↓↓
 # ===============================================
+=======
+# netlify.toml - 統一設定所有環境，靜態部署專用
+
+[build]
+  command = "echo 'No build needed'"   # 不需要 npm install / build
+  publish = "/"                        # 根目錄即為靜態檔案目錄
+  functions = "netlify/functions"      # 指定 Lambda 函式所在目錄
+
+>>>>>>> Stashed changes
 [[redirects]]
   from = "/GreenHealth-Auth-Module/config.js"
   to = "/404.html"
   status = 404
 
+<<<<<<< Updated upstream
 
 # ===============================================
 # ↓↓↓ 您原本就有的設定，維持不變 ↓↓↓
 # ===============================================
 
 # Netlify 開發環境設定
+=======
+# 本地開發環境設定（提供給 `netlify dev` 使用）
+>>>>>>> Stashed changes
 [dev]
-  # 告訴 Netlify 這是靜態網站，發布目錄是根目錄
   framework = "#static"
   publish = "."
 
-# Netlify 建置設定
-[build]
-  # 【核心修改處】: 明確地告訴 Netlify，我們的雲端函式放在哪個資料夾
-  functions = "netlify/functions"
+# 可選：如果有特定的環境變數來源，也可以加入
+# [context.production.environment]
+#   SUPABASE_URL = "https://your.supabase.co"
+#   SUPABASE_ANON_KEY = "your-anon-key"
