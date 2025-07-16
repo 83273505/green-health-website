@@ -1,0 +1,20 @@
+# netlify.toml - 統一設定所有部署環境，靜態網站 + Functions 架構
+
+[build]
+  command = "echo 'No build needed'"   # 告訴 Netlify 不需要執行 npm build 等
+  publish = "/"                        # 靜態檔案發布目錄為根目錄
+  functions = "netlify/functions"      # Lambda 函式所在目錄
+
+[[redirects]]
+  from = "/GreenHealth-Auth-Module/config.js"
+  to = "/404.html"
+  status = 404
+
+[dev]
+  framework = "#static"
+  publish = "."
+
+# 以下僅供參考，如需部署時注入環境變數，可開啟並設定：
+# [context.production.environment]
+#   SUPABASE_URL = "https://your-project.supabase.co"
+#   SUPABASE_ANON_KEY = "your-anon-key"
