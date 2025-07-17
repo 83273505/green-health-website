@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>載入中...</title>
+    <script src="/GreenHealth-Auth-Module/config.js"></script>
+    <style> 
+        body { font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f4f4f9; color: #555; } 
+    </style>
+</head>
+<body>
+    <p>正在將您導向，請稍候...</p>
+<script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    const supabaseClient = createClient(window.SUPABASE_CONFIG.URL, window.SUPABASE_CONFIG.ANON_KEY);
+
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && session)) {
+             window.location.replace('/GreenHealth-Auth-Module/dashboard.html');
+        } else if (event === 'INITIAL_SESSION' && !session) {
+             window.location.replace('/GreenHealth-Auth-Module/login.html');
+        }
+    });
+</script>
+</body>
+</html>
