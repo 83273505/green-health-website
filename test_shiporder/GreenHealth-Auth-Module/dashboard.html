@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>會員主頁 - Green Health 綠健</title>
+
+    <!-- Facebook Open Graph + SEO 標籤 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="會員主頁 - Green Health 綠健" />
+    <meta property="og:description" content="歡迎回到 Green Health 會員中心。" />
+    <meta property="og:url" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/GreenHealth-Auth-Module/dashboard.html" />
+    <meta property="og:image" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/assets/og-preview.jpg" />
+    <meta property="og:type" content="website" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <script src="/GreenHealth-Auth-Module/config.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f4f9; margin: 0; color: #333; }
+        .container { background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { margin-bottom: 1rem; }
+        p { font-size: 1.1rem; line-height: 1.6; }
+        span { font-weight: bold; color: #0056b3; }
+        button { width: 100%; padding: 0.85rem; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background-color: 0.3s; background-color: #dc3545; color: white; margin-top: 2rem; }
+        .loading-text { font-size: 1.2rem; color: #555; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="loading-view"><p class="loading-text">資料載入中，請稍候...</p></div>
+        <div id="dashboard-view" style="display: none;">
+            <h1>歡迎回來, <span id="user-name"></span>!</h1>
+            <p>您的 Email 是: <span id="user-email"></span></p>
+            <p>您的電話是: <span id="user-phone"></span></p>
+            <p>您的生日是: <span id="user-birthday"></span></p>
+            <button id="logout-button">登出</button>
+        </div>
+    </div>
+<script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    const supabaseClient = createClient(window.SUPABASE_CONFIG.URL, window.SUPABASE_CONFIG.ANON_KEY);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const loadingView = document.getElementById('loading-view');
+        const dashboardView = document.getElementById('dashboard-view');
+        const logoutButton = document.getElementById('logout-button');
+
+        async function checkUserProfile() {
+            const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession();
+            if (sessionError || !session) { 
+                window.location.href = '/GreenHealth-Auth-Module/login.html'; 
+                return; 
+            }
+            
+            const user = session.user;
+            const { data: profile, error } = await supabaseClient.from('profiles').select('*').eq('id', user.id).single();
+            
+            if (error && error.code !== 'PGRST116') {
+                if(loadingView) loadingView.textContent = '讀取資料失敗：' + error.message;
+                return;
+            }
+            
+            if (!profile || !profile.is_profile_complete) { 
+                window.location.href = '/GreenHealth-Auth-Module/profile-setup.html'; 
+            } else { 
+                displayDashboard(profile, user); 
+            }
+        }
+
+        function displayDashboard(profile, user) {
+            if(loadingView) loadingView.style.display = 'none';
+            if(dashboardView) dashboardView.style.display = 'block';
+            if(document.getElementById('user-name')) document.getElementById('user-name').textContent = profile.name || '使用者';
+            if(document.getElementById('user-email')) document.getElementById('user-email').textContent = user.email || 'N/A';
+            if(document.getElementById('user-phone')) document.getElementById('user-phone').textContent = profile.phone || '尚未提供';
+            if(document.getElementById('user-birthday')) document.getElementById('user-birthday').textContent = profile.birthday || '尚未提供';
+        }
+
+        if(logoutButton) {
+            logoutButton.addEventListener('click', async () => {
+                await supabaseClient.auth.signOut();
+                window.location.href = '/GreenHealth-Auth-Module/login.html';
+            });
+        }
+        
+        checkUserProfile();
+    });
+</script>
+</body>
+</html>
