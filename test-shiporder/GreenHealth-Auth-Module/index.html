@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>會員中心 - Green Health 綠健</title>
+
+    <!-- Facebook Open Graph + SEO 標籤 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="會員登入/註冊 - Green Health 綠健" />
+    <meta property="og:description" content="登入或加入 Green Health 會員。" />
+    <meta property="og:url" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/GreenHealth-Auth-Module/login.html" />
+    <meta property="og:image" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/assets/og-preview.jpg" />
+    <meta property="og:type" content="website" />
+    <meta name="robots" content="index, follow" />
+
+    <script src="./config.js"></script>
+
+    <style>
+        :root { --primary-color: #4CAF50; --primary-color-dark: #45a049; --text-color: #333; --border-color: #ddd; --background-color: #f9f9f9; }
+        body { font-family: 'Helvetica Neue', Arial, 'PingFang TC', 'Microsoft JhengHei', sans-serif; display: flex; justify-content: center; align-items: center; min-height: 100vh; background-color: var(--background-color); margin: 0; padding: 1rem; box-sizing: border-box; }
+        .auth-container { background: white; padding: 2rem 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 420px; }
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 2rem; }
+        .tab-link { flex: 1; padding: 1rem 0; text-align: center; background: none; border: none; font-size: 1.1rem; cursor: pointer; color: #888; border-bottom: 3px solid transparent; transition: all 0.2s; }
+        .tab-link.active { color: var(--text-color); font-weight: 600; border-bottom-color: var(--primary-color); }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        form { display: flex; flex-direction: column; gap: 1rem; }
+        input[type="email"], input[type="password"] { width: 100%; padding: 0.9rem; border: 1px solid var(--border-color); border-radius: 8px; font-size: 1rem; box-sizing: border-box; }
+        .submit-btn { width: 100%; padding: 0.9rem; border: none; border-radius: 8px; font-size: 1.1rem; cursor: pointer; background-color: var(--primary-color); color: white; margin-top: 1rem; font-weight: 600; }
+        .submit-btn:hover { background-color: var(--primary-color-dark); }
+        .forgot-password-link { text-align: right; font-size: 0.85rem; margin-top: 0.5rem; }
+        .forgot-password-link a { color: #555; text-decoration: none; }
+        .divider { display: flex; align-items: center; text-align: center; color: #aaa; margin: 2rem 0; }
+        .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 1px solid #eee; }
+        .divider:not(:empty)::before { margin-right: .5em; }
+        .divider:not(:empty)::after { margin-left: .5em; }
+        button.social-btn { width: 100%; padding: 0.9rem; border-radius: 8px; font-size: 1rem; cursor: pointer; border: 1px solid var(--border-color); background: white; color: var(--text-color); display: flex; align-items: center; justify-content: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+        .facebook-btn { background-color: #1877F2; color: white; border-color: #1877F2; }
+        #auth-message { margin-top: 1.5rem; font-size: 0.9rem; min-height: 20px; color: #d9534f; text-align: center; font-weight: 500; }
+        .terms-consent-section { margin-top: 1.5rem; text-align: left; }
+        .terms-consent-group { display: flex; align-items: start; gap: 0.75rem; }
+        .terms-consent-group label { font-size: 0.85rem; color: #555; line-height: 1.5; }
+        .terms-consent-group a { color: var(--primary-color); text-decoration: none; }
+        .terms-consent-group input { margin-top: 4px; }
+    </style>
+</head>
+<body id="page-login">
+    <div class="auth-container">
+        <div class="tabs">
+            <button class="tab-link active" data-tab="login">會員登入</button>
+            <button class="tab-link" data-tab="signup">立即加入</button>
+        </div>
+        <div id="login" class="tab-content active">
+            <form id="login-form">
+                <input type="email" id="login-email" placeholder="電子郵件" required>
+                <input type="password" id="login-password" placeholder="密碼" required>
+                <div class="forgot-password-link"><a href="./forgot-password.html">忘記密碼？</a></div>
+                <button type="submit" class="submit-btn">登入</button>
+            </form>
+        </div>
+        <div id="signup" class="tab-content">
+            <form id="signup-form">
+                <input type="email" id="signup-email" placeholder="電子郵件" required>
+                <input type="password" id="signup-password" placeholder="密碼 (至少6位數)" required>
+                <input type="password" id="signup-password-confirm" placeholder="確認密碼" required>
+                <button type="submit" class="submit-btn">加入會員</button>
+            </form>
+        </div>
+        <div class="divider">或</div>
+        <button type="button" id="google-login-button" class="social-btn">
+             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="18" width="18" viewBox="0 0 488 512"><path fill="#4285F4" d="M488 261.8C488 403.3 381.5 512 244 512 109.8 512 0 402.2 0 261.8 0 121.3 109.8 11.8 244 11.8c70.4 0 120.5 30.7 155.1 63.5l-63.5 61.8C303.4 111.4 276.1 98.4 244 98.4c-83.3 0-151.7 68.3-151.7 163.4s68.4 163.4 151.7 163.4c97.1 0 134.3-70.8 138.6-105.7H244v-78.8h244z"/></svg>
+            使用 Google 帳號登入/註冊
+        </button>
+        <button type="button" id="facebook-login-button" class="social-btn facebook-btn">
+             <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" height="18" width="18" viewBox="0 0 512 512"><path fill="currentColor" d="M504 256C504 119 393 8 256 8S8 119 8 256c0 123.78 90.69 226.38 209.25 245V327.69h-63V256h63v-54.64c0-62.15 37-96.48 93.67-96.48 27.14 0 55.52 4.84 55.52 4.84v61h-31.28c-30.8 0-40.41 19.12-40.41 38.73V256h68.78l-11 71.69h-57.78V501C413.31 482.38 504 379.78 504 256z"/></svg>
+            使用 Facebook 帳號登入/註冊
+        </button>
+        <div id="auth-message"></div>
+        <div class="terms-consent-section">
+            <div class="terms-consent-group">
+                <input type="checkbox" id="terms-consent-checkbox">
+                <label for="terms-consent-checkbox">
+                    點擊上方任一按鈕繼續，即代表您已詳閱並同意我們的
+                    <a href="./terms.html" target="_blank">《服務條款》</a>與<a href="./terms.html" target="_blank">《隱私權政策》</a>。
+                </label>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

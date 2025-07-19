@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>完善您的個人資料 - Green Health 綠健</title>
+
+    <!-- Facebook Open Graph + SEO 標籤 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta property="og:title" content="完善您的個人資料 - Green Health 綠健" />
+    <meta property="og:description" content="只差一步！請完成您的個人資料以享受完整服務。" />
+    <meta property="og:url" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/GreenHealth-Auth-Module/profile-setup.html" />
+    <meta property="og:image" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/assets/og-preview.jpg" />
+    <meta property="og:type" content="website" />
+    <meta name="robots" content="noindex, nofollow" />
+
+    <script src="/GreenHealth-Auth-Module/config.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background-color: #f4f4f9; margin: 0; color: #333; }
+        .container { background: white; padding: 2.5rem; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 100%; max-width: 420px; text-align: center; }
+        h1 { margin-bottom: 1rem; }
+        p { color: #666; margin-bottom: 2rem; }
+        form { display: flex; flex-direction: column; gap: 1.2rem; }
+        input { padding: 0.8rem 1rem; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; }
+        button { width: 100%; padding: 0.85rem; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; background-color: #007bff; color: white; margin-top: 1rem; transition: background-color 0.2s; }
+        button:disabled { background-color: #a0cfff; cursor: not-allowed; }
+        #message { margin-top: 1.5rem; font-size: 0.95rem; min-height: 22px; color: #d9534f; }
+        #message.success { color: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>就差一步！</h1>
+        <p>請完成您的個人資料，以享受完整的服務。</p>
+        <form id="profile-form">
+            <input type="text" id="name-input" placeholder="您的姓名 *" required>
+            <input type="tel" id="phone-input" placeholder="手機號碼 (選填)">
+            <input type="text" onfocus="(this.type='date')" onblur="(this.type='text')" id="birthday-input" placeholder="生日 (選填)">
+            <button type="submit" id="submit-button">儲存並繼續</button>
+        </form>
+        <div id="message"></div>
+    </div>
+<script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+    const supabaseClient = createClient(window.SUPABASE_CONFIG.URL, window.SUPABASE_CONFIG.ANON_KEY);
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const profileForm = document.getElementById('profile-form');
+        const nameInput = document.getElementById('name-input');
+        const phoneInput = document.getElementById('phone-input');
+        const birthdayInput = document.getElementById('birthday-input');
+        const messageDiv = document.getElementById('message');
+        const submitButton = document.getElementById('submit-button');
+        let currentUser = null;
+
+        async function checkAuthAndPrefill() {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (!session) {
+                window.location.href = '/GreenHealth-Auth-Module/login.html';
+                return;
+            } 
+            currentUser = session.user;
+            const { data: profile } = await supabaseClient.from('profiles').select('name').eq('id', currentUser.id).single();
+            if (profile?.name) { nameInput.value = profile.name; } 
+            else if (currentUser.user_metadata?.full_name) { nameInput.value = currentUser.user_metadata.full_name; }
+        }
+        
+        async function handleProfileUpdate(event) {
+            event.preventDefault();
+            if (!currentUser || submitButton.disabled) return;
+            submitButton.disabled = true;
+            submitButton.textContent = '儲存中...';
+            messageDiv.textContent = '';
+            
+            const updates = {
+                name: nameInput.value, phone: phoneInput.value || null, birthday: birthdayInput.value || null,
+                updated_at: new Date().toISOString(), is_profile_complete: true
+            };
+            const { error } = await supabaseClient.from('profiles').update(updates).eq('id', currentUser.id);
+
+            if (error) {
+                messageDiv.textContent = '儲存失敗：' + error.message;
+                submitButton.disabled = false;
+                submitButton.textContent = '儲存並繼續';
+            } else {
+                messageDiv.textContent = '儲存成功！正在將您導向會員主頁...';
+                setTimeout(() => { window.location.href = '/GreenHealth-Auth-Module/dashboard.html'; }, 1500);
+            }
+        }
+
+        checkAuthAndPrefill();
+        if(profileForm) profileForm.addEventListener('submit', handleProfileUpdate);
+    });
+</script>
+</body>
+</html>
