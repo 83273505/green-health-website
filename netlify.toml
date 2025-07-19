@@ -1,20 +1,53 @@
-# netlify.toml - 統一設定所有部署環境，靜態網站 + Functions 架構
+# ==============================================================================
+# Green Health 專案 Netlify 設定檔
+# ==============================================================================
 
+# [build]
+# 這是全局的、預設的建置設定。
+# 它會應用於您的正式產品分支 (main) 以及所有未被特殊指定的其他分支。
 [build]
-  command = "echo 'No build needed'"   # 告訴 Netlify 不需要執行 npm build 等
-  publish = "/"                        # 靜態檔案發布目錄為根目錄
-  functions = "netlify/functions"      # Lambda 函式所在目錄
+  # 對於一個沒有建置步驟（如 npm run build）的純靜態網站，可以這樣寫。
+  command = "echo '靜態網站，無需執行建置指令'"
+  
+  # 【全局設定】預設的發布目錄。
+  # 對於 'main' 分支，這將是專案的根目錄，用以顯示您的主網站。
+  publish = "/"
+  
+  # Netlify Functions (無伺服器函數) 所在的資料夾。
+  functions = "netlify/functions"
 
+# ------------------------------------------------------------------------------
+
+# [context.test-shiporder]
+# 這是一個「分支特定」的部署上下文 (Deploy Context)。
+# 這一段的設定「只會」在部署 "test-shiporder" 分支時生效，
+# 並會「覆蓋」上面 [build] 區塊中的同名設定。
+[context.test-shiporder]
+  # 告訴 Netlify，當且僅當部署 "test-shiporder" 分支時，
+  # 發布目錄是 "GreenHealth-Auth-Module"。
+  # 這將我們的會員模組獨立出來，以便進行單獨測試。
+  publish = "GreenHealth-Auth-Module"
+
+# ------------------------------------------------------------------------------
+
+# [[redirects]]
+# 您可以在這裡定義重定向或重寫規則。
+# 這個範例規則是為了阻止外部直接訪問 config.js 檔案。
 [[redirects]]
   from = "/GreenHealth-Auth-Module/config.js"
   to = "/404.html"
   status = 404
 
+# [dev]
+# 這是針對 Netlify Dev 本地開發環境的設定。
 [dev]
   framework = "#static"
   publish = "."
 
-# 以下為選用設定，部署時可依需求啟用環境變數
 # [context.production.environment]
-#   SUPABASE_URL = "https://your-project.supabase.co"
-#   SUPABASE_ANON_KEY = "your-anon-key"
+# 這是為「正式環境」設定環境變數的範例。
+# 除非您想透過此檔案管理環境變數，否則請保持註解狀態。
+# 建議在 Netlify 的網頁介面中設定，更為安全。
+# [context.production.environment]
+#   SUPABASE_URL = "您的正式環境_SUPABASE_URL"
+#   SUPABASE_ANON_KEY = "您的正式環境_SUPABASE_ANON_KEY"
