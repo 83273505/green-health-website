@@ -3,14 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>會員主頁 - Green Health 綠健</title>
-
-    <!-- Facebook Open Graph + SEO 標籤 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta property="og:title" content="會員主頁 - Green Health 綠健" />
-    <meta property="og:description" content="歡迎回到 Green Health 會員中心。" />
-    <meta property="og:url" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/GreenHealth-Auth-Module/dashboard.html" />
-    <meta property="og:image" content="https://gh-test--jazzy-strudel-bcaade.netlify.app/assets/og-preview.jpg" />
-    <meta property="og:type" content="website" />
     <meta name="robots" content="noindex, nofollow" />
 
     <script src="./config.js"></script>
@@ -20,8 +13,32 @@
         h1 { margin-bottom: 1rem; }
         p { font-size: 1.1rem; line-height: 1.6; }
         span { font-weight: bold; color: #0056b3; }
-        button { width: 100%; padding: 0.85rem; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background-color 0.3s; background-color: #dc3545; color: white; margin-top: 2rem; }
         .loading-text { font-size: 1.2rem; color: #555; }
+
+        /* 【新增部分】按鈕樣式 */
+        .action-button {
+            display: block; /* 讓 a 標籤像按鈕一樣佔滿整行 */
+            text-decoration: none;
+            width: 100%;
+            box-sizing: border-box;
+            padding: 0.85rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            margin-top: 1rem;
+        }
+        .btn-manage-address {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-logout {
+            background-color: #dc3545;
+            color: white;
+            margin-top: 0.75rem; /* 調整與上方按鈕的間距 */
+        }
     </style>
 </head>
 <body id="page-dashboard">
@@ -32,7 +49,10 @@
             <p>您的 Email 是: <span id="user-email"></span></p>
             <p>您的電話是: <span id="user-phone"></span></p>
             <p>您的生日是: <span id="user-birthday"></span></p>
-            <button id="logout-button">登出</button>
+            
+            <!-- 【修改部分】將 button 改為 a 標籤，並新增管理地址按鈕 -->
+            <a href="./address.html" class="action-button btn-manage-address">管理收貨地址</a>
+            <button id="logout-button" class="action-button btn-logout">登出</button>
         </div>
     </div>
     
