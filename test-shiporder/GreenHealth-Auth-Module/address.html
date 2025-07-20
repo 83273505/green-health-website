@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>管理收貨地址 - Green Health</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    
+    <script src="./config.js"></script> 
+    
+    <style>
+        :root { --primary-color: #4CAF50; --border-color: #ddd; --text-color: #333; --background-color: #f9f9f9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--background-color); color: var(--text-color); margin: 0; padding: 1.5rem; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+        h1, h2 { color: #222; }
+        .address-list { margin-top: 1.5rem; }
+        .address-item { border: 1px solid var(--border-color); padding: 1.25rem; margin-bottom: 1rem; border-radius: 8px; position: relative; }
+        .address-item.default { border-color: var(--primary-color); border-width: 2px; }
+        .address-item p { margin: 0.25rem 0; }
+        .actions { margin-top: 1rem; display: flex; gap: 0.75rem; }
+        .actions button { padding: 0.5rem 1rem; cursor: pointer; border: 1px solid var(--border-color); background: #f5f5f5; border-radius: 6px; }
+        .actions button.primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .address-form { margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #eee; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label { margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 500; }
+        .form-group input { padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; }
+        .form-actions { margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; }
+        #back-link { display: inline-block; margin-bottom: 1rem; color: var(--primary-color); text-decoration: none; }
+        #loading-indicator { text-align: center; padding: 2rem; font-size: 1.2rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body id="page-address-management">
+
+    <div class="container">
+        <a href="./dashboard.html" id="back-link">&larr; 返回會員主頁</a>
+        <h1>管理收貨地址</h1>
+
+        <div id="loading-indicator">載入地址中...</div>
+
+        <div id="address-list" class="address-list">
+            <!-- 地址列表將會動態插入到這裡 -->
+        </div>
+        
+        <button id="add-new-address-btn" class="actions button primary" style="width: 100%; padding: 0.8rem; font-size: 1rem; margin-top: 1.5rem;">新增地址</button>
+
+        <div id="address-form-container" class="address-form hidden">
+            <h2 id="form-title">新增新地址</h2>
+            <form id="address-form">
+                <input type="hidden" id="address-id">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="recipient_name">收件人姓名</label>
+                        <input type="text" id="recipient_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="phone_number">聯絡電話</label>
+                        <input type="text" id="phone_number" required>
+                    </div>
+                </div>
+                <div class="form-grid" style="margin-top: 1rem;">
+                    <div class="form-group">
+                        <label for="postal_code">郵遞區號</label>
+                        <input type="text" id="postal_code" required>
+                    </div>
+                     <div class="form-group">
+                        <label for="city">縣市</label>
+                        <input type="text" id="city" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="district">鄉鎮市區</label>
+                        <input type="text" id="district" required>
+                    </div>
+                </div>
+                <div class="form-group" style="margin-top: 1rem;">
+                    <label for="street_address">街道地址</label>
+                    <input type="text" id="street_address" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancel-btn">取消</button>
+                    <button type="submit" class="primary">儲存地址</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>
