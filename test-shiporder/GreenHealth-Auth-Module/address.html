@@ -24,11 +24,12 @@
         .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; }
         .form-group { display: flex; flex-direction: column; }
         .form-group label { margin-bottom: 0.5rem; font-size: 0.9rem; font-weight: 500; }
-        .form-group input { padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; }
+        .form-group input, .form-group select { padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; background-color: white; }
         .form-actions { margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 1rem; }
         #back-link { display: inline-block; margin-bottom: 1rem; color: var(--primary-color); text-decoration: none; }
         #loading-indicator { text-align: center; padding: 2rem; font-size: 1.2rem; }
         .hidden { display: none; }
+        #postal_code_display { font-weight: bold; padding-top: 2rem; font-size: 1.1rem; }
     </style>
 </head>
 <body id="page-address-management">
@@ -39,9 +40,7 @@
 
         <div id="loading-indicator">載入地址中...</div>
 
-        <div id="address-list" class="address-list">
-            <!-- 地址列表將會動態插入到這裡 -->
-        </div>
+        <div id="address-list" class="address-list"></div>
         
         <button id="add-new-address-btn" class="actions button primary" style="width: 100%; padding: 0.8rem; font-size: 1rem; margin-top: 1.5rem;">新增地址</button>
 
@@ -59,18 +58,20 @@
                         <input type="text" id="phone_number" required>
                     </div>
                 </div>
+                <!-- 【修改處】將輸入框改為下拉選單 -->
                 <div class="form-grid" style="margin-top: 1rem;">
                     <div class="form-group">
-                        <label for="postal_code">郵遞區號</label>
-                        <input type="text" id="postal_code" required>
-                    </div>
-                     <div class="form-group">
-                        <label for="city">縣市</label>
-                        <input type="text" id="city" required>
+                        <label for="city-selector">縣市</label>
+                        <select id="city-selector" required><option value="">請選擇縣市</option></select>
                     </div>
                     <div class="form-group">
-                        <label for="district">鄉鎮市區</label>
-                        <input type="text" id="district" required>
+                        <label for="district-selector">鄉鎮市區</label>
+                        <select id="district-selector" required><option value="">請先選擇縣市</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label>郵遞區號</label>
+                        <div id="postal-code-display">---</div>
+                        <input type="hidden" id="postal-code-input">
                     </div>
                 </div>
                 <div class="form-group" style="margin-top: 1rem;">
