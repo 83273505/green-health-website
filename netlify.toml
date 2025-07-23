@@ -33,13 +33,13 @@
   SUPABASE_ANON_KEY = "your-anon-key"
 
 # ==============================================================================
-# 【本次新增的核心设定】- 分支特定部署规则
+# 【核心设定】- 分支特定部署规则
 # ==============================================================================
 # 🟢 test-shiporder 分支设定
 [context."test-shiporder"]
-  # 指定 test-shiporder 分支的发布目录就是 GreenHealth-Auth-Module。
-  # 这个路径是相对于 Git 仓库的根目录来计算的。
-  publish = "GreenHealth-Auth-Module"
+  # 【已修正】指定正确的、从专案根目录出发的完整嵌套路径。
+  # Netlify 会进入 'test-shiporder' 资料夹，然后再进入 'GreenHealth-Auth-Module' 资料夹作为发布目录。
+  publish = "test-shiporder/GreenHealth-Auth-Module"
 
 # 🟡 GreenHealth-Auth-Module 分支设定
 [context."GreenHealth-Auth-Module"]
