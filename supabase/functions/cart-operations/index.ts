@@ -1,7 +1,12 @@
-// supabase/functions/cart-operations/index.ts
+// supabase/functions/cart-operations/index.ts (Debug Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+
+// ✅ 【除錯修改】同樣地，直接在函式內部定義 corsHeaders。
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -13,8 +18,8 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
-
-    // 從請求中解析出購物車 ID, 操作類型, 和具體資料
+    
+    // 後續邏輯維持不變...
     const { cartId, action, payload } = await req.json()
     if (!cartId || !action) throw new Error('Cart ID and action are required.')
 
@@ -23,7 +28,6 @@ Deno.serve(async (req) => {
         const { variantId, quantity } = payload
         if (!variantId || !quantity) throw new Error('Variant ID and quantity are required.')
 
-        // 1. 獲取商品價格，製作價格快照 (Price Snapshot)
         const { data: variant, error: variantError } = await supabaseAdmin
           .from('product_variants')
           .select('price, sale_price')
@@ -33,26 +37,22 @@ Deno.serve(async (req) => {
         
         const price_snapshot = variant.sale_price || variant.price
 
-        // 2. 使用 upsert 將商品加入或更新購物車
         const { data, error } = await supabaseAdmin
           .from('cart_items')
-          .upsert(
-            {
+          .upsert({
               cart_id: cartId,
               product_variant_id: variantId,
               quantity: quantity,
               price_snapshot: price_snapshot,
-            },
-            { onConflict: 'cart_id,product_variant_id' } // 如果商品已存在，則更新
-          )
+          }, { 
+              onConflict: 'cart_id,product_variant_id',
+              ignoreDuplicates: false 
+          })
           .select()
         
         if (error) throw error
         return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 })
       }
-
-      // 您可以未來在此處增加 'UPDATE_ITEM_QUANTITY', 'REMOVE_ITEM' 等 case
-
       default:
         throw new Error(`Invalid action: ${action}`)
     }
