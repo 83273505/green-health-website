@@ -1,8 +1,8 @@
-// supabase/functions/cart-operations/index.ts (Final Version)
+// 檔案路徑: supabase/functions/cart-operations/index.ts (Upgraded Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// 在函式內部直接定義 CORS 標頭，確保穩定性
+// 在函式內部直接定義 CORS 標頭，維持穩定性
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -23,16 +23,16 @@ Deno.serve(async (req) => {
     
     // 從請求 body 中解析出操作指令
     const { cartId, action, payload } = await req.json()
-    if (!cartId || !action) throw new Error('Cart ID and action are required.')
+    if (!action) throw new Error('Action is required.') // cartId 在更新/刪除時非必需，但在新增時是
 
     switch (action) {
+      // 【維持不變】原有的新增商品邏輯
       case 'ADD_ITEM': {
-        const { variantId, quantity } = payload
-        if (!variantId || !quantity || quantity < 1) {
-            throw new Error('Valid Variant ID and quantity are required.')
+        if (!cartId || !payload.variantId || !payload.quantity) {
+            throw new Error('Cart ID, Variant ID and quantity are required for ADD_ITEM.')
         }
+        const { variantId, quantity } = payload
 
-        // 1. 從資料庫獲取商品規格的最新價格，製作價格快照 (Price Snapshot)
         const { data: variant, error: variantError } = await supabaseAdmin
           .from('product_variants')
           .select('price, sale_price')
@@ -43,9 +43,6 @@ Deno.serve(async (req) => {
         
         const price_snapshot = variant.sale_price || variant.price
 
-        // 2. 使用 upsert 將商品加入或更新購物車中的數量
-        //    這裡我們假設如果商品已存在，是累加數量，但更簡單的實現是直接覆蓋
-        //    一個更完整的實現會先查詢現有數量再更新，但 upsert 更簡潔
         const { data: cartItem, error } = await supabaseAdmin
           .from('cart_items')
           .upsert({
@@ -54,8 +51,8 @@ Deno.serve(async (req) => {
               quantity: quantity,
               price_snapshot: price_snapshot,
           }, { 
-              onConflict: 'cart_id,product_variant_id', // 如果 cart_id 和 product_variant_id 的組合已存在
-              ignoreDuplicates: false // 則更新該行，而不是忽略
+              onConflict: 'cart_id,product_variant_id',
+              ignoreDuplicates: false 
           })
           .select()
           .single()
@@ -68,9 +65,63 @@ Deno.serve(async (req) => {
         })
       }
 
-      // 未來可以擴充其他操作
-      // case 'UPDATE_QUANTITY': { ... }
-      // case 'REMOVE_ITEM': { ... }
+      // ✅ 【增加】處理更新商品數量的邏輯
+      case 'UPDATE_ITEM_QUANTITY': {
+        const { itemId, newQuantity } = payload
+        if (!itemId || typeof newQuantity !== 'number') {
+          throw new Error('Item ID and a valid new quantity are required.')
+        }
+
+        let result;
+        if (newQuantity > 0) {
+          // 如果新數量大於 0，則更新該項目的數量
+          const { data, error } = await supabaseAdmin
+            .from('cart_items')
+            .update({ quantity: newQuantity })
+            .eq('id', itemId)
+            .select()
+            .single()
+          if (error) throw error
+          result = data
+        } else {
+          // 如果新數量為 0 或更少，則將該項目從購物車中刪除
+          const { data, error } = await supabaseAdmin
+            .from('cart_items')
+            .delete()
+            .eq('id', itemId)
+            .select()
+            .single()
+          if (error) throw error
+          result = data
+        }
+        
+        return new Response(JSON.stringify(result), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+            status: 200 
+        })
+      }
+
+      // ✅ 【增加】處理直接移除商品的邏輯
+      case 'REMOVE_ITEM': {
+        const { itemId } = payload
+        if (!itemId) {
+          throw new Error('Item ID is required.')
+        }
+
+        const { data, error } = await supabaseAdmin
+            .from('cart_items')
+            .delete()
+            .eq('id', itemId)
+            .select()
+            .single()
+
+        if (error) throw error
+        
+        return new Response(JSON.stringify(data), { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+            status: 200 
+        })
+      }
 
       default:
         throw new Error(`Invalid action: ${action}`)
