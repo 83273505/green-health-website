@@ -1,60 +1,81 @@
-// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Robust Response - Final Version)
+// 檔案路径: supabase/functions/recalculate-cart/index.ts (Incremental Recovery Test Version)
 
-// 為了最大限度地除錯，我們暫時不從 _shared 導入，以確保 corsHeaders 絕對有效。
-// import { corsHeaders } from '../_shared/cors.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { corsHeaders } from '../_shared/cors.ts'
 
-Deno.serve(async (req) => {
-  // 定義一個絕對完整的、明確的 CORS 標頭物件
-  const corsHeaders = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "POST, OPTIONS", // 明確允許 POST 和 OPTIONS 方法
+// 在 handleRequest 外部初始化一次 client，这是 Supabase 官方推荐的最佳效能实践
+const supabaseAdmin = createClient(
+  Deno.env.get('SUPABASE_URL')!,
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+  { global: { fetch: fetch.bind(globalThis) } } // 确保 fetch 绑定
+);
+
+/**
+ * 核心逻辑处理器
+ */
+async function handleRequest(req: Request): Promise<Response> {
+  let body;
+  try {
+    body = await req.json();
+    console.log('成功解析 request body:', body);
+  } catch (_) {
+    console.log('Request body 為空或格式錯誤，這是正常的初始化流程。');
+    body = {}; // 如果 body 为空或格式错误，给一个空物件
+  }
+
+  const cartId = body.cartId;
+
+  // ✅ 【增量恢复测试】我们现在加入了与 Supabase 互动的逻辑
+  if (!cartId) {
+    console.log('未提供 cartId，跳過資料庫查詢。');
+  } else {
+    // 尝试查询 cart_items 表
+    console.log(`正在為 cartId: ${cartId} 查詢 cart_items...`);
+    const { data, error } = await supabaseAdmin
+      .from('cart_items')
+      .select('*')
+      .eq('cart_id', cartId);
+
+    if (error) {
+      console.error('查詢 cart_items 時發生錯誤:', error.message);
+      // 注意：即使查询失败，我们依然继续执行并回传 200，以便观察日志
+    } else {
+      console.log('查詢 cart_items 成功，找到的項目數量:', data.length);
+    }
+  }
+
+  // 无论数据库查询是否成功，我们都回传一个固定的空快照
+  const emptySnapshot = {
+    items: [],
+    itemCount: 0,
+    summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+    appliedCoupon: null
   };
 
-  // 處理 CORS 預檢請求
+  console.log('即将回传一个空的快照...');
+  return new Response(JSON.stringify(emptySnapshot), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status: 200 // 强制回传 200 OK
+  });
+}
+
+/**
+ * 主服务
+ */
+Deno.serve(async (req) => {
+  // CORS 预检请求处理
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 構造一個寫死的、空的購物車快照，用於測試回應是否成功
-    const emptySnapshot = {
-        items: [],
-        itemCount: 0,
-        summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-        appliedCoupon: null,
-    };
-    
-    // 在伺服器端日誌中打印一條訊息，以便我們確認函式是否被執行到這裡
-    console.log("即將回傳一個空的快照 (嚴謹回應格式版)...");
-
-    // ✅ 【最終修正】使用一個絕對完整的、明確的 headers 物件來回傳 200 OK
-    return new Response(
-      JSON.stringify(emptySnapshot),
-      {
-        // 結合 CORS 標頭和最重要的「內容類型」標頭
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        },
-        status: 200, // 明確回傳成功的狀態碼
-      }
-    )
-    
+    // 明确等待 handleRequest 完成
+    return await handleRequest(req);
   } catch (error) {
-    // 捕捉任何意料之外的錯誤
-    console.error('在 recalculate-cart 的嚴謹回應版中發生錯誤:', error.message)
-    
-    // ✅ 【同步修正】在錯誤回應中，也使用同樣嚴謹的 headers
-    return new Response(
-      JSON.stringify({ error: error.message }), 
-      {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "application/json"
-        },
-        status: 500, // 使用 500 表示伺服器內部錯誤
-      }
-    )
+    console.error('在 handleRequest 外部發生未捕捉的錯誤:', error.message);
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500
+    });
   }
 })
