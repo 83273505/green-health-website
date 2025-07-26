@@ -1,32 +1,32 @@
-// supabase/functions/get-or-create-cart/index.ts (Final Version)
+// 檔案路徑: supabase/functions/get-or-create-cart/index.ts (Official Import - Final Version)
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-// 在函式內部直接定義 CORS 標頭，確保穩定性
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+// ✅ 【最終修正】改用 Supabase 官方推薦的 Deno 模組來源，以獲得最佳穩定性和相容性
+import { createClient } from 'https://deno.land/x/supabase/mod.ts'
+import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req) => {
-  // 處理瀏覽器的 CORS 預檢請求
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 建立一個具有服務角色的 Supabase client，以便擁有更高權限
+    // 建立一個具有服務角色的 Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+      // 這是 Deno 環境中防止 client 意外關閉的推薦選項
+      { global: { fetch: fetch.bind(globalThis) } }
     )
-
+    
     // 從請求標頭中獲取使用者認證資訊
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-        // 如果連 Authorization 標頭都沒有，視為全新匿名使用者
+    
+    // ✅ 【邏輯優化】如果沒有 Authorization 標頭，或 token 為 null，
+    // 這代表是一個全新的訪客，我們直接為其建立匿名 session 和購物車。
+    if (!authHeader || authHeader === 'Bearer null') {
         const { data: anonUser, error: anonError } = await supabaseAdmin.auth.signInAnonymously()
-        if (anonError || !anonUser.user) throw anonError || new Error('Failed to create anonymous user.')
+        if (anonError || !anonUser.user) throw anonError || new Error('建立匿名使用者失敗。')
         
         const { data: newCart, error: newCartError } = await supabaseAdmin
             .from('carts')
@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
         
         if (newCartError) throw newCartError
         
+        // 成功建立後，直接回傳新的 cartId
         return new Response(JSON.stringify({ cartId: newCart.id }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 200,
@@ -44,7 +45,7 @@ Deno.serve(async (req) => {
     
     // 如果有 Authorization 標頭，則解析使用者
     const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) throw new Error('Invalid user token.')
+    if (!user) throw new Error('無效的使用者 token。')
 
     let cartId: string;
 
@@ -56,9 +57,11 @@ Deno.serve(async (req) => {
       .eq('status', 'active')
       .single()
 
+    // 如果查詢時發生錯誤，但不是「找不到資料列」的錯誤，則拋出
     if (cartError && cartError.code !== 'PGRST116') throw cartError;
 
     if (existingCart) {
+      // 如果找到了，就使用現有的 cartId
       cartId = existingCart.id;
     } else {
       // 如果找不到，則為該使用者建立一個新的購物車
@@ -79,6 +82,8 @@ Deno.serve(async (req) => {
     })
 
   } catch (error) {
+    // 現在，如果 try 區塊內有任何錯誤，我們應該能在這裡的日誌中看到它
+    console.error('在 get-or-create-cart 中發生錯誤:', error.message)
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
