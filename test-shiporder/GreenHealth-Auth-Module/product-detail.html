@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>商品詳情 - Green Health 綠健</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    <script src="./js/core/config.js"></script>
+    <script type="module" src="./js/core/app.js"></script>
+    <style>
+        :root { --primary-color: #5E8C61; --border-color: #e0e0e0; --text-color: #333; --background-color: #f9f9f9; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--background-color); color: var(--text-color); margin: 0; }
+        .container { max-width: 960px; margin: 2rem auto; padding: 2rem; background-color: white; border-radius: 12px; position: relative; }
+        .back-link { display: inline-block; margin-bottom: 1.5rem; color: var(--primary-color); text-decoration: none; font-weight: 500; }
+        .product-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+        .product-gallery .main-image { width: 100%; padding-top: 100%; background-color: #f0f0f0; background-size: cover; background-position: center; border-radius: 12px; }
+        .product-details h1 { margin-top: 0; }
+        .product-details .description { line-height: 1.7; color: #555; }
+        .product-form { margin-top: 2rem; }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+        .form-group select, .form-group .quantity-selector { width: 100%; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 8px; font-size: 1rem; }
+        .price-display { font-size: 2rem; font-weight: bold; color: var(--primary-color); margin-bottom: 1.5rem; }
+        .add-to-cart-btn { width: 100%; padding: 1rem; font-size: 1.1rem; font-weight: 600; color: white; background-color: #B12704; border: none; border-radius: 8px; cursor: pointer; }
+        .loading-view { text-align: center; padding: 4rem; }
+        .hidden { display: none; }
+        #notification-message { padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; text-align: center; font-weight: 500; display: none; }
+        #notification-message.success { background-color: #e8f5e9; color: #5E8C61; display: block; }
+        #notification-message.error { background-color: #fce4e4; color: #D9534F; display: block; }
+        #notification-message.info { background-color: #e7f3fe; color: #0056b3; display: block; }
+    </style>
+</head>
+<body id="product-detail">
+    <div class="container">
+        <div id="cart-widget-container" style="position: absolute; top: 2rem; right: 2rem; z-index: 1000;"></div>
+        <a href="./products.html" class="back-link">&larr; 返回所有商品</a>
+        <!-- ✅ 【增加】標準化通知訊息區塊 -->
+        <div id="notification-message"></div>
+        <div id="loading-view">載入商品資料中...</div>
+        <div id="product-detail-container" class="product-layout hidden">
+            <div class="product-gallery">
+                <div id="product-image" class="main-image"></div>
+            </div>
+            <div class="product-details">
+                <h1 id="product-name"></h1>
+                <div id="price" class="price-display"></div>
+                <div id="product-description" class="description"></div>
+                <form id="add-to-cart-form" class="product-form">
+                    <div class="form-group">
+                        <label for="variant-selector">選擇規格</label>
+                        <select id="variant-selector" name="variantId"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="quantity">選擇數量</label>
+                        <input type="number" id="quantity" name="quantity" value="1" min="1" class="quantity-selector">
+                    </div>
+                    <button type="submit" class="add-to-cart-btn">加入購物車</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
