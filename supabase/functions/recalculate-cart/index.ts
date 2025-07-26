@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/recalculate-cart/index.ts
+// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Price Snapshot Fix - Final Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -8,16 +8,19 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  // 處理瀏覽器的 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    // 建立一個具有服務角色的 Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     
+    // 從請求 body 中解析出前端的「意圖」
     const { cartId, actions, couponCode, shippingMethodId } = await req.json()
     if (!cartId) throw new Error('購物車 ID 為必需項。')
 
@@ -25,23 +28,28 @@ Deno.serve(async (req) => {
     if (actions && actions.length > 0) {
       for (const action of actions) {
         switch (action.type) {
-          // ✅ 【關鍵修正】明確區分新增(ADD_ITEM)與更新(UPDATE)邏輯
           case 'ADD_ITEM': {
             const { variantId, quantity } = action.payload;
             if (!variantId || !quantity) throw new Error('ADD_ITEM 需要 variantId 和 quantity。');
             
-            // 獲取價格快照
-            const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('price, sale_price').eq('id', variantId).single();
+            // ✅ 【關鍵修正】在獲取價格快照時，同時獲取原價和特價
+            const { data: variant, error: variantError } = await supabaseAdmin
+              .from('product_variants')
+              .select('price, sale_price') // 同時查詢兩個價格欄位
+              .eq('id', variantId)
+              .single();
+              
             if(variantError) throw new Error('找不到指定的商品規格。');
             
-            const price_snapshot = variant.sale_price ?? variant.price;
+            // ✅ 【關鍵修正】優先使用特價 (sale_price)，如果不存在或無效(例如為0)，則使用原價 (price)
+            const price_snapshot = (variant.sale_price && variant.sale_price > 0) ? variant.sale_price : variant.price;
 
-            // 使用 upsert 來智能地處理新增或更新
+            // 使用 upsert，並傳入修正後的價格快照
             await supabaseAdmin.from('cart_items').upsert({
                 cart_id: cartId,
                 product_variant_id: variantId,
                 quantity: quantity,
-                price_snapshot: price_snapshot,
+                price_snapshot: price_snapshot, 
             }, { 
                 onConflict: 'cart_id,product_variant_id',
                 ignoreDuplicates: false 
@@ -51,7 +59,6 @@ Deno.serve(async (req) => {
           case 'UPDATE_ITEM_QUANTITY': {
             const { itemId, newQuantity } = action.payload;
             if (!itemId || typeof newQuantity !== 'number') throw new Error('UPDATE_ITEM_QUANTITY 需要 itemId 和 newQuantity。');
-            
             if (newQuantity > 0) {
               await supabaseAdmin.from('cart_items').update({ quantity: newQuantity }).eq('id', itemId).throwOnError();
             } else {
@@ -79,12 +86,10 @@ Deno.serve(async (req) => {
     if (cartItemsError) throw cartItemsError;
 
     // --- 步驟 3: 計算商品小計 (Subtotal) ---
-    const subtotal = cartItems.reduce((sum, item) => {
-        const price = item.product_variants.sale_price ?? item.product_variants.price;
-        return sum + (price * item.quantity);
-    }, 0);
+    // ✅ 現在這個計算會自動基於正確的 price_snapshot，無需修改
+    const subtotal = cartItems.reduce((sum, item) => sum + (item.price_snapshot * item.quantity), 0);
 
-    // --- 步驟 4: 計算折扣 (Discount) ---
+    // --- 步驟 4, 5, 6: 計算折扣、運費、總計 (維持不變) ---
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
@@ -99,7 +104,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- 步驟 5: 計算運費 (Shipping Fee) ---
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
@@ -112,11 +116,9 @@ Deno.serve(async (req) => {
             }
         }
     }
-
-    // --- 步驟 6: 計算最終總計 (Total) ---
     const total = subtotal - couponDiscount + shippingFee;
 
-    // --- 步驟 7: 構建並回傳完整的「購物車快照」 ---
+    // --- 步驟 7: 構建並回傳完整的「購物車快照」 (維持不變) ---
     const cartSnapshot = {
       items: cartItems,
       itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
