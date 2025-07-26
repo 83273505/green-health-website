@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Price Snapshot Fix - Final Version)
+// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Rounding Fix - Final Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -8,7 +8,7 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // 處理瀏覽器的 CORS 預檢請求
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -32,19 +32,11 @@ Deno.serve(async (req) => {
             const { variantId, quantity } = action.payload;
             if (!variantId || !quantity) throw new Error('ADD_ITEM 需要 variantId 和 quantity。');
             
-            // ✅ 【關鍵修正】在獲取價格快照時，同時獲取原價和特價
-            const { data: variant, error: variantError } = await supabaseAdmin
-              .from('product_variants')
-              .select('price, sale_price') // 同時查詢兩個價格欄位
-              .eq('id', variantId)
-              .single();
-              
+            const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('price, sale_price').eq('id', variantId).single();
             if(variantError) throw new Error('找不到指定的商品規格。');
             
-            // ✅ 【關鍵修正】優先使用特價 (sale_price)，如果不存在或無效(例如為0)，則使用原價 (price)
             const price_snapshot = (variant.sale_price && variant.sale_price > 0) ? variant.sale_price : variant.price;
 
-            // 使用 upsert，並傳入修正後的價格快照
             await supabaseAdmin.from('cart_items').upsert({
                 cart_id: cartId,
                 product_variant_id: variantId,
@@ -86,24 +78,31 @@ Deno.serve(async (req) => {
     if (cartItemsError) throw cartItemsError;
 
     // --- 步驟 3: 計算商品小計 (Subtotal) ---
-    // ✅ 現在這個計算會自動基於正確的 price_snapshot，無需修改
-    const subtotal = cartItems.reduce((sum, item) => sum + (item.price_snapshot * item.quantity), 0);
+    // ✅ 【關鍵修正】在計算每個項目的小計時就進行四捨五入
+    const subtotal = cartItems.reduce((sum, item) => {
+        const itemTotal = item.price_snapshot * item.quantity;
+        return sum + Math.round(itemTotal); // 四捨五入到最接近的整數
+    }, 0);
 
-    // --- 步驟 4, 5, 6: 計算折扣、運費、總計 (維持不變) ---
+    // --- 步驟 4: 計算折扣 (Discount) ---
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
       const { data: coupon } = await supabaseAdmin.from('coupons').select('*').eq('code', couponCode).eq('is_active', true).single();
       if (coupon && subtotal >= coupon.min_purchase_amount) {
           if (coupon.discount_type === 'PERCENTAGE' && coupon.discount_percentage) {
-            couponDiscount = Math.round(subtotal * (coupon.discount_percentage / 100));
+            // ✅ 【關鍵修正】百分比折扣計算後也進行四捨五入
+            const discount = subtotal * (coupon.discount_percentage / 100);
+            couponDiscount = Math.round(discount);
           } else if (coupon.discount_type === 'FIXED_AMOUNT' && coupon.discount_amount) {
-            couponDiscount = coupon.discount_amount;
+            // 固定金額折扣通常是整數，但以防萬一也取整
+            couponDiscount = Math.round(coupon.discount_amount);
           }
           appliedCoupon = { code: coupon.code, discountAmount: couponDiscount };
       }
     }
 
+    // --- 步驟 5: 計算運費 (Shipping Fee) ---
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
@@ -112,13 +111,15 @@ Deno.serve(async (req) => {
             if (shippingRate.free_shipping_threshold && subtotalAfterDiscount >= shippingRate.free_shipping_threshold) {
                 shippingFee = 0;
             } else {
-                shippingFee = shippingRate.rate;
+                shippingFee = Math.round(shippingRate.rate); // 確保運費也是整數
             }
         }
     }
+
+    // --- 步驟 6: 計算最終總計 (Total) ---
     const total = subtotal - couponDiscount + shippingFee;
 
-    // --- 步驟 7: 構建並回傳完整的「購物車快照」 (維持不變) ---
+    // --- 步驟 7: 構建並回傳完整的「購物車快照」 ---
     const cartSnapshot = {
       items: cartItems,
       itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
