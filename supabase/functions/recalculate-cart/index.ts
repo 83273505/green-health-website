@@ -1,17 +1,23 @@
-// 檔案路径: supabase/functions/recalculate-cart/index.ts (Super Simple Debug Version)
+// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Robust Response - Final Version)
 
-// 我们甚至不 import 任何东西，以排除所有外部依赖问题
-// import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { corsHeaders } from '../_shared/cors.ts'
+// 為了最大限度地除錯，我們暫時不從 _shared 導入，以確保 corsHeaders 絕對有效。
+// import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req) => {
-  // 處理 CORS 预检请求
+  // 定義一個絕對完整的、明確的 CORS 標頭物件
+  const corsHeaders = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS", // 明確允許 POST 和 OPTIONS 方法
+  };
+
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 构造一个写死的、空的购物车快照
+    // 構造一個寫死的、空的購物車快照，用於測試回應是否成功
     const emptySnapshot = {
         items: [],
         itemCount: 0,
@@ -19,19 +25,36 @@ Deno.serve(async (req) => {
         appliedCoupon: null,
     };
     
-    console.log("即将回传一个空的快照...");
+    // 在伺服器端日誌中打印一條訊息，以便我們確認函式是否被執行到這裡
+    console.log("即將回傳一個空的快照 (嚴謹回應格式版)...");
 
-    // 直接回传 200 OK 和这个空快照
-    return new Response(JSON.stringify(emptySnapshot), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
+    // ✅ 【最終修正】使用一個絕對完整的、明確的 headers 物件來回傳 200 OK
+    return new Response(
+      JSON.stringify(emptySnapshot),
+      {
+        // 結合 CORS 標頭和最重要的「內容類型」標頭
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        },
+        status: 200, // 明確回傳成功的狀態碼
+      }
+    )
     
   } catch (error) {
-    console.error('在 recalculate-cart 的极简版中发生错误:', error.message)
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    });
+    // 捕捉任何意料之外的錯誤
+    console.error('在 recalculate-cart 的嚴謹回應版中發生錯誤:', error.message)
+    
+    // ✅ 【同步修正】在錯誤回應中，也使用同樣嚴謹的 headers
+    return new Response(
+      JSON.stringify({ error: error.message }), 
+      {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        },
+        status: 500, // 使用 500 表示伺服器內部錯誤
+      }
+    )
   }
 })
