@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Promise Await - Final Version)
+// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Empty Request Handling - Final Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -16,10 +16,39 @@ async function handleRequest(req: Request): Promise<Response> {
       { global: { fetch: fetch.bind(globalThis) } }
     )
     
-    const { cartId, actions, couponCode, shippingMethodId } = await req.json()
-    if (!cartId) throw new Error('購物車 ID 為必需項。')
+    // ✅ 【關鍵修正】使用更安全、更具容錯性的方式來解析請求 body
+    let cartId: string | null = null;
+    let actions: any[] = [];
+    let couponCode: string | null = null;
+    let shippingMethodId: string | null = null;
 
-    // --- 步驟 1: 執行操作 (Actions) ---
+    try {
+        const body = await req.json();
+        cartId = body.cartId ?? null;
+        actions = body.actions ?? [];
+        couponCode = body.couponCode ?? null;
+        shippingMethodId = body.shippingMethodId ?? null;
+    } catch (_) {
+        // 如果 body 不是有效的 JSON (例如空的 POST 請求)，則忽略錯誤，
+        // 讓所有變數保持預設值 (null 或 [])，程式會繼續往下走到 if (!cartId) 的安全回退邏輯。
+    }
+
+    // ✅ 【關鍵修正】如果請求中沒有有效的 cartId (例如在初始化時)，
+    // 則安全地回傳一個標準的空購物車物件，而不是拋出錯誤。
+    if (!cartId) {
+        const emptySnapshot = {
+            items: [],
+            itemCount: 0,
+            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+            appliedCoupon: null,
+        };
+        return new Response(JSON.stringify(emptySnapshot), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200, // 這是一個正常的、預期的情境，所以回傳 200 OK
+        });
+    }
+
+    // --- 步驟 1: 只有在 actions 陣列存在且有內容時，才執行操作 ---
     if (actions && actions.length > 0) {
       for (const action of actions) {
         switch (action.type) {
@@ -57,21 +86,10 @@ async function handleRequest(req: Request): Promise<Response> {
       }
     }
 
-    // --- 步驟 2: 重新查詢購物車的最新內容 ---
-    const { data: cartItems, error: cartItemsError } = await supabaseAdmin
-      .from('cart_items')
-      .select(`*, product_variants (name, price, sale_price, products ( image_url ))`)
-      .eq('cart_id', cartId)
-      .order('added_at', { ascending: true });
+    // --- 後續的查詢和計算邏輯維持不變 ---
+    const { data: cartItems, error: cartItemsError } = await supabaseAdmin.from('cart_items').select(`*, product_variants (name, price, sale_price, products ( image_url ))`).eq('cart_id', cartId).order('added_at', { ascending: true });
     if (cartItemsError) throw cartItemsError;
-
-    // --- 步驟 3: 計算商品小計 (Subtotal) ---
-    const subtotal = cartItems.reduce((sum, item) => {
-        const itemTotal = item.price_snapshot * item.quantity;
-        return sum + Math.round(itemTotal);
-    }, 0);
-
-    // --- 步驟 4: 計算折扣 (Discount) ---
+    const subtotal = cartItems.reduce((sum, item) => sum + Math.round(item.price_snapshot * item.quantity), 0);
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
@@ -85,8 +103,6 @@ async function handleRequest(req: Request): Promise<Response> {
           appliedCoupon = { code: coupon.code, discountAmount: couponDiscount };
       }
     }
-
-    // --- 步驟 5: 計算運費 (Shipping Fee) ---
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
@@ -99,11 +115,7 @@ async function handleRequest(req: Request): Promise<Response> {
             }
         }
     }
-    
-    // --- 步驟 6: 計算最終總計 (Total) ---
     const total = subtotal - couponDiscount + shippingFee;
-
-    // --- 步驟 7: 構建並回傳完整的「購物車快照」 ---
     const cartSnapshot = {
       items: cartItems,
       itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -117,15 +129,12 @@ async function handleRequest(req: Request): Promise<Response> {
     });
 }
 
-// ✅ 【最終修正】
-// Deno.serve 現在只負責處理請求分發和統一的錯誤捕捉。
+// Deno.serve 的結構維持不變
 Deno.serve(async (req) => {
-  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
   try {
-    // 我們明確地 await 主要邏輯函式的執行結果，以防止 EarlyDrop。
     return await handleRequest(req);
   } catch (error) {
     console.error('在 recalculate-cart 中發生未捕捉的錯誤:', error.message)
