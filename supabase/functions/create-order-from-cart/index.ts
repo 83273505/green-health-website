@@ -8,22 +8,19 @@ const corsHeaders = {
 }
 
 /**
- * [辅助函式]
- * 这是一个独立的计算函式，用于在后端权威地、独立地重新计算一次所有费用。
- * @param supabase - Supabase 的 Admin Client 实例
- * @param cartId - 要计算的购物车 ID
- * @param couponCode - 前端传入的折扣码
- * @param shippingMethodId - 前端传入的运送方式 ID
- * @returns {Promise<object>} - 一个包含所有费用明细的摘要物件
+ * 這是一個輔助函式，用於在伺服器端獨立地、權威地重新計算購物車的總費用。
+ * 它的邏輯與 recalculate-cart 函式中的計算部分完全一致。
+ * @param supabase - Supabase 的管理員權限客戶端
+ * @param cartId - 要計算的購物車 ID
+ * @param couponCode - 使用者嘗試套用的折扣碼
+ * @param shippingMethodId - 使用者選擇的運送方式 ID
+ * @returns {Promise<object>} 一個包含費用明細的物件
  */
 async function calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
-    const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants!inner(price, sale_price)`).eq('cart_id', cartId);
+    const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(price, sale_price)`).eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
 
-    const subtotal = cartItems.reduce((sum, item) => {
-        const price = item.product_variants.sale_price ?? item.product_variants.price;
-        return sum + Math.round(price * item.quantity);
-    }, 0);
+    const subtotal = cartItems.reduce((sum, item) => sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
     
     let couponDiscount = 0;
     if (couponCode) {
@@ -51,84 +48,95 @@ async function calculateCartSummary(supabase, cartId, couponCode, shippingMethod
 }
 
 Deno.serve(async (req) => {
-  // 處理 CORS 预检请求
+  // 處理瀏覽器的 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
+    // 建立一個具有服務角色的 Supabase client，以便擁有更高的資料庫操作權限
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     
+    // 從請求 body 中解析出前端傳來的結帳資訊
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
-    if (!cartId || !selectedAddressId || !selectedShippingMethodId || !frontendValidationSummary || !selectedPaymentMethodId) {
-        throw new Error('缺少必要的下单资讯。');
+    if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
+        throw new Error('缺少必要的下單資訊。');
     }
     
-    const { data: { user } } = await supabaseAdmin.auth.getUser(req.headers.get('Authorization')!.replace('Bearer ', ''))
-    if (!user) throw new Error('使用者未登入或授权无效。')
+    // 獲取並驗證使用者身份
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) throw new Error('缺少授權標頭。');
+    
+    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
+    if (!user) throw new Error('使用者未登入或授權無效。')
 
-    // === 核心事务逻辑开始 ===
-    // 1. 【安全校验】在后端权威地重算一次费用
+    // === 核心事務邏輯開始 ===
+
+    // 1. 【安全校驗】在後端權威地重算一次費用
     const backendSummary = await calculateCartSummary(supabaseAdmin, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
 
-    // 2. 【安全校验】严格比对前后端计算的总金额
+    // 2. 【安全校驗】嚴格比對前端顯示的總金額與後端計算的總金額
     if (backendSummary.total !== frontendValidationSummary.total) {
-      console.error('价格校验失败:', { frontend: frontendValidationSummary.total, backend: backendSummary.total });
+      // 如果金額不匹配，回傳一個特定的錯誤，讓前端可以給出清晰的提示
       return new Response(JSON.stringify({
-        error: { code: 'PRICE_MISMATCH', message: '订单金额与当前优惠不符，请返回购物车重新整理后，再进行结帐。' }
+        error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請返回購物車重新整理後再試。' }
       }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 3. 【资料快照】获取完整的地址资讯，准备制作快照
+    // 3. 【資料快照】獲取完整的地址資訊，準備製作快照
     const { data: address, error: addressError } = await supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).eq('user_id', user.id).single();
-    if (addressError) throw new Error('找不到指定的收货地址。');
+    if (addressError) throw new Error('找不到指定的收貨地址。');
 
-    // 4. 获取购物车内容
+    // 4. 獲取購物車內容，用於複製到訂單項目中
     const { data: cartItems, error: cartItemsError } = await supabaseAdmin.from('cart_items').select('*, product_variants(id, name)').eq('cart_id', cartId);
-    if (cartItemsError || !cartItems || cartItems.length === 0) throw new Error('购物车为空或读取失败。');
+    if (cartItemsError || !cartItems || cartItems.length === 0) throw new Error('購物車為空或讀取失敗。');
     
-    // 5. 【建立订单】在 `orders` 表中插入主订单记录
+    // 5. 【建立訂單】在 `orders` 表中插入主訂單記錄
     const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('method_name').eq('id', selectedPaymentMethodId).single();
-
     const { data: newOrder, error: orderError } = await supabaseAdmin.from('orders').insert({
         user_id: user.id,
-        status: 'pending_payment',
+        status: 'pending_payment', // 預設為待付款
         total_amount: backendSummary.total,
         subtotal_amount: backendSummary.subtotal,
         coupon_discount: backendSummary.couponDiscount,
         shipping_fee: backendSummary.shippingFee,
-        shipping_address_snapshot: address,
+        shipping_address_snapshot: address, // 將完整的地址物件存為 JSON 快照
         payment_method: paymentMethod?.method_name || '未知',
         payment_status: 'pending',
     }).select().single();
     if (orderError) throw orderError;
     
-    // 6. 【复制商品】将购物车项目复制到 `order_items` 表
+    // 6. 【複製商品】將購物車項目複製到 `order_items` 表
     const orderItemsToInsert = cartItems.map(item => ({
         order_id: newOrder.id,
         product_variant_id: item.product_variant_id,
         quantity: item.quantity,
-        price_at_order: item.price_snapshot,
+        price_at_order: item.price_snapshot, // 使用購物車中儲存的、最準確的價格快照
     }));
     const { error: orderItemsError } = await supabaseAdmin.from('order_items').insert(orderItemsToInsert);
-    if (orderItemsError) throw orderItemsError;
+    if (orderItemsError) {
+      // 如果這一步失敗，理論上應該要刪除剛剛建立的主訂單（事務回滾）
+      // 在簡單的 Edge Function 中，我們先拋出錯誤
+      throw orderItemsError;
+    }
     
-    // 7. 【清理购物车】将 `carts` 表的状态更新为 'completed'
+    // 7. 【清理購物車】將 `carts` 表的狀態更新為 'completed'，使其不再是活躍購物車
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId);
 
-    // 8. 【成功回应】回传新建立的订单号码
+    // 8. 【成功回應】回傳新建立的訂單編號
     return new Response(JSON.stringify({ orderNumber: newOrder.order_number }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (error) {
+    // 捕捉所有預期外的錯誤
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: 500, // 使用 500 代表伺服器內部錯誤
     });
   }
 })
