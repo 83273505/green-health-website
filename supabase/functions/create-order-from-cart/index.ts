@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Functional Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Typo Fix Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -8,8 +8,7 @@ const corsHeaders = {
 }
 
 /**
- * 這是一個輔助函式，用於在伺服器端獨立地、權威地重新計算購物車的總費用。
- * 它的邏輯與 recalculate-cart 函式中的計算部分完全一致。
+ * 辅助函式，用於在伺服器端獨立地、權威地重新計算購物車的總費用。
  * @param supabase - Supabase 的管理員權限客戶端
  * @param cartId - 要計算的購物車 ID
  * @param couponCode - 使用者嘗試套用的折扣碼
@@ -54,7 +53,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // 建立一個具有服務角色的 Supabase client，以便擁有更高的資料庫操作權限
+    // 建立一個具有服務角色的 Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
@@ -78,11 +77,10 @@ Deno.serve(async (req) => {
     // 1. 【安全校驗】在後端權威地重算一次費用
     const backendSummary = await calculateCartSummary(supabaseAdmin, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
 
-    // 2. 【安全校驗】嚴格比對前端顯示的總金額與後端計算的總金額
+    // 2. 【安全校驗】嚴格比對前後端計算結果
     if (backendSummary.total !== frontendValidationSummary.total) {
-      // 如果金額不匹配，回傳一個特定的錯誤，讓前端可以給出清晰的提示
       return new Response(JSON.stringify({
-        error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請返回購物車重新整理後再試。' }
+        error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請返回購物車重新確認。' }
       }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -90,20 +88,22 @@ Deno.serve(async (req) => {
     const { data: address, error: addressError } = await supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).eq('user_id', user.id).single();
     if (addressError) throw new Error('找不到指定的收貨地址。');
 
-    // 4. 獲取購物車內容，用於複製到訂單項目中
+    // 4. 獲取購物車內容
     const { data: cartItems, error: cartItemsError } = await supabaseAdmin.from('cart_items').select('*, product_variants(id, name)').eq('cart_id', cartId);
     if (cartItemsError || !cartItems || cartItems.length === 0) throw new Error('購物車為空或讀取失敗。');
     
-    // 5. 【建立訂單】在 `orders` 表中插入主訂單記錄
+    // 5. 【建立訂單】
+    // ✅ 【關鍵修正】使用正確的 selectedPaymentMethodId 來查詢付款方式名稱
     const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('method_name').eq('id', selectedPaymentMethodId).single();
+    
     const { data: newOrder, error: orderError } = await supabaseAdmin.from('orders').insert({
         user_id: user.id,
-        status: 'pending_payment', // 預設為待付款
+        status: 'pending_payment',
         total_amount: backendSummary.total,
         subtotal_amount: backendSummary.subtotal,
         coupon_discount: backendSummary.couponDiscount,
         shipping_fee: backendSummary.shippingFee,
-        shipping_address_snapshot: address, // 將完整的地址物件存為 JSON 快照
+        shipping_address_snapshot: address,
         payment_method: paymentMethod?.method_name || '未知',
         payment_status: 'pending',
     }).select().single();
@@ -114,16 +114,12 @@ Deno.serve(async (req) => {
         order_id: newOrder.id,
         product_variant_id: item.product_variant_id,
         quantity: item.quantity,
-        price_at_order: item.price_snapshot, // 使用購物車中儲存的、最準確的價格快照
+        price_at_order: item.price_snapshot,
     }));
     const { error: orderItemsError } = await supabaseAdmin.from('order_items').insert(orderItemsToInsert);
-    if (orderItemsError) {
-      // 如果這一步失敗，理論上應該要刪除剛剛建立的主訂單（事務回滾）
-      // 在簡單的 Edge Function 中，我們先拋出錯誤
-      throw orderItemsError;
-    }
+    if (orderItemsError) throw orderItemsError;
     
-    // 7. 【清理購物車】將 `carts` 表的狀態更新為 'completed'，使其不再是活躍購物車
+    // 7. 【清理購物車】將 `carts` 表的狀態更新為 'completed'
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId);
 
     // 8. 【成功回應】回傳新建立的訂單編號
@@ -133,10 +129,10 @@ Deno.serve(async (req) => {
     });
 
   } catch (error) {
-    // 捕捉所有預期外的錯誤
+    // 捕捉所有預期外的錯誤，並回傳 500 伺服器內部錯誤
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500, // 使用 500 代表伺服器內部錯誤
+      status: 500,
     });
   }
 })
