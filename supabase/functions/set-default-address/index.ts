@@ -1,66 +1,60 @@
-// 檔案路徑: supabase/functions/set-default-address/index.ts (Final Correct Version)
+// 檔案路徑: supabase/functions/set-default-address/index.ts
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-// 在函式內部直接定義 CORS 標頭，確保穩定性
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 Deno.serve(async (req) => {
-  // 處理瀏覽器的 CORS 預檢請求
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 建立一個具有服務角色的 Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     
-    // 獲取並驗證使用者身份
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) throw new Error('Authorization header is missing')
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) throw new Error('缺少授權標頭(Authorization header)。');
     
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''))
-    if (!user) throw new Error('User not authenticated or invalid token')
+    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (!user) throw new Error('使用者未認證或權杖(token)無效。');
 
-    // 從請求的 body 中解析出要設定為預設的地址 ID
-    const { addressId } = await req.json()
-    if (!addressId) throw new Error('Address ID is required in the request body')
+    const { addressId } = await req.json();
+    if (!addressId) throw new Error('請求主體(body)中缺少 addressId。');
 
     // --- 核心事務邏輯 ---
-    // 1. 將該使用者所有的地址都設為非預設 (is_default = false)
+    // 1. 將該使用者所有的地址都設為非預設
     const { error: resetError } = await supabaseAdmin
       .from('addresses')
       .update({ is_default: false })
-      .eq('user_id', user.id)
+      .eq('user_id', user.id);
 
-    if (resetError) throw resetError
+    if (resetError) throw resetError;
 
-    // 2. 將指定的地址 ID 設為預設 (is_default = true)
+    // 2. 將指定的地址 ID 設為預設
     const { error: setError } = await supabaseAdmin
       .from('addresses')
       .update({ is_default: true })
       .eq('id', addressId)
-      .eq('user_id', user.id) // 雙重確認這個地址確實屬於該用戶，增加安全性
+      .eq('user_id', user.id); // 雙重確認這個地址確實屬於該使用者，增加安全性
 
-    if (setError) throw setError
+    if (setError) throw setError;
 
-    // 如果一切順利，回傳成功訊息
-    return new Response(JSON.stringify({ message: 'Default address updated successfully' }), {
+    return new Response(JSON.stringify({ message: '預設地址已成功更新。' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
-
   } catch (error) {
-    // 如果過程中發生任何錯誤，回傳具體的錯誤訊息
+    console.error('[set-default-address] 函式內部錯誤:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 400,
+      status: 500,
     })
   }
 })

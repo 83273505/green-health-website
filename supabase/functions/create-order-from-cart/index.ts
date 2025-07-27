@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Shipping Method Link Final Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -81,7 +81,6 @@ Deno.serve(async (req) => {
     
     const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('method_name').eq('id', selectedPaymentMethodId).single();
     
-    // 5. 【建立訂單】
     const { data: newOrder, error: orderError } = await supabaseAdmin.from('orders').insert({
         user_id: user.id,
         status: 'pending_payment',
@@ -92,12 +91,10 @@ Deno.serve(async (req) => {
         shipping_address_snapshot: address,
         payment_method: paymentMethod?.method_name || '未知',
         payment_status: 'pending',
-        // ✅ 【關鍵新增】將使用者選擇的運送方式 ID 寫入我們在資料庫新增的欄位
         shipping_method_id: selectedShippingMethodId
     }).select().single();
     if (orderError) throw orderError;
     
-    // 6. 【複製商品】
     const orderItemsToInsert = cartItems.map(item => ({
         order_id: newOrder.id,
         product_variant_id: item.product_variant_id,
@@ -107,16 +104,15 @@ Deno.serve(async (req) => {
     const { error: orderItemsError } = await supabaseAdmin.from('order_items').insert(orderItemsToInsert);
     if (orderItemsError) throw orderItemsError;
     
-    // 7. 【清理購物車】
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId);
 
-    // 8. 【成功回應】
     return new Response(JSON.stringify({ orderNumber: newOrder.order_number }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (error) {
+    console.error('[create-order-from-cart] 函式內部錯誤:', error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
