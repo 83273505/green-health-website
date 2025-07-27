@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Typo Fix Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Shipping Method Link Final Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -8,12 +8,7 @@ const corsHeaders = {
 }
 
 /**
- * 辅助函式，用於在伺服器端獨立地、權威地重新計算購物車的總費用。
- * @param supabase - Supabase 的管理員權限客戶端
- * @param cartId - 要計算的購物車 ID
- * @param couponCode - 使用者嘗試套用的折扣碼
- * @param shippingMethodId - 使用者選擇的運送方式 ID
- * @returns {Promise<object>} 一個包含費用明細的物件
+ * 輔助函式，用於在伺服器端獨立地、權威地重新計算購物車的總費用。
  */
 async function calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
     const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(price, sale_price)`).eq('cart_id', cartId);
@@ -53,19 +48,16 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // 建立一個具有服務角色的 Supabase client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
     
-    // 從請求 body 中解析出前端傳來的結帳資訊
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
     if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
         throw new Error('缺少必要的下單資訊。');
     }
     
-    // 獲取並驗證使用者身份
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('缺少授權標頭。');
     
@@ -73,29 +65,23 @@ Deno.serve(async (req) => {
     if (!user) throw new Error('使用者未登入或授權無效。')
 
     // === 核心事務邏輯開始 ===
-
-    // 1. 【安全校驗】在後端權威地重算一次費用
     const backendSummary = await calculateCartSummary(supabaseAdmin, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
 
-    // 2. 【安全校驗】嚴格比對前後端計算結果
     if (backendSummary.total !== frontendValidationSummary.total) {
       return new Response(JSON.stringify({
         error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請返回購物車重新確認。' }
       }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // 3. 【資料快照】獲取完整的地址資訊，準備製作快照
     const { data: address, error: addressError } = await supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).eq('user_id', user.id).single();
     if (addressError) throw new Error('找不到指定的收貨地址。');
 
-    // 4. 獲取購物車內容
     const { data: cartItems, error: cartItemsError } = await supabaseAdmin.from('cart_items').select('*, product_variants(id, name)').eq('cart_id', cartId);
     if (cartItemsError || !cartItems || cartItems.length === 0) throw new Error('購物車為空或讀取失敗。');
     
-    // 5. 【建立訂單】
-    // ✅ 【關鍵修正】使用正確的 selectedPaymentMethodId 來查詢付款方式名稱
     const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('method_name').eq('id', selectedPaymentMethodId).single();
     
+    // 5. 【建立訂單】
     const { data: newOrder, error: orderError } = await supabaseAdmin.from('orders').insert({
         user_id: user.id,
         status: 'pending_payment',
@@ -106,10 +92,12 @@ Deno.serve(async (req) => {
         shipping_address_snapshot: address,
         payment_method: paymentMethod?.method_name || '未知',
         payment_status: 'pending',
+        // ✅ 【關鍵新增】將使用者選擇的運送方式 ID 寫入我們在資料庫新增的欄位
+        shipping_method_id: selectedShippingMethodId
     }).select().single();
     if (orderError) throw orderError;
     
-    // 6. 【複製商品】將購物車項目複製到 `order_items` 表
+    // 6. 【複製商品】
     const orderItemsToInsert = cartItems.map(item => ({
         order_id: newOrder.id,
         product_variant_id: item.product_variant_id,
@@ -119,17 +107,16 @@ Deno.serve(async (req) => {
     const { error: orderItemsError } = await supabaseAdmin.from('order_items').insert(orderItemsToInsert);
     if (orderItemsError) throw orderItemsError;
     
-    // 7. 【清理購物車】將 `carts` 表的狀態更新為 'completed'
+    // 7. 【清理購物車】
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId);
 
-    // 8. 【成功回應】回傳新建立的訂單編號
+    // 8. 【成功回應】
     return new Response(JSON.stringify({ orderNumber: newOrder.order_number }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
 
   } catch (error) {
-    // 捕捉所有預期外的錯誤，並回傳 500 伺服器內部錯誤
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
