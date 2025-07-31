@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Debug Logging Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Secure Validation Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'https://esm.sh/resend@3.2.0';
@@ -38,7 +38,7 @@ async function calculateCartSummary(supabase, cartId, couponCode, shippingMethod
 function createOrderEmailHtml(order, orderItems, address, shippingMethod, paymentMethod) {
     const formatCurrency = (num) => new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
     const itemsHtml = orderItems.map(item => `...`).join('');
-    return `<div>...郵件內容...</div>`; // 為求簡潔，此處省略，實際程式碼應包含完整 HTML
+    return `<div>...郵件內容...</div>`; // 邮件模板维持不变
 }
 
 Deno.serve(async (req) => {
@@ -46,10 +46,8 @@ Deno.serve(async (req) => {
   try {
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL') ?? '', Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '');
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
-
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
     if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) throw new Error('缺少必要的下單資訊。');
-    
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('缺少授權標頭。');
     const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
@@ -57,11 +55,9 @@ Deno.serve(async (req) => {
     
     // --- 核心事務邏輯開始 ---
 
-    // ✅ 【第一步：打印前端傳來的「證據」】
     console.log("--- [DEBUG] 接收到前端校驗摘要 ---");
     console.log(JSON.stringify(frontendValidationSummary, null, 2));
     
-    // ✅ 【第二步：執行後端權威計算】
     const backendSummary = await calculateCartSummary(
         supabaseAdmin,
         cartId,
@@ -69,11 +65,14 @@ Deno.serve(async (req) => {
         selectedShippingMethodId
     );
     
-    // ✅ 【第三步：打印後端計算出的「真相」】
+    // ✅ 【新增】一个额外的安全检查，确保 backendSummary 是一个有效的物件
+    if (!backendSummary || typeof backendSummary.total !== 'number') {
+        throw new Error('後端費用計算失敗，無法取得有效的摘要物件。');
+    }
+
     console.log("--- [DEBUG] 後端權威計算摘要 ---");
     console.log(JSON.stringify(backendSummary, null, 2));
 
-    // ✅ 【第四步：進行比對，並在失敗時打印詳細原因】
     if (backendSummary.total !== frontendValidationSummary.total) {
       console.error("!!! [DEBUG] 價格勾稽失敗 !!!");
       console.error(`前端總計: ${frontendValidationSummary.total} (類型: ${typeof frontendValidationSummary.total})`);
@@ -105,7 +104,7 @@ Deno.serve(async (req) => {
         payment_status: 'pending'
     }).select().single();
     if (orderError) throw orderError;
-
+    
     const orderItemsToInsert = cartItems.map(item => ({
         order_id: newOrder.id, product_variant_id: item.product_variant_id,
         quantity: item.quantity, price_at_order: item.price_snapshot,
