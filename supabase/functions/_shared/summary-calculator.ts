@@ -1,9 +1,8 @@
-// 檔案路徑: supabase/functions/_shared/summary-calculator.ts (New Shared Module)
+// 檔案路徑: supabase/functions/_shared/summary-calculator.ts (New Shared Module with Validation)
 
 /**
  * @file 共享的購物車費用計算模組
  * @description 這是整個後端系統中，唯一負責計算購物車費用的權威來源。
- *              所有需要計算費用的 Edge Function 都必須 import 並呼叫此函式。
  */
 
 /**
@@ -15,32 +14,39 @@
  * @returns {Promise<object>} 一個包含完整購物車快照的物件
  */
 export async function calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
-    // 步驟 1: 獲取購物車內所有項目及其關聯的商品價格
-    const { data: cartItems, error: cartItemsError } = await supabase
-        .from('cart_items')
-        .select(`*, product_variants!inner(price, sale_price)`) // 使用 !inner 確保只計算有效的商品
-        .eq('cart_id', cartId);
-        
-    if (cartItemsError) throw cartItemsError;
-
-    // 如果購物車是空的，直接回傳一個初始化的空狀態物件
-    if (!cartItems || cartItems.length === 0) {
+    // ✅ 【增加】在所有操作前，進行嚴格的參數校驗
+    if (!supabase || typeof supabase.from !== 'function') {
+        throw new Error('無效的 Supabase Client 實例被傳入。');
+    }
+    if (!cartId) {
+        // 如果沒有購物車 ID，代表是初始化或空車，直接回傳安全預設值
         return {
-            items: [],
-            itemCount: 0,
+            items: [], itemCount: 0,
             summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
             appliedCoupon: null,
         };
     }
 
-    // 步驟 2: 計算商品小計 (Subtotal)
+    const { data: cartItems, error: cartItemsError } = await supabase
+        .from('cart_items')
+        .select(`*, product_variants!inner(price, sale_price)`)
+        .eq('cart_id', cartId);
+        
+    if (cartItemsError) throw cartItemsError;
+
+    if (!cartItems || cartItems.length === 0) {
+        return {
+            items: [], itemCount: 0,
+            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+            appliedCoupon: null,
+        };
+    }
+
     const subtotal = cartItems.reduce((sum, item) => {
         const price = item.product_variants.sale_price ?? item.product_variants.price;
-        const itemTotal = price * item.quantity;
-        return sum + Math.round(itemTotal);
+        return sum + Math.round(price * item.quantity);
     }, 0);
     
-    // 步驟 3: 計算折扣 (Discount)
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
@@ -55,7 +61,6 @@ export async function calculateCartSummary(supabase, cartId, couponCode, shippin
         }
     }
 
-    // 步驟 4: 計算運費 (Shipping Fee)
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
@@ -64,20 +69,12 @@ export async function calculateCartSummary(supabase, cartId, couponCode, shippin
             shippingFee = Math.round(shippingRate.rate);
         }
     }
-
-    // 步驟 5: 計算最終總計 (Total)
     const total = subtotal - couponDiscount + shippingFee;
     
-    // 步驟 6: 回傳一個包含所有計算結果的完整「購物車快照」物件
     return {
         items: cartItems,
         itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
-        summary: { 
-            subtotal, 
-            couponDiscount, 
-            shippingFee, 
-            total: total < 0 ? 0 : total 
-        },
+        summary: { subtotal, couponDiscount, shippingFee, total: total < 0 ? 0 : total },
         appliedCoupon,
     };
 }

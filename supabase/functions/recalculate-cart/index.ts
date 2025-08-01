@@ -1,7 +1,6 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts (Final Refactored Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-// ✅ 【關鍵修正】從共享目錄中 import 唯一的、權威的計算函式
 import { calculateCartSummary } from '../_shared/summary-calculator.ts'
 
 const corsHeaders = {
@@ -11,15 +10,12 @@ const corsHeaders = {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
-  
   try {
     const { cartId, couponCode, shippingMethodId, actions } = await req.json();
-    if (!cartId) throw new Error("缺少 cartId");
-
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     
-    // 步驟 1: 如果有操作指令，先執行它們
     if (actions && actions.length > 0) {
+      if (!cartId) throw new Error("執行購物車操作時需要 cartId。");
       for (const action of actions) {
         switch (action.type) {
           case 'ADD_ITEM': {
@@ -50,7 +46,6 @@ Deno.serve(async (req) => {
       }
     }
     
-    // 步驟 2: ✅ 直接呼叫共享的計算函式來完成所有計算
     const cartSnapshot = await calculateCartSummary(supabaseAdmin, cartId, couponCode, shippingMethodId);
 
     return new Response(JSON.stringify(cartSnapshot), {
