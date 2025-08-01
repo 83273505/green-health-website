@@ -8,7 +8,6 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -17,7 +16,7 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { persistSession: false } } // 在伺服器端建議設定為 false
+      { auth: { persistSession: false } } // 在伺服器端環境中，建議設定為 false
     )
     
     const authHeader = req.headers.get('Authorization');
