@@ -19,7 +19,6 @@ Deno.serve(async (req) => {
     const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (!user) throw new Error('使用者未登入或授權無效。');
     
-    // 步驟 1: 呼叫共享模組進行權威計算與校驗
     const backendSnapshot = await calculateCartSummary(
         supabaseAdmin,
         cartId,
@@ -32,11 +31,9 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    // 從快照中獲取最新的購物車項目
     const cartItems = backendSnapshot.items;
     if (!cartItems || cartItems.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
     
-    // 獲取結帳所需的其他資料
     const { data: address } = await supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).single();
     const { data: shippingMethod } = await supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();

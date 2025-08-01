@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/_shared/summary-calculator.ts (New Shared Module with Validation)
+// 檔案路徑: supabase/functions/_shared/summary-calculator.ts (New Shared Module with Full Query)
 
 /**
  * @file 共享的購物車費用計算模組
@@ -14,12 +14,8 @@
  * @returns {Promise<object>} 一個包含完整購物車快照的物件
  */
 export async function calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
-    // ✅ 【增加】在所有操作前，進行嚴格的參數校驗
-    if (!supabase || typeof supabase.from !== 'function') {
-        throw new Error('無效的 Supabase Client 實例被傳入。');
-    }
+    if (!supabase || typeof supabase.from !== 'function') throw new Error('無效的 Supabase Client 實例被傳入。');
     if (!cartId) {
-        // 如果沒有購物車 ID，代表是初始化或空車，直接回傳安全預設值
         return {
             items: [], itemCount: 0,
             summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
@@ -27,9 +23,20 @@ export async function calculateCartSummary(supabase, cartId, couponCode, shippin
         };
     }
 
+    // ✅ 【關鍵修正】確保 select 查詢了所有下游需要的欄位，特別是 name 和 image_url
     const { data: cartItems, error: cartItemsError } = await supabase
         .from('cart_items')
-        .select(`*, product_variants!inner(price, sale_price)`)
+        .select(`
+            *,
+            product_variants (
+                name,
+                price,
+                sale_price,
+                products (
+                    image_url 
+                )
+            )
+        `)
         .eq('cart_id', cartId);
         
     if (cartItemsError) throw cartItemsError;
