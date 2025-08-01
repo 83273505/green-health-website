@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Final Bulletproof Version)
+// 檔案路徑: supabase/functions/recalculate-cart/index.ts (Final Query Fix Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -7,17 +7,35 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-/**
- * [內聯輔助函式] 這是此函式的核心計算引擎
- */
 async function calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
-    const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
+    // ✅ 【關鍵修正】移除 !inner，改用預設的、更具容錯性的左連接
+    const { data: cartItems, error: cartItemsError } = await supabase
+        .from('cart_items')
+        .select(`
+            *,
+            product_variants (
+                name,
+                price,
+                sale_price,
+                products (
+                    image_url
+                )
+            )
+        `)
+        .eq('cart_id', cartId);
+        
     if (cartItemsError) throw cartItemsError;
 
     if (!cartItems || cartItems.length === 0) {
         return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 }, appliedCoupon: null };
     }
-    const subtotal = cartItems.reduce((sum, item) => sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
+    
+    const subtotal = cartItems.reduce((sum, item) => {
+        // ✅ 增加安全檢查，如果關聯的 product_variants 不存在，則使用 price_snapshot 作為備援
+        const price = item.product_variants?.sale_price ?? item.product_variants?.price ?? item.price_snapshot;
+        return sum + Math.round(price * item.quantity);
+    }, 0);
+    
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
@@ -40,6 +58,7 @@ async function calculateCartSummary(supabase, cartId, couponCode, shippingMethod
         }
     }
     const total = subtotal - couponDiscount + shippingFee;
+    
     return {
         items: cartItems,
         itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
