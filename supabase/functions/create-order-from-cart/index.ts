@@ -1,4 +1,4 @@
-// 檔案路径: supabase/functions/create-order-from-cart/index.ts (Final Plain Text Email Restored Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Plain Text Email Restored Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Resend } from 'https://esm.sh/resend@3.2.0';
@@ -9,18 +9,12 @@ const corsHeaders = {
 }
 
 const handler = {
-  /**
-   * [私有方法] 格式化數字為簡單的台幣字串
-   */
   _formatNumber(num) {
     const numberValue = Number(num);
     if (isNaN(numberValue)) return '金額錯誤';
     return `NT$ ${numberValue.toLocaleString('zh-TW')}`;
   },
 
-  /**
-   * [私有方法] 購物車計算核心引擎
-   */
   async _calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
     const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
@@ -59,18 +53,19 @@ const handler = {
   },
 
   /**
-   * ✅ 【关键修正】[私有方法] 建立订单确认邮件的纯文字版本
+   * ✅ 【关键修正】[私有方法] 恢复完整的、内容丰富的纯文字邮件模板
    */
   _createOrderEmailText(order, orderItems, address, shippingMethod, paymentMethod) {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     
     const itemsList = orderItems.map(item => {
-      const priceAtOrder = parseFloat(item.price_snapshot);
+      const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
       const variantName = item.product_variants?.name || '未知品项';
       if (isNaN(priceAtOrder) || isNaN(quantity)) {
         return `• ${variantName} (数量: ${item.quantity}) - 金额计算错误`;
       }
+      // 采纳您最终的显示建议：品名、数量、单价、项目小计
       return `• ${variantName}\n  数量: ${quantity} × 单价: ${this._formatNumber(priceAtOrder)} = 小计: ${this._formatNumber(priceAtOrder * quantity)}`;
     }).join('\n\n');
 
@@ -79,7 +74,7 @@ Green Health 訂單確認
 
 您好，${address.recipient_name}！
 
-您的订单已成功建立，以下是订单详细资讯：
+您的訂單已成功建立，以下是訂單詳細資訊：
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📋 訂單資訊
@@ -134,6 +129,7 @@ Green Health 團隊 敬上
       { auth: { persistSession: false } }
     );
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
+    
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
     if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
       throw new Error('缺少必要的下单资讯。');
@@ -169,11 +165,22 @@ Green Health 團隊 敬上
     }));
     await supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId).throwOnError();
+    
+    // 我们将使用“回读”查询，确保邮件和前端拿到的资料绝对一致
+    const { data: finalOrderItems, error: finalItemsError } = await supabaseAdmin
+        .from('order_items')
+        .select('*, product_variants(name)')
+        .eq('order_id', newOrder.id);
+    if (finalItemsError) {
+        console.error(`无法重新查询订单 ${newOrder.order_number} 的项目详情:`, finalItemsError);
+    }
+
     try {
-      const emailText = this._createOrderEmailText(newOrder, cartItems, address, shippingMethod, paymentMethod);
+      const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
-        to: [user.email], bcc: ['a896214@gmail.com'],
+        to: [user.email], 
+        bcc: ['a896214@gmail.com'],
         reply_to: 'service@greenhealthtw.com.tw',
         subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
         text: emailText,
@@ -184,7 +191,7 @@ Green Health 團隊 敬上
     return new Response(JSON.stringify({
       success: true,
       orderNumber: newOrder.order_number,
-      orderDetails: { order: newOrder, items: cartItems, address, shippingMethod, paymentMethod }
+      orderDetails: { order: newOrder, items: finalOrderItems || [], address, shippingMethod, paymentMethod }
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 }
