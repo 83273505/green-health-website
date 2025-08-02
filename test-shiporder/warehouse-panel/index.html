@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出貨管理系統 - 登入</title>
+    <!-- 【修改部分】增加 CSS 樣式表連結 -->
+    <link rel="stylesheet" href="./css/warehouse-style.css"> 
+</head>
+<body id="warehouse-login">
+
+    <div class="login-container">
+        <div class="login-box">
+            <h1>出貨管理系統</h1>
+            <p>請使用您的管理帳號登入</p>
+            
+            <form id="warehouse-login-form">
+                <div class="form-group">
+                    <label for="login-email">電子郵件</label>
+                    <input type="email" id="login-email" name="email" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">密碼</label>
+                    <input type="password" id="login-password" name="password" required autocomplete="current-password">
+                </div>
+                
+                <!-- 用於顯示錯誤或成功訊息的區塊 -->
+                <div id="notification-message" style="display: none;"></div>
+                
+                <button type="submit" class="btn-submit">登入</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 載入核心設定檔 -->
+    <script src="./js/core/config.js"></script>
+    <!-- 主應用程式入口 -->
+    <script type="module" src="./js/core/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,367 @@
+/* --- 全域與基礎設定 --- */
+:root {
+    --primary-color: #4CAF50; /* 主題綠色 */
+    --primary-dark: #388E3C;
+    --secondary-color: #f4f4f4; /* 淺灰背景 */
+    --border-color: #ddd;
+    --text-color: #333;
+    --text-light: #666;
+    --status-paid: #3498db;
+    --status-pending: #f39c12;
+    --error-color: #e74c3c;
+    --success-color: #2ecc71;
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    font-family: var(--font-family);
+    background-color: #f9f9f9;
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+/* --- 登入頁面樣式 --- */
+body#warehouse-login {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: linear-gradient(135deg, #e0f2f1, #c8e6c9);
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    padding: 2rem;
+}
+
+.login-box {
+    background-color: #fff;
+    padding: 2.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    text-align: center;
+}
+
+.login-box h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+    color: #333;
+}
+
+.login-box p {
+    color: var(--text-light);
+    margin-bottom: 2rem;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+    text-align: left;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.form-group input {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+/* --- 按鈕樣式 --- */
+.btn-submit {
+    width: 100%;
+    padding: 0.9rem;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-submit:hover:not(:disabled) {
+    background-color: var(--primary-dark);
+}
+
+.btn-submit:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    padding: 0.4rem 0.8rem;
+    background-color: #f0f0f0;
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.btn-secondary:hover {
+    background-color: #e0e0e0;
+}
+
+/* --- 通知訊息樣式 --- */
+#notification-message {
+    padding: 0.8rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+    font-weight: 500;
+}
+#notification-message.error {
+    background-color: #fbecec;
+    color: var(--error-color);
+    border: 1px solid var(--error-color);
+}
+#notification-message.success {
+    background-color: #eaf7ec;
+    color: #26733a;
+    border: 1px solid #a3d5b0;
+}
+#notification-message.info {
+    background-color: #e9f5fe;
+    color: #3498db;
+    border: 1px solid #aed6f1;
+}
+
+/* --- 出貨儀表板樣式 --- */
+body#shipping-dashboard {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.8rem 1.5rem;
+    background-color: #fff;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.main-header h1 {
+    font-size: 1.5rem;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+#logout-btn {
+    background: none;
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+#logout-btn:hover {
+    background-color: var(--error-color);
+    color: white;
+}
+
+.dashboard-container {
+    display: flex;
+    flex-grow: 1;
+    overflow: hidden; /* 防止滾動條出現在容器層級 */
+}
+
+/* 左側：訂單佇列 */
+.order-queue-panel {
+    width: 350px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+}
+
+.order-queue-panel h2 {
+    padding: 1rem;
+    font-size: 1.2rem;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+#order-list-container {
+    overflow-y: auto;
+    flex-grow: 1;
+    padding: 0.5rem;
+}
+
+.loading-spinner, .error-message {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-light);
+}
+
+.order-list-item {
+    padding: 1rem;
+    border-bottom: 1px solid #eee;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.order-list-item:hover {
+    background-color: var(--secondary-color);
+}
+
+.order-list-item.active {
+    background-color: #e0f2f1;
+    border-right: 3px solid var(--primary-color);
+}
+
+.order-list-item .order-number {
+    font-weight: 600;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+.order-list-item .recipient-name {
+    color: var(--text-light);
+    font-size: 0.9rem;
+}
+.order-list-item .order-date {
+    color: var(--text-light);
+    font-size: 0.9rem;
+    float: right;
+}
+
+/* 右側：訂單詳情 */
+.order-detail-panel {
+    flex-grow: 1;
+    padding: 1.5rem 2rem;
+    overflow-y: auto;
+}
+
+#empty-view {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    color: var(--text-light);
+    text-align: center;
+}
+
+.hidden {
+    display: none !important;
+}
+
+#order-number-title {
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1rem;
+}
+
+.detail-section {
+    margin-bottom: 2.5rem;
+}
+
+.detail-section h3 {
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#shipping-address p, #payment-details p {
+    margin-bottom: 0.5rem;
+}
+
+.status-paid {
+    font-weight: bold;
+    color: var(--status-paid);
+}
+.status-pending_payment {
+    font-weight: bold;
+    color: var(--status-pending);
+}
+
+/* 出貨作業表單 */
+#shipping-form select, #shipping-form input {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+
+#shipping-form select:focus, #shipping-form input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+}
+
+/* 備貨清單表格樣式 */
+#picking-list table {
+    width: 100%;
+    border-collapse: collapse;
+}
+#picking-list th, #picking-list td {
+    padding: 0.8rem 0.5rem;
+    border-bottom: 1px solid #eee;
+    text-align: left;
+}
+#picking-list th {
+    font-weight: 600;
+    color: var(--text-light);
+}
+#picking-list .quantity, #picking-list .sku {
+    text-align: center;
+}
+#picking-list .sku {
+    font-family: monospace;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
+
+/* --- 響應式設計 (手機版) --- */
+@media (max-width: 768px) {
+    .dashboard-container {
+        flex-direction: column;
+    }
+
+    .order-queue-panel {
+        width: 100%;
+        height: 40vh; /* 在手機上給予固定高度 */
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .order-detail-panel {
+        padding: 1rem;
+        height: 60vh; /* 佔據剩餘高度 */
+    }
+
+    .login-box {
+        padding: 1.5rem;
+    }
+}

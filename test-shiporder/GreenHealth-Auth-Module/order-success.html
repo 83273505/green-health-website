@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>訂單完成 - Green Health 綠健</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+
+    <!-- 核心腳本 -->
+    <script src="./js/core/config.js"></script>
+    <script type="module" src="./js/core/app.js"></script>
+
+    <style>
+        :root { 
+            --primary-color: #5E8C61; 
+            --secondary-color: #6c757d;
+            --text-color: #333;
+            --light-text-color: #555;
+            --border-color: #eee;
+            --background-color: #f4f7f6;
+            --highlight-bg-color: #fef8f5;
+            --highlight-text-color: #B12704;
+        }
+        body { 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            min-height: 100vh; 
+            background-color: var(--background-color); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            text-align: left; 
+            padding: 2rem; 
+            box-sizing: border-box; 
+            margin: 0;
+        }
+        .container { 
+            background: white; 
+            padding: 2rem 2.5rem; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08); 
+            max-width: 600px; 
+            width: 100%; 
+        }
+        h1 { 
+            text-align: center; 
+            color: var(--primary-color); 
+            margin-top: 0; 
+            margin-bottom: 1rem;
+        }
+        p { 
+            color: var(--light-text-color); 
+            line-height: 1.7; 
+            text-align: center;
+        }
+        .order-number-box { 
+            text-align: center; 
+            margin: 1.5rem 0; 
+        }
+        #order-number { 
+            font-weight: bold; 
+            color: var(--highlight-text-color); 
+            font-size: 1.25rem; 
+            background-color: var(--highlight-bg-color); 
+            padding: 0.5rem 1.5rem; 
+            border-radius: 6px; 
+            display: inline-block; 
+            letter-spacing: 1px;
+        }
+        .order-details-section { 
+            margin-top: 2rem; 
+            border-top: 1px solid var(--border-color); 
+            padding-top: 1.5rem; 
+        }
+        h2 { 
+            font-size: 1.1rem; 
+            margin-top: 0;
+            margin-bottom: 1rem; 
+            color: var(--text-color); 
+            border-bottom: none; 
+        }
+        .detail-item { 
+            margin-bottom: 0.75rem; 
+            display: flex;
+        }
+        .detail-item strong { 
+            display: inline-block; 
+            width: 100px; 
+            flex-shrink: 0;
+            color: var(--text-color);
+        }
+        .detail-item span {
+            color: var(--light-text-color);
+        }
+        .product-list { 
+            margin-top: 1rem; 
+            border-top: 1px solid var(--border-color); 
+            padding-top: 1rem; 
+        }
+        .product-item { 
+            display: flex; 
+            justify-content: space-between; 
+            margin-bottom: 0.5rem; 
+            color: var(--light-text-color);
+        }
+        .action-buttons { 
+            display: flex; 
+            gap: 1rem; 
+            justify-content: center; 
+            margin-top: 2.5rem; 
+        }
+        .action-button { 
+            display: inline-block; 
+            padding: 0.8rem 1.5rem; 
+            color: white; 
+            text-decoration: none; 
+            border-radius: 6px; 
+            border: none; 
+            font-size: 1rem; 
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+        .action-button:hover {
+            opacity: 0.9;
+        }
+        .btn-shop { background-color: var(--primary-color); }
+        .btn-dashboard { background-color: var(--secondary-color); }
+        /* ✅ 【新增】费用明细的样式 */
+        .summary-section {
+            margin-top: 1rem;
+            border-top: 1px solid var(--border-color);
+            padding-top: 1rem;
+        }
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            color: var(--light-text-color);
+        }
+        .summary-row.total {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: var(--text-color);
+            border-top: 1px solid #ccc;
+            margin-top: 0.5rem;
+            padding-top: 1rem;
+        }
+        .summary-row.discount {
+            color: #D9534F;
+        }
+    </style>
+</head>
+
+<!-- body ID 是讓 app.js 載入 order-success.js 的關鍵 -->
+<body id="order-success">
+    <div class="container">
+        <h1>感謝您的訂購！</h1>
+        <p>您的訂單已成功建立。我們的客服人員將會盡快處理您的訂單，請留意後續的電子郵件通知。</p>
+        
+        <div class="order-number-box">
+            <span>您的訂單編號是：</span><br>
+            <span id="order-number">載入中...</span>
+        </div>
+
+        <div id="order-details-container" style="display: none;">
+            <div class="order-details-section">
+                <h2>收件人資訊</h2>
+                <div id="shipping-details">
+                    <!-- 收件人資料將由 JS 動態載入 -->
+                </div>
+            </div>
+
+            <div class="order-details-section">
+                <h2>訂單商品</h2>
+                <div id="product-list" class="product-list">
+                    <!-- 商品資料將由 JS 動態載入 -->
+                </div>
+                <!-- ✅ 【新增】费用明细的完整容器 -->
+                <div class="summary-section">
+                    <div class="summary-row">
+                        <span>商品小計</span>
+                        <span id="summary-subtotal"></span>
+                    </div>
+                    <div id="summary-coupon-row" class="summary-row discount" style="display: none;">
+                        <span>折扣優惠</span>
+                        <span id="summary-coupon-discount"></span>
+                    </div>
+                    <div class="summary-row">
+                        <span>運費</span>
+                        <span id="summary-shipping-fee"></span>
+                    </div>
+                    <div class="summary-row total">
+                        <span>總計</span>
+                        <span id="summary-total-price"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="order-details-section">
+                <h2>運送與付款資訊</h2>
+                <div id="method-details">
+                    <!-- 運送與付款資料將由 JS 動態載入 -->
+                </div>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <a href="./products.html" class="action-button btn-shop">繼續購物</a>
+            <a href="./dashboard.html" class="action-button btn-dashboard">前往會員中心</a>
+        </div>
+    </div>
+</body>
+</html>

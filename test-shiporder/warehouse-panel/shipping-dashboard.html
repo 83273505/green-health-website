@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出貨儀表板 - Green Health</title>
+    <!-- 【修改部分】增加 CSS 樣式表連結 -->
+    <link rel="stylesheet" href="./css/warehouse-style.css">
+</head>
+<body id="shipping-dashboard">
+
+    <header class="main-header">
+        <h1>出貨管理儀表板</h1>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- 左側：訂單佇列 -->
+        <aside class="order-queue-panel">
+            <h2>待出貨訂單</h2>
+            <div id="order-list-container">
+                <!-- 訂單列表將由 JS 動態載入 -->
+                <div class="loading-spinner">載入中...</div>
+            </div>
+        </aside>
+
+        <!-- 右側：訂單詳情與操作 -->
+        <section class="order-detail-panel">
+            <div id="order-detail-view" class="hidden">
+                <h2 id="order-number-title">訂單 #</h2>
+                
+                <div class="detail-section">
+                    <h3>備貨清單 <button id="print-btn" class="btn-secondary">列印備貨單</button></h3>
+                    <div id="picking-list">
+                        <!-- 備貨清單將由 JS 動態載入 -->
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <h3>收件資訊</h3>
+                    <div id="shipping-address">
+                        <!-- 收件資訊將由 JS 動態載入 -->
+                    </div>
+                </div>
+
+                <div class="detail-section">
+                    <h3>付款狀態</h3>
+                    <div id="payment-details">
+                        <!-- 付款狀態將由 JS 動態載入 -->
+                    </div>
+                </div>
+
+                <div class="detail-section action-section">
+                    <h3>出貨作業</h3>
+                    <form id="shipping-form">
+                        <div class="form-group">
+                            <label for="carrier-selector">配送服務</label>
+                            <select id="carrier-selector" required>
+                                <!-- 選項將由 JS 動態載入 -->
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="tracking-code-input">物流追蹤單號</label>
+                            <input type="text" id="tracking-code-input" required>
+                        </div>
+
+                        <div id="notification-message" style="display: none;"></div>
+
+                        <button type="submit" id="mark-as-shipped-btn" class="btn-submit">確認出貨並通知顧客</button>
+                    </form>
+                </div>
+            </div>
+            <div id="empty-view">
+                <p>請從左側選擇一筆訂單以開始作業。</p>
+            </div>
+        </section>
+    </main>
+
+    <script src="./js/core/config.js"></script>
+    <script type="module" src="./js/core/app.js"></script>
+</body>
+</html>
