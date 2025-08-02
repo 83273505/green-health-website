@@ -1,4 +1,4 @@
-// 檔案路徑: supabase/functions/get-or-create-cart/index.ts (Final Bulletproof Version)
+// 檔案路徑: supabase/functions/get-or-create-cart/index.ts (Final Bulletproof Encapsulated Version)
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -8,6 +8,7 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -16,7 +17,7 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      { auth: { persistSession: false } } // 在伺服器端環境中，建議設定為 false
+      { auth: { persistSession: false } } // 在伺服器端建議設定為 false
     )
     
     const authHeader = req.headers.get('Authorization');
@@ -53,7 +54,7 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[get-or-create-cart] 函式內部錯誤:', error.message, error.stack);
-    return new Response(JSON.stringify({ error: error.message, stack: error.stack }), {
+    return new Response(JSON.stringify({ error: `[get-or-create-cart]: ${error.message}` }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,
     })
