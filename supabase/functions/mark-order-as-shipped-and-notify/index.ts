@@ -4,66 +4,126 @@
 // ----------------------------------------------------
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Resend } from 'https://esm.sh/resend@3.2.0'
+import { Resend } from 'https://esm.sh/resend@3.2.0';
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "mark-order-as-shipped-and-notify" (v2) 已啟動`)
-
-// 價格格式化輔助函式
-const formatPrice = (price: number) => {
-    return new Intl.NumberFormat('zh-TW', {
-        style: 'currency',
-        currency: 'TWD',
+// 將所有邏輯封裝在 handler 物件中，以匹配 create-order-from-cart 的風格
+const handler = {
+  /**
+   * [私有方法] 格式化數字為台幣貨幣字串
+   */
+  _formatPrice(num: number | string | null | undefined): string {
+    const numberValue = Number(num);
+    if (isNaN(numberValue)) return 'N/A';
+    return `NT$ ${numberValue.toLocaleString('zh-TW', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
-    }).format(price || 0);
-};
+    })}`;
+  },
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
-  }
+  /**
+   * [私有方法] 建立純文字格式的出貨通知郵件內容
+   */
+  _createShippedEmailText(order: any): string {
+    const address = order.shipping_address_snapshot;
+    const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
+    
+    const itemsList = order.order_items.map((item: any) => {
+      const priceAtOrder = parseFloat(item.price_at_order);
+      const quantity = parseInt(item.quantity, 10);
+      const productName = item.product_variants?.products?.name || '未知商品';
+      const variantName = item.product_variants?.name || '未知規格';
+      if (isNaN(priceAtOrder) || isNaN(quantity)) {
+        return `• ${productName} (${variantName}) - 金額計算錯誤`;
+      }
+      return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${this._formatPrice(priceAtOrder)} = 小計: ${this._formatPrice(priceAtOrder * quantity)}`;
+    }).join('\n\n');
 
-  try {
-    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json()
+    return `
+Green Health 出貨通知
+
+您好，${address.recipient_name}！
+
+您的訂單已經準備就緒，並已交由物流中心寄出。
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📦 出貨資訊
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+訂單編號：${order.order_number}
+出貨時間：${new Date(order.shipped_at).toLocaleString('zh-TW')}
+配送服務：${order.carrier}
+物流追蹤號碼：${order.shipping_tracking_code}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚚 配送詳情
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+收件人：${address.recipient_name}
+聯絡電話：${address.phone_number}
+配送地址：${fullAddress}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛒 訂購商品
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${itemsList}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💰 費用明細
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+商品小計：${this._formatPrice(order.subtotal_amount)}${order.coupon_discount > 0 ? `
+優惠折扣：-${this._formatPrice(order.coupon_discount)}` : ''}
+運送費用：${this._formatPrice(order.shipping_fee)}
+─────────────────────────────────
+總計金額：${this._formatPrice(order.total_amount)}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+感謝您的耐心等候！
+您可以透過物流追蹤號碼查詢包裹的最新狀態。
+
+此為系統自動發送郵件，請勿直接回覆。
+如有任何問題，請至官網客服中心與我們聯繫。
+
+Green Health 團隊 敬上
+    `.trim();
+  },
+
+  /**
+   * [主方法] 處理整個出貨請求
+   */
+  async handleRequest(req: Request) {
+    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json();
     if (!orderId || !shippingTrackingCode || !selectedCarrierMethodName) {
-      return new Response(JSON.stringify({ error: '缺少必要的參數' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }})
+      throw new Error('缺少必要的出貨參數。');
     }
 
-    const supabaseClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    const resend = new Resend(Deno.env.get('RESEND_API_KEY'))
+    // 建立具有 service_role 權限的 client
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } }
+    );
+    
+    // 建立 Resend client
+    const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
 
-    const { data: orderToCheck, error: checkError } = await supabaseClient.from('orders').select('status, payment_status').eq('id', orderId).single()
-    if (checkError || !orderToCheck) {
-      return new Response(JSON.stringify({ error: '找不到指定的訂單' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' }})
-    }
-    if (orderToCheck.payment_status !== 'paid') {
-      return new Response(JSON.stringify({ error: '此訂單尚未完成付款，無法出貨。' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }})
-    }
-    if (orderToCheck.status === 'shipped') {
-       return new Response(JSON.stringify({ error: '此訂單已經出貨，請勿重複操作。' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }})
-    }
+    // 1. 驗證訂單狀態
+    const { data: orderToCheck, error: checkError } = await supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
+    if (checkError) throw new Error(`找不到訂單: ${checkError.message}`);
+    if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
+    if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
 
-    await supabaseClient.from('orders').update({
+    // 2. 更新訂單為已出貨
+    await supabaseAdmin.from('orders').update({
         status: 'shipped',
         shipping_tracking_code: shippingTrackingCode,
         carrier: selectedCarrierMethodName,
         shipped_at: new Date().toISOString(),
-      }).eq('id', orderId)
-
-    // 【修改部分】擴充查詢，獲取所有通知所需的詳細資訊
-    const { data: orderDetails, error: detailsError } = await supabaseClient
+      }).eq('id', orderId).throwOnError();
+      
+    // 3. 查詢發送郵件所需的完整資訊
+    const { data: orderDetails, error: detailsError } = await supabaseAdmin
       .from('orders')
       .select(`
-        order_number,
-        shipped_at,
-        carrier,
-        shipping_tracking_code,
-        subtotal_amount,
-        shipping_fee,
-        coupon_discount,
-        total_amount,
-        shipping_address_snapshot,
+        *,
         users:profiles(email),
         order_items(
           quantity,
@@ -72,87 +132,67 @@ Deno.serve(async (req) => {
         )
       `)
       .eq('id', orderId)
-      .single()
+      .single();
 
     if (detailsError) {
-      console.error('獲取郵件詳細資訊時發生錯誤:', detailsError)
-    } else if (orderDetails) {
-      const userEmail = orderDetails.users?.email
-      if (userEmail) {
-        // 【修改部分】重構郵件 HTML 內容
-        const address = orderDetails.shipping_address_snapshot;
-        const shippingAddressHtml = address ? `
-          <p><strong>姓名:</strong> ${address.recipient_name}</p>
-          <p><strong>電話:</strong> ${address.phone_number}</p>
-          <p><strong>地址:</strong> ${address.postal_code} ${address.city}${address.district}${address.street_address}</p>
-        ` : '<p>無收件資訊</p>';
-
-        const itemsHtml = orderDetails.order_items.map(item => `
-          <tr>
-            <td style="padding: 8px; border-bottom: 1px solid #eee;">${item.product_variants.products.name} (${item.product_variants.name})</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: center;">${item.quantity}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${formatPrice(item.price_at_order)}</td>
-            <td style="padding: 8px; border-bottom: 1px solid #eee; text-align: right;">${formatPrice(item.price_at_order * item.quantity)}</td>
-          </tr>`
-        ).join('');
-
-        const emailHtml = `
-          <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-            <h2>您的訂單 #${orderDetails.order_number} 已出貨！</h2>
-            <p>親愛的顧客，您好：</p>
-            <p>感謝您的訂購，您的訂單已經打包完成並於 ${new Date(orderDetails.shipped_at).toLocaleString('zh-TW')} 交由物流寄出。</p>
-            
-            <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px;">出貨資訊</h3>
-            <p><strong>配送服務：</strong> ${orderDetails.carrier}</p>
-            <p><strong>物流追蹤單號：</strong> ${orderDetails.shipping_tracking_code}</p>
-
-            <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 20px;">收件資訊</h3>
-            ${shippingAddressHtml}
-
-            <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 20px;">商品明細</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <thead>
-                <tr>
-                  <th style="text-align: left; padding: 8px; color: #666;">品名</th>
-                  <th style="text-align: center; padding: 8px; color: #666;">數量</th>
-                  <th style="text-align: right; padding: 8px; color: #666;">單價</th>
-                  <th style="text-align: right; padding: 8px; color: #666;">小計</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemsHtml}
-              </tbody>
-            </table>
-
-            <h3 style="border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-top: 20px;">訂單金額</h3>
-            <p style="display: flex; justify-content: space-between;"><span>商品小計:</span> <span>${formatPrice(orderDetails.subtotal_amount)}</span></p>
-            <p style="display: flex; justify-content: space-between;"><span>運費:</span> <span>${formatPrice(orderDetails.shipping_fee)}</span></p>
-            ${orderDetails.coupon_discount > 0 ? `<p style="display: flex; justify-content: space-between;"><span>折扣金額:</span> <span>- ${formatPrice(orderDetails.coupon_discount)}</span></p>` : ''}
-            <p style="display: flex; justify-content: space-between; font-weight: bold; font-size: 1.2em;"><span>總計:</span> <span>${formatPrice(orderDetails.total_amount)}</span></p>
-            
-            <p style="margin-top: 30px;">感謝您的支持！</p>
-            <p>Green Health 團隊</p>
-          </div>
-        `;
-        
-        await resend.emails.send({
-          from: 'Green Health <noreply@yourdomain.com>', // 請替換成您在 Resend 驗證過的網域
-          to: userEmail,
-          subject: `您的 Green Health 訂單 #${orderDetails.order_number} 已出貨！`,
-          html: emailHtml,
-        })
-      }
+      console.error(`[CRITICAL] 訂單 ${orderDetails?.order_number || orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
+      // 即使郵件資訊獲取失敗，核心業務已完成，仍然回傳成功
+      return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(查詢詳情出錯)。' }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    return new Response(JSON.stringify({ success: true, message: '訂單已成功標記為已出貨，並已發送通知。' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    })
-  } catch (error) {
-    console.error('未預期的錯誤:', error.message)
-    return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    })
+    // 4. 發送出貨通知郵件
+    if (orderDetails && orderDetails.users?.email) {
+      try {
+        const emailText = this._createShippedEmailText(orderDetails);
+        await resend.emails.send({
+          from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>', // 請確認此寄件人地址
+          to: [orderDetails.users.email], 
+          bcc: ['a896214@gmail.com'],
+          reply_to: 'service@greenhealthtw.com.tw', // 請確認此回覆地址
+          subject: `您的 Green Health 訂單 ${orderDetails.order_number} 已出貨`,
+          text: emailText, // 使用純文字內容
+        });
+      } catch (emailError) {
+        console.error(`[CRITICAL] 訂單 ${orderDetails.order_number} 的郵件發送失敗:`, emailError);
+        // 即使郵件發送失敗，也回傳成功
+        return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(Resend錯誤)。' }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    } else {
+      console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 找不到顧客 Email，無法發送通知。`);
+    }
+
+    // 5. 回傳最終成功響應
+    return new Response(JSON.stringify({ 
+      success: true, 
+      message: '訂單已成功標記為已出貨，並已發送通知。' 
+    }), { 
+      status: 200, 
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
   }
-})
+};
+
+// Deno 服務的入口點
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') { 
+    return new Response('ok', { headers: corsHeaders }); 
+  }
+  try {
+    return await handler.handleRequest(req);
+  } catch (error) {
+    console.error(`[mark-order-as-shipped] 函式最外層錯誤:`, error.message, error.stack);
+    // 回傳給前端的錯誤訊息，使用 error.message 以提供更具體的錯誤原因
+    return new Response(JSON.stringify({ 
+      error: error.message 
+    }), { 
+      status: 400, // 使用 400 Bad Request，因為這通常是業務邏輯錯誤
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    });
+  }
+});
