@@ -1,14 +1,16 @@
 // 檔案路徑: supabase/functions/search-shipped-orders/index.ts
 // ----------------------------------------------------
-// 【此為真正 100% 完整檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 import { corsHeaders } from '../_shared/cors.ts'
 
 console.log(`函式 "search-shipped-orders" (v3-final) 已啟動`)
 
 Deno.serve(async (req) => {
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -16,11 +18,13 @@ Deno.serve(async (req) => {
   try {
     const params = await req.json()
     
+    // 建立一個具有最高權限的 Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
+    // 建立基礎查詢
     let query = supabaseClient
       .from('orders')
       .select(`
@@ -56,10 +60,12 @@ Deno.serve(async (req) => {
       `)
       .eq('status', 'shipped')
 
+    // 根據前端傳來的參數，動態增加篩選條件
     if (params.orderNumber) {
       query = query.eq('order_number', params.orderNumber)
     }
     if (params.recipientName) {
+      // 使用 ->> 操作符來查詢 JSONB 欄位中的文字
       query = query.like('shipping_address_snapshot->>recipient_name', `%${params.recipientName}%`)
     }
     if (params.email) {
@@ -79,6 +85,7 @@ Deno.serve(async (req) => {
       query = query.lte('shipped_at', endOfDay.toISOString())
     }
 
+    // 執行查詢，按出貨時間倒序排列，最多返回 100 筆
     const { data: orders, error } = await query.order('shipped_at', { ascending: false }).limit(100)
 
     if (error) {
@@ -86,7 +93,7 @@ Deno.serve(async (req) => {
       throw error
     }
     
-    // 【恢復被遺漏的部分】將巢狀的 profiles 物件展平，方便前端直接使用 order.email
+    // 將巢狀的 profiles 物件展平，方便前端直接使用 order.email
     const formattedOrders = orders.map(order => {
         // 檢查 profiles 是否存在且不為 null
         const profilesData = Array.isArray(order.profiles) ? order.profiles[0] : order.profiles;
@@ -105,6 +112,7 @@ Deno.serve(async (req) => {
     })
 
   } catch (error) {
+    console.error('[search-shipped-orders] 函式錯誤:', error.message);
     return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

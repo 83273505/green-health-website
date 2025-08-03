@@ -3,12 +3,14 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 import { corsHeaders } from '../_shared/cors.ts'
 
 console.log(`函式 "mark-order-as-paid" 已啟動`)
 
 Deno.serve(async (req) => {
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -70,7 +72,7 @@ Deno.serve(async (req) => {
     })
 
   } catch (error) {
-    console.error('未預期的錯誤:', error.message)
+    console.error('[mark-order-as-paid] 未預期的錯誤:', error.message)
     return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

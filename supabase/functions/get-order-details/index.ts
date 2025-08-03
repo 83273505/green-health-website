@@ -1,9 +1,16 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 檔案路徑: supabase/functions/get-order-details/index.ts
+// ----------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ----------------------------------------------------
+
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 import { corsHeaders } from '../_shared/cors.ts'
 
 console.log(`函式 "get-order-details" 已啟動`)
 
 Deno.serve(async (req) => {
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -18,12 +25,14 @@ Deno.serve(async (req) => {
       })
     }
 
+    // 建立一個具有最高權限的 Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
     // 查詢特定訂單的所有 order_items，並深度連接到 product_variants 和 products
+    // 以獲取完整的商品資訊
     const { data: items, error } = await supabaseClient
       .from('order_items')
       .select(`
@@ -50,6 +59,7 @@ Deno.serve(async (req) => {
     })
 
   } catch (error) {
+    console.error('[get-order-details] 函式錯誤:', error.message);
     return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

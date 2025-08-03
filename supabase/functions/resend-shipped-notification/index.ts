@@ -3,8 +3,9 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Resend } from 'https://esm.sh/resend@3.2.0';
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
+import { Resend } from 'resend'
 import { corsHeaders } from '../_shared/cors.ts'
 
 const handler = {

@@ -1,6 +1,10 @@
-// 檔案路徑: supabase/functions/get-or-create-cart/index.ts (Final Bulletproof Encapsulated Version)
+// 檔案路徑: supabase/functions/get-or-create-cart/index.ts
+// ----------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -23,6 +27,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     let userId = null;
 
+    // 嘗試從 Authorization 標頭中獲取已登入的使用者 ID
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
         if (user) {
@@ -30,17 +35,19 @@ Deno.serve(async (req) => {
         }
     }
 
+    // 如果沒有已登入的使用者，則建立一個匿名使用者
     if (!userId) {
         const { data: anonUser, error: anonError } = await supabaseAdmin.auth.signInAnonymously();
         if (anonError || !anonUser.user) throw anonError || new Error('建立匿名使用者失敗。');
         userId = anonUser.user.id;
     }
 
+    // 使用 upsert 來為使用者找到或建立一個活躍的購物車
     const { data: cart, error: cartError } = await supabaseAdmin
       .from('carts')
       .upsert(
         { user_id: userId, status: 'active' },
-        { onConflict: 'user_id' }
+        { onConflict: 'user_id' } // 如果 user_id 已存在，則不執行任何操作
       )
       .select('id')
       .single();

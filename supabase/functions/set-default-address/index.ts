@@ -1,16 +1,20 @@
 // 檔案路徑: supabase/functions/set-default-address/index.ts
+// ----------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-control-allow-origin': '*',
+  'Access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
 }
 
 Deno.serve(async (req) => {
   // 處理 CORS 預檢請求
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'options') {
+    return new response('ok', { headers: corsheaders })
   }
 
   try {
@@ -22,6 +26,7 @@ Deno.serve(async (req) => {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('缺少授權標頭(Authorization header)。');
     
+    // 驗證 JWT 並獲取使用者
     const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (!user) throw new Error('使用者未認證或權杖(token)無效。');
 
@@ -29,6 +34,8 @@ Deno.serve(async (req) => {
     if (!addressId) throw new Error('請求主體(body)中缺少 addressId。');
 
     // --- 核心事務邏輯 ---
+    // 為了確保原子性，未來可以考慮將這兩步操作包裝在一個 PostgreSQL 函式中
+    
     // 1. 將該使用者所有的地址都設為非預設
     const { error: resetError } = await supabaseAdmin
       .from('addresses')

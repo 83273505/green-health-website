@@ -3,18 +3,20 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
 import { corsHeaders } from '../_shared/cors.ts'
 
 console.log(`函式 "get-paid-orders" (v2) 已啟動`)
 
 Deno.serve(async (req) => {
+  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // 【修改部分】從請求 Body 中獲取 status 參數
+    // 從請求 Body 中獲取 status 參數
     const { status } = await req.json()
 
     // 驗證 status 參數是否有效
@@ -25,6 +27,7 @@ Deno.serve(async (req) => {
       })
     }
     
+    // 建立一個具有最高權限的 Supabase client
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -47,7 +50,7 @@ Deno.serve(async (req) => {
       `)
       .eq('status', status) // 使用傳入的 status 進行查詢
 
-    // 【新增部分】如果是 'paid' 狀態，只撈出還沒填寫物流單號的訂單
+    // 如果是 'paid' 狀態，只撈出還沒填寫物流單號的訂單
     if (status === 'paid') {
       query = query.is('shipping_tracking_code', null)
     }
@@ -60,13 +63,14 @@ Deno.serve(async (req) => {
       throw error
     }
     
+    // 將查詢結果直接回傳
     return new Response(JSON.stringify(orders), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
 
   } catch (error) {
-    console.error('未預期的錯誤:', error.message)
+    console.error('[get-paid-orders] 未預期的錯誤:', error.message)
     return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 500,

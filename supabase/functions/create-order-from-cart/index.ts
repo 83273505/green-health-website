@@ -1,7 +1,11 @@
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts (Final Plain Text Email Restored Version)
+// 檔案路徑: supabase/functions/create-order-from-cart/index.ts
+// ----------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ----------------------------------------------------
 
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Resend } from 'https://esm.sh/resend@3.2.0';
+// 【核心修正】從 import_map.json 引入依賴
+import { createClient } from 'supabase-js'
+import { Resend } from 'resend'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -52,9 +56,6 @@ const handler = {
     };
   },
 
-  /**
-   * ✅ 【关键修正】[私有方法] 恢复完整的、内容丰富的纯文字邮件模板
-   */
   _createOrderEmailText(order, orderItems, address, shippingMethod, paymentMethod) {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     
@@ -65,7 +66,6 @@ const handler = {
       if (isNaN(priceAtOrder) || isNaN(quantity)) {
         return `• ${variantName} (数量: ${item.quantity}) - 金额计算错误`;
       }
-      // 采纳您最终的显示建议：品名、数量、单价、项目小计
       return `• ${variantName}\n  数量: ${quantity} × 单价: ${this._formatNumber(priceAtOrder)} = 小计: ${this._formatNumber(priceAtOrder * quantity)}`;
     }).join('\n\n');
 
@@ -166,7 +166,6 @@ Green Health 團隊 敬上
     await supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId).throwOnError();
     
-    // 我们将使用“回读”查询，确保邮件和前端拿到的资料绝对一致
     const { data: finalOrderItems, error: finalItemsError } = await supabaseAdmin
         .from('order_items')
         .select('*, product_variants(name)')
