@@ -1,6 +1,6 @@
 // 檔案路徑: supabase/functions/mark-order-as-shipped-and-notify/index.ts
 // ----------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
+// 【此為真正 100% 完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -39,6 +39,16 @@ const handler = {
       return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${this._formatPrice(priceAtOrder)} = 小計: ${this._formatPrice(priceAtOrder * quantity)}`;
     }).join('\n\n');
 
+    // 定義防詐騙宣導文字
+    const antiFraudWarning = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 防詐騙提醒
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Green Health 絕對不會以任何名義，透過電話、簡訊或 Email 要求您操作 ATM、提供信用卡資訊或點擊不明連結。我們不會要求您解除分期付款或更改訂單設定。
+
+若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
+    `.trim();
+
     return `
 Green Health 出貨通知
 
@@ -74,7 +84,8 @@ ${itemsList}
 運送費用：${this._formatPrice(order.shipping_fee)}
 ─────────────────────────────────
 總計金額：${this._formatPrice(order.total_amount)}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${antiFraudWarning} 
 
 感謝您的耐心等候！
 您可以透過物流追蹤號碼查詢包裹的最新狀態。
@@ -95,23 +106,19 @@ Green Health 團隊 敬上
       throw new Error('缺少必要的出貨參數。');
     }
 
-    // 建立具有 service_role 權限的 client
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
       { auth: { persistSession: false } }
     );
     
-    // 建立 Resend client
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
 
-    // 1. 驗證訂單狀態
     const { data: orderToCheck, error: checkError } = await supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
     if (checkError) throw new Error(`找不到訂單: ${checkError.message}`);
     if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
     if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
 
-    // 2. 更新訂單為已出貨
     await supabaseAdmin.from('orders').update({
         status: 'shipped',
         shipping_tracking_code: shippingTrackingCode,
@@ -119,7 +126,6 @@ Green Health 團隊 敬上
         shipped_at: new Date().toISOString(),
       }).eq('id', orderId).throwOnError();
       
-    // 3. 查詢發送郵件所需的完整資訊
     const { data: orderDetails, error: detailsError } = await supabaseAdmin
       .from('orders')
       .select(`
@@ -136,28 +142,25 @@ Green Health 團隊 敬上
 
     if (detailsError) {
       console.error(`[CRITICAL] 訂單 ${orderDetails?.order_number || orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
-      // 即使郵件資訊獲取失敗，核心業務已完成，仍然回傳成功
       return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(查詢詳情出錯)。' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 4. 發送出貨通知郵件
     if (orderDetails && orderDetails.users?.email) {
       try {
         const emailText = this._createShippedEmailText(orderDetails);
         await resend.emails.send({
-          from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>', // 請確認此寄件人地址
+          from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>',
           to: [orderDetails.users.email], 
           bcc: ['a896214@gmail.com'],
-          reply_to: 'service@greenhealthtw.com.tw', // 請確認此回覆地址
+          reply_to: 'service@greenhealthtw.com.tw',
           subject: `您的 Green Health 訂單 ${orderDetails.order_number} 已出貨`,
-          text: emailText, // 使用純文字內容
+          text: emailText,
         });
       } catch (emailError) {
         console.error(`[CRITICAL] 訂單 ${orderDetails.order_number} 的郵件發送失敗:`, emailError);
-        // 即使郵件發送失敗，也回傳成功
         return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(Resend錯誤)。' }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -167,7 +170,6 @@ Green Health 團隊 敬上
       console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 找不到顧客 Email，無法發送通知。`);
     }
 
-    // 5. 回傳最終成功響應
     return new Response(JSON.stringify({ 
       success: true, 
       message: '訂單已成功標記為已出貨，並已發送通知。' 
@@ -187,11 +189,10 @@ Deno.serve(async (req) => {
     return await handler.handleRequest(req);
   } catch (error) {
     console.error(`[mark-order-as-shipped] 函式最外層錯誤:`, error.message, error.stack);
-    // 回傳給前端的錯誤訊息，使用 error.message 以提供更具體的錯誤原因
     return new Response(JSON.stringify({ 
       error: error.message 
     }), { 
-      status: 400, // 使用 400 Bad Request，因為這通常是業務邏輯錯誤
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     });
   }
