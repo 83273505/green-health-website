@@ -1,0 +1,36 @@
+# This is the main configuration file for your Supabase project.
+# It's used by the Supabase CLI to configure local development and deployments.
+#
+# For a full list of options, see https://supabase.com/docs/guides/cli/config
+
+# The project_id is used to link this project to your Supabase project.
+# Run `supabase link` to automatically update this value.
+project_id = "zeezdsypknngfcodgjkd"
+
+[api]
+# The port to use for the API endpoint.
+port = 54321
+# Schemas to expose in the API.
+schemas = ["public", "storage", "graphql"]
+# The maximum number of rows to return from a view, table, or function.
+max_rows = 1000
+
+[db]
+# The port to use for the local database.
+port = 54322
+# Use major_version to pin the version of Postgres.
+major_version = 15
+
+[studio]
+# The port to use for Supabase Studio.
+port = 54323
+
+# [functions]
+# # The port to use for the functions endpoint.
+# port = 54324
+
+# 【新增部分】
+# 指定 Edge Functions 的 import map 檔案路徑。
+# 這會告訴 Supabase CLI 在打包和部署函式時，去哪裡尋找依賴定義。
+[functions]
+import_map = "./import_map.json"
