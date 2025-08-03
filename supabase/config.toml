@@ -1,8 +1,3 @@
-# ==============================================================================
-# Supabase 設定檔 (最終標準版)
-# ==============================================================================
-# 此版本遵循 Supabase CLI 最新的標準 TOML 格式
-
 project_id = "zeezdsypknngfcodgjkd"
 
 [api]
@@ -16,13 +11,3 @@ major_version = 15
 
 [studio]
 port = 54323
-
-# 【核心修正】
-# 我們為所有函式定義一個全局的函式設定。
-# TOML 語法中的 [functions] 表示這是一個全局的 "table"。
-# 然後在其中定義 import_map。
-# 這樣可以避免解析器將 import_map 誤認為是 [studio] 的一部分。
-[functions]
-  # 指定所有 Edge Functions 共用的 import map 檔案路徑。
-  # 路徑是相對於 supabase/config.toml 檔案本身的位置。
-  import_map = "import_map.json"
