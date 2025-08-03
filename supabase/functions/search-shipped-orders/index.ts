@@ -24,6 +24,7 @@ Deno.serve(async (req) => {
     // 建立基礎查詢，目標是已出貨的訂單
     let query = supabaseClient
       .from('orders')
+      // 【修改部分】明確指定關聯查詢的細節
       .select(`
         id,
         order_number,
@@ -32,7 +33,7 @@ Deno.serve(async (req) => {
         shipping_tracking_code,
         carrier,
         shipping_address_snapshot,
-        users:profiles(email, phone)
+        profiles:user_id(email, phone) 
       `)
       .eq('status', 'shipped')
 
@@ -41,20 +42,19 @@ Deno.serve(async (req) => {
       query = query.eq('order_number', params.orderNumber)
     }
     if (params.recipientName) {
-      // 使用 like 進行模糊查詢收件人姓名
       query = query.like('shipping_address_snapshot->>recipient_name', `%${params.recipientName}%`)
     }
+    // 【修改部分】由於我們已經明確關聯了 profiles，可以直接對其欄位進行過濾
     if (params.email) {
-      query = query.eq('users.email', params.email)
+      query = query.eq('profiles.email', params.email)
     }
     if (params.phone) {
-      query = query.eq('users.phone', params.phone)
+      query = query.eq('profiles.phone', params.phone)
     }
     if (params.startDate) {
       query = query.gte('order_date', params.startDate)
     }
     if (params.endDate) {
-      // 查詢到當天 23:59:59
       const endOfDay = new Date(params.endDate)
       endOfDay.setHours(23, 59, 59, 999)
       query = query.lte('order_date', endOfDay.toISOString())
@@ -68,7 +68,17 @@ Deno.serve(async (req) => {
       throw error
     }
 
-    return new Response(JSON.stringify(orders), {
+    // 回傳前，將巢狀的 profiles 物件展平，方便前端使用
+    const formattedOrders = orders.map(order => {
+        const { profiles, ...restOfOrder } = order;
+        return {
+            ...restOfOrder,
+            email: profiles?.email || null,
+            phone: profiles?.phone || null
+        };
+    });
+
+    return new Response(JSON.stringify(formattedOrders), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
