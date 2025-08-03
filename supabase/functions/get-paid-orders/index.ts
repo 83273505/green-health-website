@@ -1,3 +1,8 @@
+// 檔案路徑: supabase/functions/get-paid-orders/index.ts
+// ----------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ----------------------------------------------------
+
 // 引入必要的函式庫
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -44,22 +49,10 @@ Deno.serve(async (req) => {
       throw error
     }
 
-    // 將查詢結果轉換為前端易於使用的格式
-    const formattedOrders = orders.map(order => ({
-      id: order.id,
-      order_number: order.order_number,
-      order_date: order.order_date,
-      status: order.status,
-      payment_status: order.payment_status,
-      payment_reference: order.payment_reference,
-      // 從快照中安全地獲取收件人姓名
-      recipient_name: order.shipping_address_snapshot?.recipient_name || 'N/A',
-      // 從關聯查詢中安全地獲取運送方式名稱
-      shipping_method_name: order.shipping_rates?.method_name || '未指定',
-    }))
-
-    // 回傳成功的 JSON 響應
-    return new Response(JSON.stringify(formattedOrders), {
+    // 【修改部分】直接將從 Supabase 獲取的原始訂單陣列回傳。
+    // 這樣可以確保所有巢狀的 JSON 物件 (如 shipping_address_snapshot)
+    // 都被完整地傳遞到前端，而不是只傳遞部分欄位。
+    return new Response(JSON.stringify(orders), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     })
