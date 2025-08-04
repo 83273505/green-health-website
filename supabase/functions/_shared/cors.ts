@@ -25,4 +25,3 @@ export const corsHeaders = {
   // 'content-type': 指示請求主體(body)的格式，例如 'application/json'。
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
-Use code 
