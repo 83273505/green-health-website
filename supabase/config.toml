@@ -1,3 +1,5 @@
+# supabase/config.toml
+
 project_id = "zeezdsypknngfcodgjkd"
 
 [api]
