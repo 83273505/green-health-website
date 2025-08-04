@@ -3,13 +3,9 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 import_map.json 引入依賴
-import { createClient } from 'supabase-js'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+// 【核心修正】從 deps.ts 引入依賴
+import { createClient } from '../_shared/deps.ts'
+import { corsHeaders } from '../_shared/cors.ts'
 
 const handler = {
   /**
@@ -99,7 +95,6 @@ const handler = {
       { auth: { persistSession: false } }
     );
     
-    // 如果有 actions，則先執行資料庫操作
     if (actions && actions.length > 0) {
       if (!cartId) throw new Error("執行購物車操作時需要 cartId。");
       
@@ -152,7 +147,6 @@ const handler = {
       }
     }
     
-    // 在所有操作完成後，計算並回傳最新的購物車快照
     const cartSnapshot = await this._calculateCartSummary(supabaseAdmin, cartId, couponCode, shippingMethodId);
 
     return new Response(JSON.stringify(cartSnapshot), {

@@ -3,12 +3,11 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 import_map.json 引入依賴
-import { createClient } from 'supabase-js'
-import { Resend } from 'resend'
+// 【核心修正】從 deps.ts 統一引入依賴
+import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-// 將所有邏輯封裝在 handler 物件中，以匹配 create-order-from-cart 的風格
+// 將所有邏輯封裝在 handler 物件中
 const handler = {
   /**
    * [私有方法] 格式化數字為台幣貨幣字串
@@ -40,7 +39,6 @@ const handler = {
       return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${this._formatPrice(priceAtOrder)} = 小計: ${this._formatPrice(priceAtOrder * quantity)}`;
     }).join('\n\n');
 
-    // 定義防詐騙宣導文字
     const antiFraudWarning = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
@@ -115,13 +113,11 @@ Green Health 團隊 敬上
     
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
 
-    // 步驟 1: 檢查訂單狀態
     const { data: orderToCheck, error: checkError } = await supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
     if (checkError) throw new Error(`找不到訂單: ${checkError.message}`);
     if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
     if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
 
-    // 步驟 2: 更新訂單為已出貨
     await supabaseAdmin.from('orders').update({
         status: 'shipped',
         shipping_tracking_code: shippingTrackingCode,
@@ -129,7 +125,6 @@ Green Health 團隊 敬上
         shipped_at: new Date().toISOString(),
       }).eq('id', orderId).throwOnError();
       
-    // 步驟 3: 獲取發送郵件所需的完整資料
     const { data: orderDetails, error: detailsError } = await supabaseAdmin
       .from('orders')
       .select(`
@@ -146,14 +141,12 @@ Green Health 團隊 敬上
 
     if (detailsError) {
       console.error(`[CRITICAL] 訂單 ${orderDetails?.order_number || orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
-      // 即使郵件發送失敗，也要回傳成功，因為核心的出貨操作已完成
       return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(查詢詳情出錯)。' }), {
         status: 200,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 步驟 4: 發送郵件
     if (orderDetails && orderDetails.users?.email) {
       try {
         const emailText = this._createShippedEmailText(orderDetails);
@@ -176,7 +169,6 @@ Green Health 團隊 敬上
       console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 找不到顧客 Email，無法發送通知。`);
     }
 
-    // 步驟 5: 回傳最終成功訊息
     return new Response(JSON.stringify({ 
       success: true, 
       message: '訂單已成功標記為已出貨，並已發送通知。' 
@@ -199,7 +191,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ 
       error: error.message 
     }), { 
-      status: 400, // 將 500 改為 400，因為通常是客戶端請求錯誤導致的
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
     });
   }

@@ -3,14 +3,9 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 import_map.json 引入依賴
-import { createClient } from 'supabase-js'
-import { Resend } from 'resend'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+// 【核心修正】從 deps.ts 統一引入依賴
+import { createClient, Resend } from '../_shared/deps.ts'
+import { corsHeaders } from '../_shared/cors.ts'
 
 const handler = {
   _formatNumber(num) {
@@ -58,7 +53,6 @@ const handler = {
 
   _createOrderEmailText(order, orderItems, address, shippingMethod, paymentMethod) {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
-    
     const itemsList = orderItems.map(item => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -68,7 +62,6 @@ const handler = {
       }
       return `• ${variantName}\n  数量: ${quantity} × 单价: ${this._formatNumber(priceAtOrder)} = 小计: ${this._formatNumber(priceAtOrder * quantity)}`;
     }).join('\n\n');
-
     return `
 Green Health 訂單確認
 
@@ -129,7 +122,6 @@ Green Health 團隊 敬上
       { auth: { persistSession: false } }
     );
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
-    
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
     if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
       throw new Error('缺少必要的下单资讯。');
@@ -165,7 +157,6 @@ Green Health 團隊 敬上
     }));
     await supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId).throwOnError();
-    
     const { data: finalOrderItems, error: finalItemsError } = await supabaseAdmin
         .from('order_items')
         .select('*, product_variants(name)')
@@ -173,7 +164,6 @@ Green Health 團隊 敬上
     if (finalItemsError) {
         console.error(`无法重新查询订单 ${newOrder.order_number} 的项目详情:`, finalItemsError);
     }
-
     try {
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await resend.emails.send({

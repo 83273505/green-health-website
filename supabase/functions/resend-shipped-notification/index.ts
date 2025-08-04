@@ -3,9 +3,8 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 import_map.json 引入依賴
-import { createClient } from 'supabase-js'
-import { Resend } from 'resend'
+// 【核心修正】從 deps.ts 統一引入依賴
+import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
 const handler = {

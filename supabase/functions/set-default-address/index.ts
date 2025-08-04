@@ -3,18 +3,14 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 import_map.json 引入依賴
-import { createClient } from 'supabase-js'
-
-const corsHeaders = {
-  'Access-control-allow-origin': '*',
-  'Access-control-allow-headers': 'authorization, x-client-info, apikey, content-type',
-}
+// 【核心修正】從 deps.ts 引入依賴
+import { createClient } from '../_shared/deps.ts'
+import { corsHeaders } from '../_shared/cors.ts'
 
 Deno.serve(async (req) => {
   // 處理 CORS 預檢請求
-  if (req.method === 'options') {
-    return new response('ok', { headers: corsheaders })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
