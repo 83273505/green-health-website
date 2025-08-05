@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>發票管理儀表板 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="stylesheet" href="./css/invoice-style.css">
+</head>
+
+<body id="invoice-dashboard">
+
+    <header class="main-header">
+        <h1>發票管理儀表板</h1>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="invoice-container">
+        
+        <!-- 權限驗證視圖 -->
+        <div id="auth-check-view">
+            <p class="loading-text">正在驗證您的存取權限...</p>
+        </div>
+        
+        <!-- 主要內容區，在權限驗證通過後顯示 -->
+        <div id="main-content" class="hidden">
+            <!-- 篩選與搜尋區域 -->
+            <div class="filters-and-search">
+                <div class="form-group">
+                    <label for="status-filter">發票狀態</label>
+                    <select id="status-filter">
+                        <option value="">所有狀態</option>
+                        <option value="pending">待開立</option>
+                        <option value="issued">已開立</option>
+                        <option value="failed">開立失敗</option>
+                        <option value="voided">已作廢</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="date-from">開立日期</label>
+                    <div class="date-range">
+                        <input type="date" id="date-from">
+                        <span>至</span>
+                        <input type="date" id="date-to">
+                    </div>
+                </div>
+                <div class="form-group search-group">
+                    <label for="search-term">關鍵字搜尋</label>
+                    <input type="search" id="search-term" placeholder="輸入訂單號 / 發票號 / 統編...">
+                </div>
+                <button id="search-btn" class="btn-submit">查詢</button>
+                <button id="reset-btn" class="btn-secondary">重設</button>
+            </div>
+            
+            <!-- 通知訊息區 -->
+            <div id="notification-message" style="display: none;"></div>
+
+            <!-- 發票列表 -->
+            <div class="invoice-table-container">
+                <table class="invoice-table">
+                    <thead>
+                        <tr>
+                            <th>發票狀態</th>
+                            <th>訂單編號</th>
+                            <th>發票號碼</th>
+                            <th>開立日期</th>
+                            <th>買受人/公司</th>
+                            <th>統一編號</th>
+                            <th>總金額</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="invoice-list-body">
+                        <!-- 內容由 JS 動態載入 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- 發票詳情 Modal (彈窗) -->
+    <div id="details-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modal-title">發票詳情</h2>
+                <button id="modal-close-btn" class="modal-close">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- 內容由 JS 動態載入 -->
+            </div>
+            <div id="modal-footer" class="modal-footer">
+                <!-- 操作按鈕由 JS 動態載入 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 核心腳本 -->
+    <script type="module" src="./js/core/app.js"></script> 
+</body>
+</html>
