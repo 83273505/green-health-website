@@ -7,6 +7,8 @@
   command = "echo '无需建置指令'"
   # 【核心設定】將發布目錄指向包含所有網站內容的 `test-shiporder` 子資料夾。
   publish = "test-shiporder"
+  # 【新增部分】告訴 Netlify 去哪裡尋找我們的 Netlify Functions 原始碼。
+  functions = "netlify/functions"
 
 # ==============================================================================
 # [[redirects]] 區块定义了重定向与重写规则。
