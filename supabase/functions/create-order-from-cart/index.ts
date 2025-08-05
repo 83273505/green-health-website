@@ -1,15 +1,40 @@
+// ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// ----------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
-// ----------------------------------------------------
+// ------------------------------------------------------------------------------
+// 【此為完整重構版，可直接覆蓋】
+// ==============================================================================
 
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
+import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
-const handler = {
-  async _calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
-    const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
+/**
+ * @class CreateOrderHandler
+ * @description 將建立訂單的所有相關邏輯封裝在一個類別中，
+ *              以提升程式碼的可讀性、可維護性和可測試性。
+ */
+class CreateOrderHandler {
+  private supabaseAdmin: ReturnType<typeof createClient>;
+  private resend: Resend;
+
+  // 在建構函式中初始化所有需要的客戶端實例
+  constructor() {
+    this.supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '', 
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', 
+      { auth: { persistSession: false } }
+    );
+    this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
+  }
+
+  // --- 私有輔助方法 (Private Helper Methods) ---
+
+  /**
+   * [私有] 後端購物車金額計算核心引擎
+   */
+  private async _calculateCartSummary(cartId: string, couponCode?: string, shippingMethodId?: string) {
+    const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
     if (!cartItems || cartItems.length === 0) {
       return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 }, appliedCoupon: null };
@@ -18,7 +43,7 @@ const handler = {
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
-      const { data: coupon } = await supabase.from('coupons').select('*').eq('code', couponCode).eq('is_active', true).single();
+      const { data: coupon } = await this.supabaseAdmin.from('coupons').select('*').eq('code', couponCode).eq('is_active', true).single();
       if (coupon && subtotal >= coupon.min_purchase_amount) {
         if (coupon.discount_type === 'PERCENTAGE' && coupon.discount_percentage) {
           couponDiscount = Math.round(subtotal * (coupon.discount_percentage / 100));
@@ -31,7 +56,7 @@ const handler = {
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
-      const { data: shippingRate } = await supabase.from('shipping_rates').select('*').eq('id', shippingMethodId).eq('is_active', true).single();
+      const { data: shippingRate } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', shippingMethodId).eq('is_active', true).single();
       if (shippingRate && (!shippingRate.free_shipping_threshold || subtotalAfterDiscount < shippingRate.free_shipping_threshold)) {
         shippingFee = Math.round(shippingRate.rate);
       }
@@ -43,11 +68,13 @@ const handler = {
       summary: { subtotal, couponDiscount, shippingFee, total: total < 0 ? 0 : total },
       appliedCoupon,
     };
-  },
+  }
 
-  _createOrderEmailText(order, orderItems, address, shippingMethod, paymentMethod) {
+  /**
+   * [私有] 產生訂單確認郵件的純文字內容
+   */
+  private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
-    
     const itemsList = orderItems.map(item => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -58,8 +85,6 @@ const handler = {
       const itemTotal = priceAtOrder * quantity;
       return `• ${variantName}\n  数量: ${quantity} × 单价: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小计: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
-
-    // 【新增部分】定義防詐騙宣導文字
     const antiFraudWarning = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
@@ -68,7 +93,6 @@ Green Health 絕對不會以任何名義，透過電話、簡訊或 Email 要求
 
 若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
     `.trim();
-
     return `
 Green Health 訂單確認
 
@@ -121,63 +145,95 @@ ${antiFraudWarning}
 
 Green Health 團隊 敬上
     `.trim();
-  },
-
-  async handleRequest(req) {
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '', 
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', 
-      { auth: { persistSession: false } }
-    );
-    const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
-    
-    const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
-    if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
-      throw new Error('缺少必要的下单资讯。');
+  }
+  
+  /**
+   * [私有] 處理發票記錄的建立，並隔離錯誤
+   */
+  private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any) {
+    try {
+      const invoiceService = new InvoiceService(this.supabaseAdmin);
+      const finalInvoiceData = await invoiceService.determineInvoiceData(userId, invoiceOptions);
+      await invoiceService.createInvoiceRecord(orderId, totalAmount, finalInvoiceData);
+      console.log(`[INFO] 訂單 ${orderId} 的發票記錄已成功排入佇列。`);
+    } catch (invoiceError) {
+      console.error(
+        `[CRITICAL] 訂單 ${orderId} 已成功建立，但其發票記錄建立失敗:`, 
+        invoiceError.message
+      );
     }
+  }
+
+  /**
+   * [私有] 驗證傳入的請求資料是否完整
+   */
+  private _validateRequest(data: any): { valid: boolean; message: string } {
+    const requiredFields = ['cartId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    for (const field of requiredFields) {
+      if (!data[field]) {
+        return { valid: false, message: `請求中缺少必要的參數: ${field}` };
+      }
+    }
+    return { valid: true, message: '驗證通過' };
+  }
+
+  /**
+   * [公開] 主請求處理方法
+   */
+  async handleRequest(req: Request) {
+    const requestData = await req.json();
+    const validation = this._validateRequest(requestData);
+    if (!validation.valid) {
+        return new Response(JSON.stringify({ error: validation.message }), 
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+    const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
+
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('缺少授权标头。');
-    const { data: { user } } = await supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!user) throw new Error('使用者未登入或授权无效。');
-    const backendSnapshot = await this._calculateCartSummary(supabaseAdmin, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
-    const backendSummary = backendSnapshot.summary;
-    if (backendSummary.total !== frontendValidationSummary.total) {
+    if (!authHeader) throw new Error('缺少授權標頭。');
+    const { data: { user } } = await this.supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
+    if (!user) throw new Error('使用者未登入或授權無效。');
+
+    const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
+    if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
       return new Response(JSON.stringify({ 
-        error: { code: 'PRICE_MISMATCH', message: '订单金额与当前优惠不符，请重新确认。' } 
+        error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } 
       }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const cartItems = backendSnapshot.items;
-    if (!cartItems || cartItems.length === 0) throw new Error('无法建立订单，因为购物车是空的。');
-    const { data: address } = await supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).single();
-    const { data: shippingMethod } = await supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
-    const { data: paymentMethod } = await supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
-    if (!address || !shippingMethod || !paymentMethod) throw new Error('结帐所需资料不完整。');
-    const { data: newOrder, error: orderError } = await supabaseAdmin.from('orders').insert({
-      user_id: user.id, status: 'pending_payment', total_amount: backendSummary.total,
-      subtotal_amount: backendSummary.subtotal, coupon_discount: backendSummary.couponDiscount,
-      shipping_fee: backendSummary.shippingFee, shipping_address_snapshot: address,
+    if (!backendSnapshot.items || backendSnapshot.items.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
+    
+    const { data: address } = await this.supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).single();
+    const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
+    const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
+    if (!address || !shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(地址、運送或付款方式)。');
+
+    const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
+      user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
+      subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
+      shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending'
     }).select().single();
     if (orderError) throw orderError;
-    const orderItemsToInsert = cartItems.map(item => ({
+
+    const orderItemsToInsert = backendSnapshot.items.map(item => ({
       order_id: newOrder.id, product_variant_id: item.product_variant_id,
-      quantity: item.quantity, price_at_order: item.price_snapshot,
+      quantity: item.quantity, price_at_order: item.product_variants.sale_price ?? item.product_variants.price,
     }));
-    await supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
-    await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId).throwOnError();
+    await this.supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     
-    const { data: finalOrderItems, error: finalItemsError } = await supabaseAdmin
-        .from('order_items')
-        .select('*, product_variants(name)')
-        .eq('order_id', newOrder.id);
-    if (finalItemsError) {
-        console.error(`无法重新查询订单 ${newOrder.order_number} 的项目详情:`, finalItemsError);
-    }
+    await Promise.allSettled([
+        this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
+        this._handleInvoiceCreation(newOrder.id, user.id, backendSnapshot.summary.total, invoiceOptions)
+    ]);
+    
+    const { data: finalOrderItems } = await this.supabaseAdmin
+        .from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
     try {
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
-      await resend.emails.send({
+      await this.resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
         to: [user.email], 
         bcc: ['a896214@gmail.com'],
@@ -186,8 +242,9 @@ Green Health 團隊 敬上
         text: emailText,
       });
     } catch (emailError) {
-      console.error(`[CRITICAL] 訂單 ${newOrder.order_number} 的郵件發送失敗:`, emailError);
+      console.error(`[WARNING] 訂單 ${newOrder.order_number} 的確認郵件發送失敗:`, emailError);
     }
+    
     return new Response(JSON.stringify({
       success: true,
       orderNumber: newOrder.order_number,
@@ -196,12 +253,15 @@ Green Health 團隊 敬上
   }
 }
 
+// 函式入口點
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') { 
     return new Response('ok', { headers: corsHeaders }); 
   }
   try {
-    return await handler.handleRequest(req);
+    const handler = new CreateOrderHandler();
+    // 使用 .bind(handler) 確保 handler 內部的方法在呼叫時，'this' 的指向是正確的 handler 實例
+    return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
     console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
     return new Response(JSON.stringify({ 
