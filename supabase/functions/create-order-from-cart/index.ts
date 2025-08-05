@@ -3,17 +3,11 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 deps.ts 統一引入依賴
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
+import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
 
 const handler = {
-  _formatNumber(num) {
-    const numberValue = Number(num);
-    if (isNaN(numberValue)) return '金額錯誤';
-    return `NT$ ${numberValue.toLocaleString('zh-TW')}`;
-  },
-
   async _calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
     const { data: cartItems, error: cartItemsError } = await supabase.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
@@ -53,6 +47,7 @@ const handler = {
 
   _createOrderEmailText(order, orderItems, address, shippingMethod, paymentMethod) {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
+    
     const itemsList = orderItems.map(item => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -60,8 +55,20 @@ const handler = {
       if (isNaN(priceAtOrder) || isNaN(quantity)) {
         return `• ${variantName} (数量: ${item.quantity}) - 金额计算错误`;
       }
-      return `• ${variantName}\n  数量: ${quantity} × 单价: ${this._formatNumber(priceAtOrder)} = 小计: ${this._formatNumber(priceAtOrder * quantity)}`;
+      const itemTotal = priceAtOrder * quantity;
+      return `• ${variantName}\n  数量: ${quantity} × 单价: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小计: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
+
+    // 【新增部分】定義防詐騙宣導文字
+    const antiFraudWarning = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ 防詐騙提醒
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Green Health 絕對不會以任何名義，透過電話、簡訊或 Email 要求您操作 ATM、提供信用卡資訊或點擊不明連結。我們不會要求您解除分期付款或更改訂單設定。
+
+若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
+    `.trim();
+
     return `
 Green Health 訂單確認
 
@@ -84,11 +91,11 @@ ${itemsList}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 費用明細
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-商品小計：${this._formatNumber(order.subtotal_amount)}${order.coupon_discount > 0 ? `
-優惠折扣：-${this._formatNumber(order.coupon_discount)}` : ''}
-運送費用：${this._formatNumber(order.shipping_fee)}
+商品小計：${NumberToTextHelper.formatMoney(order.subtotal_amount)}${order.coupon_discount > 0 ? `
+優惠折扣：-${NumberToTextHelper.formatMoney(order.coupon_discount)}` : ''}
+運送費用：${NumberToTextHelper.formatMoney(order.shipping_fee)}
 ─────────────────────────────────
-總計金額：${this._formatNumber(order.total_amount)}
+總計金額：${NumberToTextHelper.formatMoney(order.total_amount)}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🚚 配送資訊
@@ -104,7 +111,8 @@ ${itemsList}
 付款方式：${paymentMethod.method_name}
 付款狀態：${order.payment_status}
 ${paymentMethod.instructions ? `付款指示：\n${paymentMethod.instructions}` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+${antiFraudWarning}
 
 感謝您選擇 Green Health！我們將盡快為您處理訂單。
 
@@ -122,6 +130,7 @@ Green Health 團隊 敬上
       { auth: { persistSession: false } }
     );
     const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
+    
     const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary } = await req.json();
     if (!cartId || !selectedAddressId || !selectedShippingMethodId || !selectedPaymentMethodId || !frontendValidationSummary) {
       throw new Error('缺少必要的下单资讯。');
@@ -157,6 +166,7 @@ Green Health 團隊 敬上
     }));
     await supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     await supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId).throwOnError();
+    
     const { data: finalOrderItems, error: finalItemsError } = await supabaseAdmin
         .from('order_items')
         .select('*, product_variants(name)')
@@ -164,6 +174,7 @@ Green Health 團隊 敬上
     if (finalItemsError) {
         console.error(`无法重新查询订单 ${newOrder.order_number} 的项目详情:`, finalItemsError);
     }
+
     try {
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await resend.emails.send({

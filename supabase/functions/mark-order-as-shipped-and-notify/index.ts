@@ -3,23 +3,16 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【核心修正】從 deps.ts 統一引入依賴
+// 【修改部分】從 deps.ts 和新的工具類引入依賴
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
+import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
+
 
 // 將所有邏輯封裝在 handler 物件中
 const handler = {
-  /**
-   * [私有方法] 格式化數字為台幣貨幣字串
-   */
-  _formatPrice(num: number | string | null | undefined): string {
-    const numberValue = Number(num);
-    if (isNaN(numberValue)) return 'N/A';
-    return `NT$ ${numberValue.toLocaleString('zh-TW', {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-    })}`;
-  },
+  // 【移除部分】_formatPrice 方法已被 NumberToTextHelper.formatMoney 取代
+  // _formatPrice(num: number | string | null | undefined): string { ... }
 
   /**
    * [私有方法] 建立純文字格式的出貨通知郵件內容
@@ -28,6 +21,7 @@ const handler = {
     const address = order.shipping_address_snapshot;
     const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
     
+    // 【修改部分】在產生郵件內容時，使用 NumberToTextHelper 進行格式化
     const itemsList = order.order_items.map((item: any) => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -36,7 +30,8 @@ const handler = {
       if (isNaN(priceAtOrder) || isNaN(quantity)) {
         return `• ${productName} (${variantName}) - 金額計算錯誤`;
       }
-      return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${this._formatPrice(priceAtOrder)} = 小計: ${this._formatPrice(priceAtOrder * quantity)}`;
+      const itemTotal = priceAtOrder * quantity;
+      return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
 
     const antiFraudWarning = `
@@ -78,11 +73,11 @@ ${itemsList}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💰 費用明細
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-商品小計：${this._formatPrice(order.subtotal_amount)}${order.coupon_discount > 0 ? `
-優惠折扣：-${this._formatPrice(order.coupon_discount)}` : ''}
-運送費用：${this._formatPrice(order.shipping_fee)}
+商品小計：${NumberToTextHelper.formatMoney(order.subtotal_amount)}${order.coupon_discount > 0 ? `
+優惠折扣：-${NumberToTextHelper.formatMoney(order.coupon_discount)}` : ''}
+運送費用：${NumberToTextHelper.formatMoney(order.shipping_fee)}
 ─────────────────────────────────
-總計金額：${this._formatPrice(order.total_amount)}
+總計金額：${NumberToTextHelper.formatMoney(order.total_amount)}
 
 ${antiFraudWarning} 
 
