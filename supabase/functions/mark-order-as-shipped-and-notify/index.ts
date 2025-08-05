@@ -3,25 +3,35 @@
 // 【此為完整檔案，可直接覆蓋】
 // ----------------------------------------------------
 
-// 【修改部分】從 deps.ts 和新的工具類引入依賴
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
+// 【新增部分】引入發票核心服務
+import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
+/**
+ * @class MarkAsShippedHandler
+ * @description 將標記出貨、發送通知、觸發發票開立的所有相關邏輯封裝在一個類別中。
+ */
+class MarkAsShippedHandler {
+  private supabaseAdmin: ReturnType<typeof createClient>;
+  private resend: Resend;
 
-// 將所有邏輯封裝在 handler 物件中
-const handler = {
-  // 【移除部分】_formatPrice 方法已被 NumberToTextHelper.formatMoney 取代
-  // _formatPrice(num: number | string | null | undefined): string { ... }
+  constructor() {
+    this.supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } }
+    );
+    this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
+  }
 
-  /**
-   * [私有方法] 建立純文字格式的出貨通知郵件內容
-   */
-  _createShippedEmailText(order: any): string {
+  // --- 私有輔助方法 ---
+
+  private _createShippedEmailText(order: any): string {
+    // ... 此方法的內部邏輯維持不變 ...
     const address = order.shipping_address_snapshot;
     const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
-    
-    // 【修改部分】在產生郵件內容時，使用 NumberToTextHelper 進行格式化
     const itemsList = order.order_items.map((item: any) => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -33,7 +43,6 @@ const handler = {
       const itemTotal = priceAtOrder * quantity;
       return `• ${productName} (${variantName})\n  數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
-
     const antiFraudWarning = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
@@ -42,7 +51,6 @@ Green Health 絕對不會以任何名義，透過電話、簡訊或 Email 要求
 
 若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
     `.trim();
-
     return `
 Green Health 出貨通知
 
@@ -89,7 +97,42 @@ ${antiFraudWarning}
 
 Green Health 團隊 敬上
     `.trim();
-  },
+  }
+
+  /**
+   * 【新增】獨立的、非同步的發票開立處理方法
+   */
+  private async _handleInvoiceIssuance(orderId: string) {
+    console.log(`[INFO] 訂單 ${orderId} 已出貨，開始觸發發票開立流程...`);
+    try {
+      // 1. 根據 orderId 找到對應的 invoice 記錄
+      const { data: invoice, error: invoiceError } = await this.supabaseAdmin
+        .from('invoices')
+        .select('id, status')
+        .eq('order_id', orderId)
+        .single();
+
+      if (invoiceError || !invoice) {
+        throw new Error(`找不到訂單 ID ${orderId} 對應的發票記錄。`);
+      }
+      
+      // 2. 檢查發票狀態，避免重複開立
+      if (invoice.status !== 'pending') {
+        console.warn(`[WARNING] 訂單 ${orderId} 的發票狀態為 ${invoice.status}，無需開立。`);
+        return;
+      }
+      
+      // 3. 呼叫 InvoiceService 來執行開立 (Phase 3 將實現此方法的內部邏輯)
+      const invoiceService = new InvoiceService(this.supabaseAdmin);
+      // await invoiceService.issueInvoiceViaAPI(invoice.id);
+      
+      // 【Phase 2 臨時註解】在我們實現與速買配對接前，先印出日誌模擬呼叫
+      console.log(`[SIMULATION] 應在此處呼叫 invoiceService.issueInvoiceViaAPI(invoiceId: ${invoice.id})`);
+
+    } catch (error) {
+      console.error(`[CRITICAL] 訂單 ${orderId} 的自動發票開立流程失敗:`, error.message);
+    }
+  }
 
   /**
    * [主方法] 處理整個出貨請求
@@ -100,52 +143,31 @@ Green Health 團隊 敬上
       throw new Error('缺少必要的出貨參數。');
     }
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { persistSession: false } }
-    );
-    
-    const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
-
-    const { data: orderToCheck, error: checkError } = await supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
+    const { data: orderToCheck, error: checkError } = await this.supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
     if (checkError) throw new Error(`找不到訂單: ${checkError.message}`);
     if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
     if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
 
-    await supabaseAdmin.from('orders').update({
+    // --- 核心出貨流程 ---
+    await this.supabaseAdmin.from('orders').update({
         status: 'shipped',
         shipping_tracking_code: shippingTrackingCode,
         carrier: selectedCarrierMethodName,
         shipped_at: new Date().toISOString(),
       }).eq('id', orderId).throwOnError();
       
-    const { data: orderDetails, error: detailsError } = await supabaseAdmin
+    const { data: orderDetails, error: detailsError } = await this.supabaseAdmin
       .from('orders')
-      .select(`
-        *,
-        users:profiles(email),
-        order_items(
-          quantity,
-          price_at_order,
-          product_variants(name, products(name))
-        )
-      `)
+      .select(`*, users:profiles(email), order_items(quantity, price_at_order, product_variants(name, products(name)))`)
       .eq('id', orderId)
       .single();
 
     if (detailsError) {
-      console.error(`[CRITICAL] 訂單 ${orderDetails?.order_number || orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
-      return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(查詢詳情出錯)。' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (orderDetails && orderDetails.users?.email) {
+      console.error(`[CRITICAL] 訂單 ${orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
+    } else if (orderDetails && orderDetails.users?.email) {
       try {
         const emailText = this._createShippedEmailText(orderDetails);
-        await resend.emails.send({
+        await this.resend.emails.send({
           from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>',
           to: [orderDetails.users.email], 
           bcc: ['a896214@gmail.com'],
@@ -154,19 +176,20 @@ Green Health 團隊 敬上
           text: emailText,
         });
       } catch (emailError) {
-        console.error(`[CRITICAL] 訂單 ${orderDetails.order_number} 的郵件發送失敗:`, emailError);
-        return new Response(JSON.stringify({ success: true, message: '訂單已出貨，但通知郵件發送失敗(Resend錯誤)。' }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        console.error(`[WARNING] 訂單 ${orderDetails.order_number} 的出貨通知郵件發送失敗:`, emailError);
       }
     } else {
-      console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 找不到顧客 Email，無法發送通知。`);
+      console.warn(`[WARNING] 訂單 ${orderId} 找不到顧客 Email，無法發送通知。`);
     }
 
+    // 【新增部分】在所有主要流程都完成後，才觸發發票開立
+    // 我們不需要等待它完成，直接讓它在背景執行即可 (fire-and-forget)
+    this._handleInvoiceIssuance(orderId);
+    
+    // 立即回傳成功響應給前端，不讓發票流程阻塞使用者體驗
     return new Response(JSON.stringify({ 
       success: true, 
-      message: '訂單已成功標記為已出貨，並已發送通知。' 
+      message: '訂單已成功標記為已出貨，並已觸發發票開立流程。' 
     }), { 
       status: 200, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -180,7 +203,8 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders }); 
   }
   try {
-    return await handler.handleRequest(req);
+    const handler = new MarkAsShippedHandler();
+    return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
     console.error(`[mark-order-as-shipped] 函式最外層錯誤:`, error.message, error.stack);
     return new Response(JSON.stringify({ 
