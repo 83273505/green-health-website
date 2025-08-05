@@ -6,7 +6,6 @@
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
-// 【新增部分】引入發票核心服務
 import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
 /**
@@ -29,7 +28,6 @@ class MarkAsShippedHandler {
   // --- 私有輔助方法 ---
 
   private _createShippedEmailText(order: any): string {
-    // ... 此方法的內部邏輯維持不變 ...
     const address = order.shipping_address_snapshot;
     const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
     const itemsList = order.order_items.map((item: any) => {
@@ -100,7 +98,7 @@ Green Health 團隊 敬上
   }
 
   /**
-   * 【新增】獨立的、非同步的發票開立處理方法
+   * [私有] 獨立的、非同步的發票開立處理方法
    */
   private async _handleInvoiceIssuance(orderId: string) {
     console.log(`[INFO] 訂單 ${orderId} 已出貨，開始觸發發票開立流程...`);
@@ -122,15 +120,13 @@ Green Health 團隊 敬上
         return;
       }
       
-      // 3. 呼叫 InvoiceService 來執行開立 (Phase 3 將實現此方法的內部邏輯)
+      // 3. 【核心修改】呼叫 InvoiceService 來執行真正的開立流程
       const invoiceService = new InvoiceService(this.supabaseAdmin);
-      // await invoiceService.issueInvoiceViaAPI(invoice.id);
+      await invoiceService.issueInvoiceViaAPI(invoice.id);
       
-      // 【Phase 2 臨時註解】在我們實現與速買配對接前，先印出日誌模擬呼叫
-      console.log(`[SIMULATION] 應在此處呼叫 invoiceService.issueInvoiceViaAPI(invoiceId: ${invoice.id})`);
-
     } catch (error) {
-      console.error(`[CRITICAL] 訂單 ${orderId} 的自動發票開立流程失敗:`, error.message);
+      // InvoiceService 內部已有錯誤處理會更新發票狀態，此處只需記錄日誌
+      console.error(`[CRITICAL] 訂單 ${orderId} 的自動發票開立流程最終失敗:`, error.message);
     }
   }
 
@@ -162,6 +158,7 @@ Green Health 團隊 敬上
       .eq('id', orderId)
       .single();
 
+    // 發送出貨通知郵件 (非阻塞)
     if (detailsError) {
       console.error(`[CRITICAL] 訂單 ${orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
     } else if (orderDetails && orderDetails.users?.email) {
@@ -182,11 +179,10 @@ Green Health 團隊 敬上
       console.warn(`[WARNING] 訂單 ${orderId} 找不到顧客 Email，無法發送通知。`);
     }
 
-    // 【新增部分】在所有主要流程都完成後，才觸發發票開立
-    // 我們不需要等待它完成，直接讓它在背景執行即可 (fire-and-forget)
+    // 在所有主要流程都完成後，才觸發發票開立 (非阻塞)
     this._handleInvoiceIssuance(orderId);
     
-    // 立即回傳成功響應給前端，不讓發票流程阻塞使用者體驗
+    // 立即回傳成功響應給前端
     return new Response(JSON.stringify({ 
       success: true, 
       message: '訂單已成功標記為已出貨，並已觸發發票開立流程。' 
