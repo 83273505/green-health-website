@@ -1,27 +1,34 @@
 # ==============================================================================
-# Green Health Netlify 设定档 (最終正確版)
+# Green Health Netlify 设定档 (最終正確版 - 已包含 invoice-panel 規則)
 # ==============================================================================
-# 此設定檔位於專案根目錄，將統一管理所有部署。
+# 此設定檔位於專案根目錄，將統一管理所有三個應用程式的部署。
 
 [build]
   command = "echo '无需建置指令'"
   # 【核心設定】將發布目錄指向包含所有網站內容的 `test-shiporder` 子資料夾。
   publish = "test-shiporder"
-  # 【新增部分】告訴 Netlify 去哪裡尋找我們的 Netlify Functions 原始碼。
+  # 告訴 Netlify 去哪裡尋找我們的 Netlify Functions 原始碼。
   functions = "netlify/functions"
 
 # ==============================================================================
 # [[redirects]] 區块定义了重定向与重写规则。
-# 由于 publish 目录是 "test-shiporder"，所有 "to" 路径都将相对于它。
+# 規則的順序很重要，Netlify 會從上到下匹配。
+# 我們將最具體的路徑放在最前面。
 # ==============================================================================
 
-# 规则 1: 處理倉庫後台 (/warehouse-panel/) 的請求
+# 規則 1: 【新增】處理發票後台 (/invoice-panel/) 的請求
+[[redirects]]
+  from = "/invoice-panel/*"
+  to = "/invoice-panel/:splat"
+  status = 200
+
+# 規則 2: 處理倉庫後台 (/warehouse-panel/) 的請求
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/:splat"
   status = 200
 
-# 规则 2: 處理消費者前端 (GreenHealth-Auth-Module) 的請求
+# 規則 3: 處理消費者前端 (GreenHealth-Auth-Module) 的請求 (作為最後的「全收」規則)
 [[redirects]]
   from = "/*"
   to = "/GreenHealth-Auth-Module/:splat"
