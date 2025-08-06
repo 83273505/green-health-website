@@ -1,0 +1,15 @@
+# supabase/config.toml
+
+project_id = "zeezdsypknngfcodgjkd"
+
+[api]
+port = 54321
+schemas = ["public", "storage", "graphql"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+port = 54323
