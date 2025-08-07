@@ -1,13 +1,13 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/merge-user-data/index.ts
 // ------------------------------------------------------------------------------
-// 【此為新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "merge-user-data" 已啟動`);
+console.log(`函式 "merge-user-data" (v2 - 強化版) 已啟動`);
 
 Deno.serve(async (req) => {
   // 處理 CORS 預檢請求
@@ -18,14 +18,12 @@ Deno.serve(async (req) => {
   try {
     const { anonymous_uid, current_uid } = await req.json();
 
-    // 參數驗證
     if (!anonymous_uid || !current_uid) {
       throw new Error("請求中缺少 'anonymous_uid' 或 'current_uid' 參數。");
     }
     if (anonymous_uid === current_uid) {
       return new Response(JSON.stringify({ success: true, message: '無需合併，使用者 ID 相同。' }), {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -34,69 +32,90 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // --- 核心合併邏輯 ---
+    // --- 強化版合併邏輯 ---
 
-    // 步驟 1: 尋找屬於匿名使用者的有效購物車
-    const { data: anonymousCart, error: findCartError } = await supabaseAdmin
+    // 步驟 1: 獲取匿名使用者的活躍購物車及所有商品項目
+    const { data: anonCart, error: findAnonCartError } = await supabaseAdmin
       .from('carts')
-      .select('id, cart_items(count)')
+      .select('id, cart_items(*)')
       .eq('user_id', anonymous_uid)
-      .eq('status', 'active') // 只處理活躍的購物車
-      .single();
+      .eq('status', 'active')
+      .maybeSingle();
 
-    if (findCartError) {
-      if (findCartError.code === 'PGRST116') { // PGRST116 = No rows found
-        console.log(`[merge-user-data] 匿名使用者 ${anonymous_uid} 沒有需要合併的活躍購物車。`);
-        // 即使沒有購物車，後續的刪除匿名使用者流程也應該繼續
-      } else {
-        throw findCartError; // 其他資料庫錯誤
-      }
+    if (findAnonCartError) throw new Error(`查詢匿名購物車時出錯: ${findAnonCartError.message}`);
+
+    // 如果匿名使用者沒有購物車或購物車是空的，直接嘗試刪除匿名使用者並返回
+    if (!anonCart || !anonCart.cart_items || anonCart.cart_items.length === 0) {
+      await supabaseAdmin.auth.admin.deleteUser(anonymous_uid).catch(e => console.warn(`[merge] 刪除無購物車的匿名使用者 ${anonymous_uid} 失敗`, e.message));
+      return new Response(JSON.stringify({ success: true, message: '匿名使用者無活躍購物車，無需合併。' }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // 步驟 2: 如果匿名使用者有購物車，則將其轉移給正式使用者
-    if (anonymousCart) {
-      // 檢查正式使用者是否已經有自己的購物車
-      const { data: currentCart, error: findCurrentCartError } = await supabaseAdmin
-        .from('carts')
-        .select('id')
-        .eq('user_id', current_uid)
-        .eq('status', 'active')
-        .single();
-      
-      if (findCurrentCartError && findCurrentCartError.code !== 'PGRST116') {
-        throw findCurrentCartError;
-      }
-      
-      if (currentCart) {
-        // 如果正式使用者已有購物車，這裡可以定義合併策略
-        // MVP 策略：簡單地將匿名購物車的商品移動到正式購物車 (未來可擴充)
-        // 暫時策略：為了簡單，我們假設新登入的使用者不會有活躍購物車，直接轉移所有權
-        console.warn(`[merge-user-data] 正式使用者 ${current_uid} 已有活躍購物車，將直接覆蓋匿名購物車所有權。未來可優化商品合併邏輯。`);
-      }
-
-      console.log(`[merge-user-data] 正在將購物車 ${anonymousCart.id} 的所有權從 ${anonymous_uid} 轉移至 ${current_uid}...`);
-      const { error: updateCartError } = await supabaseAdmin
-        .from('carts')
-        .update({ user_id: current_uid })
-        .eq('id', anonymousCart.id);
-
-      if (updateCartError) {
-        throw new Error(`轉移購物車所有權時失敗: ${updateCartError.message}`);
-      }
-    }
-
-    // 步驟 3: (可選但建議) 嘗試刪除已經無用的匿名使用者帳號
-    console.log(`[merge-user-data] 正在嘗試刪除已無用的匿名使用者: ${anonymous_uid}...`);
-    const { error: deleteUserError } = await supabaseAdmin.auth.admin.deleteUser(anonymous_uid);
+    // 步驟 2: 獲取或建立正式使用者的活躍購物車
+    let { data: currentCart, error: findCurrentCartError } = await supabaseAdmin
+      .from('carts')
+      .select('id')
+      .eq('user_id', current_uid)
+      .eq('status', 'active')
+      .maybeSingle();
     
-    if (deleteUserError) {
-      // 因為我們知道 Supabase 可能有刪除使用者的 Bug，所以這裡只記錄警告，不拋出錯誤
-      console.warn(`[merge-user-data] 刪除匿名使用者 ${anonymous_uid} 失敗 (這可能是已知的平台問題，可忽略):`, deleteUserError.message);
-    } else {
-      console.log(`[merge-user-data] 成功刪除匿名使用者: ${anonymous_uid}`);
+    if (findCurrentCartError) throw new Error(`查詢正式購物車時出錯: ${findCurrentCartError.message}`);
+
+    if (!currentCart) {
+      const { data: newCart, error: createCartError } = await supabaseAdmin.from('carts').insert({ user_id: current_uid, status: 'active' }).select('id').single();
+      if (createCartError) throw createCartError;
+      currentCart = newCart;
     }
 
-    return new Response(JSON.stringify({ success: true, message: '使用者資料合併成功。' }), {
+    const targetCartId = currentCart.id;
+    const sourceItems = anonCart.cart_items;
+    let itemsMerged = 0;
+    
+    console.log(`[merge] 開始合併 ${sourceItems.length} 個品項從匿名購物車 ${anonCart.id} 到正式購物車 ${targetCartId}`);
+
+    // 步驟 3: 逐一合併商品項目
+    for (const sourceItem of sourceItems) {
+      const { data: existingItem, error: findItemError } = await supabaseAdmin
+        .from('cart_items')
+        .select('id, quantity')
+        .eq('cart_id', targetCartId)
+        .eq('product_variant_id', sourceItem.product_variant_id)
+        .maybeSingle();
+      
+      if (findItemError) {
+        console.error(`[merge] 查詢品項 ${sourceItem.product_variant_id} 時出錯:`, findItemError.message);
+        continue; // 跳過此品項，繼續處理下一個
+      }
+
+      if (existingItem) {
+        // 商品已存在，則將數量相加
+        const newQuantity = existingItem.quantity + sourceItem.quantity;
+        const { error: updateError } = await supabaseAdmin
+          .from('cart_items')
+          .update({ quantity: newQuantity })
+          .eq('id', existingItem.id);
+        if (updateError) console.error(`[merge] 更新品項 ${sourceItem.product_variant_id} 數量失敗:`, updateError.message);
+        else itemsMerged++;
+      } else {
+        // 商品不存在，則新增此品項
+        const { error: insertError } = await supabaseAdmin.from('cart_items').insert({
+          cart_id: targetCartId,
+          product_variant_id: sourceItem.product_variant_id,
+          quantity: sourceItem.quantity,
+          price_snapshot: sourceItem.price_snapshot,
+        });
+        if (insertError) console.error(`[merge] 新增品項 ${sourceItem.product_variant_id} 失敗:`, insertError.message);
+        else itemsMerged++;
+      }
+    }
+
+    // 步驟 4: 清理已合併的匿名購物車相關資料
+    await supabaseAdmin.from('cart_items').delete().eq('cart_id', anonCart.id);
+    await supabaseAdmin.from('carts').delete().eq('id', anonCart.id);
+    await supabaseAdmin.auth.admin.deleteUser(anonymous_uid).catch(e => console.warn(`[merge] 刪除已合併的匿名使用者 ${anonymous_uid} 失敗`, e.message));
+
+    return new Response(JSON.stringify({ success: true, message: `成功合併 ${itemsMerged} 個品項。` }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
