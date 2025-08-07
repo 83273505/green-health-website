@@ -2,7 +2,7 @@
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
-// ------------------------------------------------------------------------------
+// ==============================================================================
 
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -22,7 +22,6 @@ Deno.serve(async (req) => {
     
     const authHeader = req.headers.get('Authorization');
     let user = null;
-    let session = null;
 
     // 步驟 1: 嘗試從 Authorization 標頭中獲取已登入的使用者
     if (authHeader && authHeader.startsWith('Bearer ')) {
@@ -39,10 +38,8 @@ Deno.serve(async (req) => {
           throw anonError || new Error('建立匿名使用者失敗。');
         }
         user = anonData.user;
-        session = anonData.session; // 只有匿名使用者才需要立即獲取 session
     }
     
-    // 【核心修改】檢查使用者是否有 email，以此判斷是否為匿名
     const isAnonymous = !user.email;
     const userId = user.id;
 
@@ -58,12 +55,12 @@ Deno.serve(async (req) => {
 
     if (cartError) throw cartError;
 
-    // 步驟 4: 回傳包含匿名狀態和 token 的完整資料
+    // 步驟 4: 回傳包含匿名狀態和 User ID 的完整資料
     return new Response(JSON.stringify({ 
         cartId: cart.id,
         isAnonymous: isAnonymous,
-        // 如果是匿名使用者，將其 session 的 access token 回傳給前端
-        accessToken: isAnonymous ? session.access_token : null 
+        // 【核心修改】回傳 userId，不再需要 accessToken
+        userId: userId 
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
