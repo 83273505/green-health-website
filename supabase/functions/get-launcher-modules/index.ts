@@ -1,28 +1,27 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-launcher-modules/index.ts
+// 版本: v25.0 - 自動化權限系統 (權限驅動版)
 // ------------------------------------------------------------------------------
-// 【此為新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "get-launcher-modules" 已啟動`);
+console.log(`函式 "get-launcher-modules" (v25.0 - Permissions-Driven) 已啟動`);
 
-// 定義所有可能的後台模組及其所需角色
+// --- 權限驅動模型定義 ---
+
+// 步驟 1: 定義所有可能的模組 (只關心內容，不關心權限)
 const ALL_MODULES = [
   {
     id: 'shipping',
     name: '出貨管理系統',
     description: '處理訂單備貨、確認付款與出貨作業。',
     url: '/warehouse-panel/shipping-dashboard.html',
-    requiredRoles: ['warehouse_staff', 'super_admin'],
-    badgeQuery: { // 用於動態顯示待辦數量的查詢
+    badgeQuery: {
       table: 'orders',
-      filter: {
-        column: 'status',
-        value: 'paid' // 待出貨的訂單狀態
-      }
+      filter: { column: 'status', value: 'paid' }
     }
   },
   {
@@ -30,24 +29,29 @@ const ALL_MODULES = [
     name: '發票管理系統',
     description: '查詢發票狀態、手動開立或作廢發票。',
     url: '/invoice-panel/index.html',
-    requiredRoles: ['accounting_staff', 'super_admin'],
     badgeQuery: {
       table: 'invoices',
-      filter: {
-        column: 'status',
-        value: 'failed' // 開立失敗的發票
-      }
+      filter: { column: 'status', value: 'failed' }
     }
   },
   {
     id: 'user_management',
     name: '使用者權限管理',
     description: '管理後台人員的存取權限。',
-    url: '/warehouse-panel/user-management.html', // 暫時沿用舊的路徑
-    requiredRoles: ['super_admin'],
-    badgeQuery: null // 此模組沒有待辦事項
+    url: '/warehouse-panel/user-management.html',
+    badgeQuery: null
   }
 ];
+
+// 步驟 2: 建立「模組 ID」與「所需權限」的對照表
+// 這是我們新的權限檢查核心。
+const MODULE_VIEW_PERMISSIONS = {
+  shipping: 'module:shipping:view',
+  invoicing: 'module:invoicing:view',
+  user_management: 'module:users:view'
+};
+
+// --- Edge Function 主邏輯 ---
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -61,19 +65,22 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     );
 
-    // 步驟 1: 驗證使用者並獲取其角色
     const { data: { user } } = await supabaseAdmin.auth.getUser();
     if (!user) {
       return new Response(JSON.stringify({ error: '使用者未授權' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    const userRoles = user.app_metadata?.roles || [];
+    
+    // 【核心修改】從 app_metadata 中讀取由 Auth Hook 生成的 permissions 陣列
+    const userPermissions = user.app_metadata?.permissions || [];
 
-    // 步驟 2: 過濾出使用者有權限訪問的模組
-    const accessibleModules = ALL_MODULES.filter(module => 
-      module.requiredRoles.some(requiredRole => userRoles.includes(requiredRole))
-    );
+    // 【核心修改】根據使用者擁有的「權限」，來過濾模組
+    const accessibleModules = ALL_MODULES.filter(module => {
+      const requiredPermission = MODULE_VIEW_PERMISSIONS[module.id];
+      // 檢查使用者權限陣列中，是否包含進入此模組所需的權限
+      return userPermissions.includes(requiredPermission);
+    });
 
-    // 步驟 3: (平行處理) 為每個有權限的模組查詢其徽章數量
+    // 後續的徽章查詢邏輯維持不變
     const modulePromises = accessibleModules.map(async (module) => {
       let badgeCount = 0;
       if (module.badgeQuery) {
@@ -90,10 +97,7 @@ Deno.serve(async (req) => {
         }
       }
       
-      return {
-        ...module,
-        badge: badgeCount > 0 ? badgeCount.toString() : null // 如果數量大於0，則顯示徽章
-      };
+      return { ...module, badge: badgeCount > 0 ? badgeCount.toString() : null };
     });
 
     const finalModules = await Promise.all(modulePromises);
