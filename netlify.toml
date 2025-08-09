@@ -1,35 +1,59 @@
 # ==============================================================================
+<<<<<<< Updated upstream
 # Green Health Netlify 設定檔 (新增 invoice-panel 規則)
+=======
+# 檔案路徑: netlify.toml
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋 - v23.1 最終修正版】
+>>>>>>> Stashed changes
 # ==============================================================================
 
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
   
-  # 設定建置環境
   [build.environment]
-    # 為 Netlify 的建置環境指定一個穩定且較新的 Node.js 版本
     NODE_VERSION = "18"
 
 # ==============================================================================
 # [[redirects]] 區塊
+<<<<<<< Updated upstream
 # 規則的順序很重要，Netlify 會由上到下進行匹配。
 # 我們將最具體的路徑規則放在最前面。
 # ==============================================================================
 
 # 【新增部分】處理發票後台 (/invoice-panel/) 的請求
+=======
+# 規則的順序至關重要，將最具體的路徑規則放在最前面。
+# ==============================================================================
+
+# 【核心新增】為所有後台模組共用的 _shared 目錄建立專屬規則
+# 這是最高優先級，確保共用檔案能被正確找到
+[[redirects]]
+  from = "/_shared/*"
+  to = "/_shared/:splat"
+  status = 200
+
+# 規則 2: 處理統一後台入口 (/admin/) 的請求
+[[redirects]]
+  from = "/admin/*"
+  to = "/admin/:splat"
+  status = 200
+
+# 規則 3: 處理發票後台 (/invoice-panel/) 的請求
+>>>>>>> Stashed changes
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/:splat"
   status = 200
 
-# 【維持原樣】處理倉庫後台 (/warehouse-panel/) 的請求
+# 規則 4: 處理倉庫後台 (/warehouse-panel/) 的請求
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/:splat"
   status = 200
 
-# 【維持原樣】處理消費者前端 (GreenHealth-Auth-Module) 的請求
+# 規則 5: 處理消費者前端 (GreenHealth-Auth-Module) 的請求
 # 作為最後的「全收」規則 (catch-all)
 [[redirects]]
   from = "/*"
