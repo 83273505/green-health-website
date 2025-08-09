@@ -1,12 +1,9 @@
-// ='==============================================================================
+// ==============================================================================
 // 檔案路徑: test-shiporder/_shared/js/auth.js
-// 版本: v25.3 - 診斷版
+// 版本: v26.0 - 生產就緒版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
-
-// 【診斷日誌 - 探針 XA】 (X 代表載入順序)
-console.log('[_shared/auth.js] 檔案開始解析...');
 
 /**
  * @file Shared Auth Functions
@@ -14,14 +11,6 @@ console.log('[_shared/auth.js] 檔案開始解析...');
  */
 
 import { supabase } from './supabaseClient.js';
-
-// 【診斷日誌 - 斷言 XB】
-console.log('[_shared/auth.js] 正在檢查核心依賴...');
-if (!supabase) {
-    console.error('❌ [_shared/auth.js] 核心依賴 supabase 載入失敗！');
-} else {
-    console.log('✅ [_shared/auth.js] 核心依賴 supabase 檢查通過。');
-}
 
 // 為了避免循環依賴，直接在此處定義路由
 const ADMIN_LOGIN_ROUTE = '/admin/index.html';
@@ -71,6 +60,3 @@ export async function getCurrentAdminUser() {
     }
     return user;
 }
-
-// 【診斷日誌 - 探針 XC】
-console.log('[_shared/auth.js] 檔案解析完成。');

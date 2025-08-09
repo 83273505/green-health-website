@@ -1,12 +1,9 @@
 // ==============================================================================
 // 檔案路徑: test-shiporder/admin/js/modules/auth.js
-// 版本: v25.3 - 診斷版
+// 版本: v26.0 - 生產就緒版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
-
-// 【診斷日誌 - 探針 5A】
-console.log('[auth.js] 檔案開始解析...');
 
 /**
  * @file Admin Auth Module
@@ -16,14 +13,6 @@ console.log('[auth.js] 檔案開始解析...');
 import { supabase } from '../../../_shared/js/supabaseClient.js';
 import { showNotification, setFormSubmitting } from '../../../_shared/js/utils.js';
 import { ADMIN_ROUTES } from '../core/constants.js';
-
-// 【診斷日誌 - 斷言 5B】
-console.log('[auth.js] 正在檢查核心依賴...');
-if (!supabase || typeof showNotification !== 'function' || !ADMIN_ROUTES) {
-    console.error('❌ [auth.js] 核心依賴載入不完整！');
-} else {
-    console.log('✅ [auth.js] 核心依賴檢查通過。');
-}
 
 /**
  * 初始化登入頁面的所有功能和事件監聽器。
@@ -78,6 +67,3 @@ export async function init() {
     
     initLoginPage();
 }
-
-// 【診斷日誌 - 探針 5C】
-console.log('[auth.js] 檔案解析完成。');
