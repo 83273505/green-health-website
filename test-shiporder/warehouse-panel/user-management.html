@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用者權限管理 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- 引用與儀表板相同的樣式表 -->
+    <link rel="stylesheet" href="./css/warehouse-style.css">
+</head>
+<body id="user-management">
+
+    <header class="main-header">
+        <h1>使用者權限管理</h1>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="user-management-container">
+        <div class="toolbar">
+            <a href="./shipping-dashboard.html" class="back-link">&larr; 返回出貨儀表板</a>
+        </div>
+        
+        <div id="admin-check-view">
+            <p>正在驗證管理員權限...</p>
+        </div>
+
+        <div id="main-content" class="hidden">
+            <div class="search-bar">
+                <input type="search" id="user-search-input" placeholder="依 Email 搜尋使用者...">
+            </div>
+            
+            <div id="notification-message" style="display: none;"></div>
+            
+            <div id="user-list-container">
+                <p class="initial-message">請輸入 Email 以搜尋使用者。</p>
+                <!-- 使用者列表將由 JS 動態載入 -->
+            </div>
+        </div>
+
+    </main>
+
+    <!-- 核心腳本 -->
+    <script src="./js/core/config.js"></script>
+    <script type="module" src="./js/core/app.js"></script>
+</body>
+</html>

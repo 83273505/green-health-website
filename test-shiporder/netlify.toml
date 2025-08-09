@@ -1,0 +1,51 @@
+# ==============================================================================
+# Green Health Netlify 設定檔 (新增 invoice-panel 規則)
+# ==============================================================================
+
+[build]
+  command = "echo '無需建置指令'"
+  publish = "test-shiporder"
+  
+  # 設定建置環境
+  [build.environment]
+    # 為 Netlify 的建置環境指定一個穩定且較新的 Node.js 版本
+    NODE_VERSION = "18"
+
+# ==============================================================================
+# [[redirects]] 區塊
+# 規則的順序很重要，Netlify 會由上到下進行匹配。
+# 我們將最具體的路徑規則放在最前面。
+# ==============================================================================
+
+# 【新增部分】處理發票後台 (/invoice-panel/) 的請求
+[[redirects]]
+  from = "/invoice-panel/*"
+  to = "/invoice-panel/:splat"
+  status = 200
+
+# 【維持原樣】處理倉庫後台 (/warehouse-panel/) 的請求
+[[redirects]]
+  from = "/warehouse-panel/*"
+  to = "/warehouse-panel/:splat"
+  status = 200
+
+# 【維持原樣】處理消費者前端 (GreenHealth-Auth-Module) 的請求
+# 作為最後的「全收」規則 (catch-all)
+[[redirects]]
+  from = "/*"
+  to = "/GreenHealth-Auth-Module/:splat"
+  status = 200
+
+# ==============================================================================
+# ⚙️ 本地開發環境設定 (維持原樣)
+# ==============================================================================
+[dev]
+  framework = "#static"
+  publish = "."
+  
+# ==============================================================================
+# 🔑 環境變數設定 (維持原樣)
+# ==============================================================================
+[context.production.environment]
+  SUPABASE_URL = "https://your-project.supabase.co"
+  SUPABASE_ANON_KEY = "your-anon-key"

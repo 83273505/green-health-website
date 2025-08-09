@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>結帳 - Green Health 綠健</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    <script src="/GreenHealth-Auth-Module/js/core/config.js"></script>
+    <script type="module" src="/GreenHealth-Auth-Module/js/core/app.js"></script>
+    <style>
+        :root { --primary-color: #5E8C61; --border-color: #ddd; --text-color: #333; --background-color: #f4f7f6; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: var(--background-color); color: var(--text-color); margin: 0; padding: 1rem; box-sizing: border-box; }
+        .checkout-container { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; max-width: 1200px; margin: 2rem auto; }
+        @media (max-width: 992px) {
+            .checkout-container { grid-template-columns: 1fr; margin: 1rem auto; gap: 1.5rem; }
+            .order-summary { order: -1; }
+            body { padding: 1rem; }
+        }
+        .main-content, .order-summary { background-color: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        @media (min-width: 768px) { .main-content, .order-summary { padding: 2rem; } }
+        h1, h2, h3 { color: #222; border-bottom: 1px solid #eee; padding-bottom: 0.75rem; margin-top: 0; }
+        h1 { font-size: 1.5rem; }
+        h2 { font-size: 1.2rem; }
+        h3 { font-size: 1rem; border-bottom: none; margin-bottom: 0.75rem; }
+        .section { margin-bottom: 2rem; }
+        .option-list { display: flex; flex-direction: column; gap: 1rem; }
+        .option-item { border: 1px solid var(--border-color); border-radius: 6px; padding: 1rem; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s; }
+        .option-item.selected { border-color: var(--primary-color); border-width: 2px; padding: calc(1rem - 1px); box-shadow: 0 0 8px rgba(94, 140, 97, 0.2); }
+        .option-item label { display: flex; align-items: flex-start; cursor: pointer; width: 100%; }
+        .option-item input[type="radio"] { margin-top: 0.25rem; margin-right: 1rem; flex-shrink: 0; }
+        .address-details p, .payment-details p { margin: 0.2rem 0; font-size: 0.9rem; }
+        .address-details .name, .payment-details .name { font-weight: bold; }
+        .payment-details .description { color: #555; font-size: 0.85rem; margin-top: 0.25rem; }
+        .add-address-btn { background: none; border: 1px dashed var(--border-color); color: var(--primary-color); width: 100%; padding: 1.5rem; border-radius: 6px; cursor: pointer; font-size: 1rem; }
+        .summary-row { display: flex; justify-content: space-between; padding: 0.75rem 0; }
+        .summary-row.total { font-size: 1.2rem; font-weight: bold; border-top: 1px solid #eee; margin-top: 0.5rem; }
+        .summary-row.discount { color: #D9534F; }
+        .submit-btn { width: 100%; background-color: #B12704; color: white; border: none; padding: 1rem; font-size: 1.1rem; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .submit-btn:disabled { background-color: #ccc; cursor: not-allowed; }
+        #loading-overlay { position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8); z-index: 9999; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; }
+        #notification-message { padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; text-align: center; font-weight: 500; display: none; }
+        #notification-message.error { background-color: #fce4e4; color: #D9534F; display: block; }
+        
+        /* --- 【新增部分】發票區塊樣式 --- */
+        .form-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1rem; }
+        .form-group label { font-weight: 500; font-size: 0.9rem; }
+        .form-group input[type="text"], .form-group select { width: 100%; box-sizing: border-box; padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; }
+        .invoice-option-description { font-size: 0.85rem; color: #555; margin-left: 2rem; margin-top: -0.75rem; margin-bottom: 1rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body id="checkout">
+    <div id="loading-overlay">正在準備您的訂單...</div>
+    <div class="checkout-container" style="display: none;">
+        <aside class="order-summary">
+            <h2>訂單摘要</h2>
+            <div id="order-summary-container">
+                <div class="summary-row"><span>商品小計</span><span id="summary-subtotal">$0</span></div>
+                <div class="summary-row discount" style="display: none;"><span>折扣優惠</span><span id="summary-coupon-discount">-$0</span></div>
+                <div class="summary-row"><span>運費</span><span id="summary-shipping-fee">$0</span></div>
+                <div class="summary-row total"><span>總計</span><span id="summary-total-price">$0</span></div>
+            </div>
+            <button id="place-order-btn" class="submit-btn" disabled>確認下單</button>
+        </aside>
+        <div class="main-content">
+            <h1>結帳</h1>
+            <div id="notification-message"></div>
+            <div class="section">
+                <h2>1. 選擇收貨地址</h2>
+                <div id="address-list-container" class="option-list"><p>正在載入您的地址...</p></div>
+                <button id="add-new-address-btn" class="add-address-btn" style="margin-top: 1rem;">+ 新增收貨地址</button>
+            </div>
+            <div class="section">
+                <h2>2. 選擇運送與付款方式</h2>
+                <h3>運送方式</h3>
+                <div id="shipping-list-container" class="option-list"><p>正在載入運送方式...</p></div>
+                <div id="payment-method-container" style="margin-top: 2rem;">
+                    <h3>付款方式</h3>
+                    <div id="payment-list-container" class="option-list"><p>正在載入付款方式...</p></div>
+                </div>
+            </div>
+
+            <!-- 【新增部分】完整的發票資訊區塊 -->
+            <div class="section" id="invoice-section">
+                <h2>3. 發票資訊</h2>
+                <div id="invoice-type-selector" class="option-list">
+                    <div class="option-item">
+                        <label>
+                            <input type="radio" name="invoiceType" value="cloud" checked>
+                            <div>
+                                <span class="name">雲端發票</span>
+                                <p class="description">發票將存入您的載具，中獎時會自動通知您。</p>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="option-item">
+                        <label>
+                            <input type="radio" name="invoiceType" value="donation">
+                            <div>
+                                <span class="name">捐贈發票</span>
+                                <p class="description">發票將代為捐赠給指定的社福團體。</p>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="option-item">
+                        <label>
+                            <input type="radio" name="invoiceType" value="business">
+                            <div>
+                                <span class="name">公司戶發票</span>
+                                <p class="description">發票將開立統一編號，可用於企業報帳。</p>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- 動態表單容器 -->
+                <div id="invoice-details-forms" style="margin-top: 1.5rem;">
+                    <!-- 雲端發票表單 (預設顯示) -->
+                    <div id="form-cloud">
+                        <div class="form-group">
+                            <label for="carrier-type">載具類型</label>
+                            <select id="carrier-type">
+                                <option value="member" selected>會員載具 (儲存於您的帳戶 Email)</option>
+                                <option value="mobile">手機條碼</option>
+                                <option value="certificate">自然人憑證</option>
+                            </select>
+                        </div>
+                        <div class="form-group hidden" id="carrier-number-group">
+                            <label for="carrier-number">載具號碼</label>
+                            <input type="text" id="carrier-number" placeholder="請輸入載具號碼">
+                        </div>
+                    </div>
+
+                    <!-- 捐贈發票表單 (預設隱藏) -->
+                    <div id="form-donation" class="hidden">
+                        <div class="form-group">
+                            <label for="donation-code">捐贈碼</label>
+                            <input type="text" id="donation-code" placeholder="請輸入愛心碼 (3-7位數字)">
+                        </div>
+                    </div>
+
+                    <!-- 公司戶發票表單 (預設隱藏) -->
+                    <div id="form-business" class="hidden">
+                        <div class="form-group">
+                            <label for="vat-number">統一編號</label>
+                            <input type="text" id="vat-number" placeholder="請輸入 8 位數字統一編號" maxlength="8">
+                        </div>
+                        <div class="form-group">
+                            <label for="company-name">公司抬頭</label>
+                            <input type="text" id="company-name" placeholder="請輸入公司完整名稱">
+                        </div>
+                        <p style="font-size: 0.8rem; color: #555;">公司戶發票開立後，將以電子郵件寄送至您的註冊信箱。</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,118 @@
+/* 檔案路徑: warehouse-panel/css/warehouse-style.css */
+/* ---------------------------------------------------- */
+/* 【此為完整檔案，可直接覆蓋】                             */
+/* ---------------------------------------------------- */
+
+:root {
+    --primary-color: #4CAF50;
+    --primary-dark: #388E3C;
+    --secondary-color: #f4f4f4;
+    --border-color: #ddd;
+    --text-color: #333;
+    --text-light: #666;
+    --status-paid: #3498db;
+    --status-pending_payment: #f39c12;
+    --error-color: #e74c3c;
+    --success-color: #2ecc71;
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: var(--font-family); background-color: #f9f9f9; color: var(--text-color); line-height: 1.6; }
+body#warehouse-login { display: flex; justify-content: center; align-items: center; background: linear-gradient(135deg, #e0f2f1, #c8e6c9); }
+.login-container { width: 100%; max-width: 400px; padding: 2rem; }
+.login-box { background-color: #fff; padding: 2.5rem; border-radius: 8px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); text-align: center; }
+.login-box h1 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #333; }
+.login-box p { color: var(--text-light); margin-bottom: 2rem; }
+.form-group { margin-bottom: 1.5rem; text-align: left; }
+.form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; }
+.form-group input, .form-group select { width: 100%; padding: 0.8rem; border: 1px solid var(--border-color); border-radius: 4px; font-size: 1rem; transition: border-color 0.3s; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2); }
+.btn-submit { width: 100%; padding: 0.9rem; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; font-size: 1.1rem; font-weight: 600; cursor: pointer; transition: background-color 0.3s; }
+.btn-submit:hover:not(:disabled) { background-color: var(--primary-dark); }
+.btn-submit:disabled { background-color: #ccc; cursor: not-allowed; }
+.btn-secondary { padding: 0.5rem 1rem; background-color: #f0f0f0; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: background-color 0.3s; font-size: 0.9rem; font-weight: 500; text-decoration: none; }
+.btn-secondary:hover { background-color: #e0e0e0; }
+#notification-message { padding: 0.8rem; margin: 1rem 0; border-radius: 4px; font-weight: 500; }
+#notification-message.error { background-color: #fbecec; color: var(--error-color); border: 1px solid var(--error-color); }
+#notification-message.success { background-color: #eaf7ec; color: #26733a; border: 1px solid #a3d5b0; }
+#notification-message.info { background-color: #e9f5fe; color: #3498db; border: 1px solid #aed6f1; }
+body#shipping-dashboard, body#user-management { display: flex; flex-direction: column; height: 100vh; }
+.main-header { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.5rem; background-color: #fff; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.main-header h1 { font-size: 1.5rem; }
+.header-actions { display: flex; align-items: center; gap: 1rem; }
+#logout-btn { background: none; border: 1px solid var(--error-color); color: var(--error-color); padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; transition: all 0.3s; }
+#logout-btn:hover { background-color: var(--error-color); color: white; }
+.dashboard-container { display: flex; flex-grow: 1; overflow: hidden; }
+.order-queue-panel { width: 350px; flex-shrink: 0; border-right: 1px solid var(--border-color); display: flex; flex-direction: column; background-color: #fff; }
+.tabs { display: flex; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.tab-link { flex: 1; padding: 0.8rem; background: #f9f9f9; border: none; border-right: 1px solid var(--border-color); cursor: pointer; font-size: 1rem; font-weight: 500; color: var(--text-light); transition: all 0.2s; }
+.tab-link:last-child { border-right: none; }
+.tab-link.active { background: #fff; color: var(--primary-color); border-bottom: 2px solid var(--primary-color); margin-bottom: -1px; }
+#order-list-container { overflow-y: auto; flex-grow: 1; padding: 0.5rem; }
+.loading-spinner, .error-message, .initial-message { padding: 2rem; text-align: center; color: var(--text-light); }
+.order-list-item { padding: 1rem; border-bottom: 1px solid #eee; cursor: pointer; transition: background-color 0.2s; }
+.order-list-item:hover { background-color: var(--secondary-color); }
+.order-list-item.active { background-color: #e0f2f1; border-right: 3px solid var(--primary-color); }
+.order-list-item .order-number { font-weight: 600; display: block; margin-bottom: 0.25rem; }
+.order-list-item .recipient-name { color: var(--text-light); font-size: 0.9rem; }
+.order-list-item .order-date { color: var(--text-light); font-size: 0.9rem; float: right; }
+.order-detail-panel { flex-grow: 1; padding: 1.5rem 2rem; overflow-y: auto; }
+#empty-view { display: flex; justify-content: center; align-items: center; height: 100%; color: var(--text-light); text-align: center; }
+.hidden { display: none !important; }
+#order-number-title { margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem; }
+.detail-section { margin-bottom: 2.5rem; }
+.detail-section h3 { margin-bottom: 1rem; font-size: 1.2rem; display: flex; justify-content: space-between; align-items: center; }
+#shipping-address p, #payment-details p, #shipping-method-details p { margin-bottom: 0.5rem; }
+.status-paid { font-weight: bold; color: var(--status-paid); }
+.status-pending_payment { font-weight: bold; color: var(--status-pending_payment); }
+.picking-table { width: 100%; border-collapse: collapse; }
+.picking-table th, .picking-table td { padding: 0.8rem 0.5rem; border-bottom: 1px solid #eee; text-align: left; }
+.picking-table th { font-weight: 600; color: var(--text-light); }
+.picking-table .quantity, .picking-table .sku { text-align: center; }
+.picking-table .sku { font-family: monospace; font-size: 0.9rem; color: var(--text-light); }
+
+/* --- 【新增部分】使用者管理頁面樣式 --- */
+.user-management-container { max-width: 800px; margin: 2rem auto; padding: 2rem; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.toolbar { margin-bottom: 2rem; }
+.toolbar .back-link { text-decoration: none; color: var(--primary-color); font-weight: 500; }
+.search-bar input[type="search"] { width: 100%; padding: 0.8rem; font-size: 1.1rem; border: 1px solid var(--border-color); border-radius: 6px; }
+#user-list-container { margin-top: 2rem; }
+.user-item { display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid #f0f0f0; }
+.user-item:last-child { border-bottom: none; }
+.user-email { font-weight: 500; }
+.permission-toggle { display: flex; align-items: center; gap: 1rem; }
+.permission-label { font-size: 0.9rem; color: var(--text-light); width: 100px; }
+/* The switch - the box around the slider */
+.switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; }
+.slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; }
+input:checked + .slider { background-color: var(--primary-color); }
+input:focus + .slider { box-shadow: 0 0 1px var(--primary-color); }
+input:checked + .slider:before { transform: translateX(22px); }
+.slider.round { border-radius: 34px; }
+.slider.round:before { border-radius: 50%; }
+
+/* --- 響應式設計 --- */
+@media (max-width: 768px) {
+    .dashboard-container { flex-direction: column; }
+    .order-queue-panel { width: 100%; height: 40vh; border-right: none; border-bottom: 1px solid var(--border-color); }
+    .order-detail-panel { padding: 1rem; height: 60vh; }
+    .login-box { padding: 1.5rem; }
+    .user-management-container { padding: 1rem; }
+    .user-item { flex-direction: column; align-items: flex-start; gap: 1rem; }
+}
+
+/* --- 列印專用樣式 --- */
+@media print {
+    body > *:not(.dashboard-container), .main-header, .order-queue-panel, .action-section, #print-btn, #user-management-link, .tabs { display: none !important; }
+    body, .dashboard-container, .order-detail-panel, #order-detail-view, #printable-area { display: block !important; width: 100% !important; height: auto !important; overflow: visible !important; padding: 0 !important; margin: 0 !important; border: none !important; box-shadow: none !important; background: none !important; color: #000 !important; }
+    #order-detail-view { display: block !important; }
+    #order-detail-view > *:not(#printable-area) { display: none !important; }
+    body { font-size: 12pt; }
+    h2, h3 { font-size: 14pt; padding-bottom: 10px; margin-bottom: 15px; border-bottom: 1px solid #ccc; color: #000; page-break-after: avoid; }
+    .picking-table { page-break-inside: auto; }
+    .picking-table tr { page-break-inside: avoid; page-break-after: auto; }
+    a, a:visited { text-decoration: none; color: #000; }
+}

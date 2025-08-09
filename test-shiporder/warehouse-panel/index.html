@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重新導向至管理後台登入</title>
+    
+    <!-- 【核心修改】新增 meta refresh 標籤，實現自動跳轉 -->
+    <!-- 0秒後自動將頁面重新導向到新的統一登入入口 -->
+    <meta http-equiv="refresh" content="0; url=/admin/index.html">
+    
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 4rem; }
+        a { color: #007bff; }
+    </style>
+</head>
+<body>
+    <h1>正在將您重新導向...</h1>
+    <p>管理後台的登入入口已更新。</p>
+    <p>如果您的瀏覽器沒有自動跳轉，請<a href="/admin/index.html">點擊這裡</a>。</p>
+</body>
+</html>
