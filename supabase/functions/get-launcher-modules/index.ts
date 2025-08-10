@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-launcher-modules/index.ts
-// 版本: v25.0 - 自動化權限系統 (權限驅動版)
+// 版本: v25.1 - 權限管理儀表板
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,11 +8,11 @@
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "get-launcher-modules" (v25.0 - Permissions-Driven) 已啟動`);
+console.log(`函式 "get-launcher-modules" (v25.1 - Permissions-Driven) 已啟動`);
 
 // --- 權限驅動模型定義 ---
 
-// 步驟 1: 定義所有可能的模組 (只關心內容，不關心權限)
+// 步驟 1: 定義所有可能的模組
 const ALL_MODULES = [
   {
     id: 'shipping',
@@ -37,18 +37,27 @@ const ALL_MODULES = [
   {
     id: 'user_management',
     name: '使用者權限管理',
-    description: '管理後台人員的存取權限。',
-    url: '/warehouse-panel/user-management.html',
+    description: '管理後台人員的角色與存取權限。',
+    url: '/user-panel/index.html', // 假設未來會有獨立的使用者管理面板
+    badgeQuery: null
+  },
+  // 【核心新增】新增權限設定模組的定義
+  {
+    id: 'permission_management',
+    name: '權限設定',
+    description: '管理系統中的角色及其對應的細部權限。',
+    url: '/permission-panel/index.html',
     badgeQuery: null
   }
 ];
 
 // 步驟 2: 建立「模組 ID」與「所需權限」的對照表
-// 這是我們新的權限檢查核心。
 const MODULE_VIEW_PERMISSIONS = {
   shipping: 'module:shipping:view',
   invoicing: 'module:invoicing:view',
-  user_management: 'module:users:view'
+  user_management: 'module:users:view',
+  // 【核心新增】將新模組與其進入權限綁定
+  permission_management: 'module:permissions:view'
 };
 
 // --- Edge Function 主邏輯 ---
@@ -70,17 +79,13 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: '使用者未授權' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    // 【核心修改】從 app_metadata 中讀取由 Auth Hook 生成的 permissions 陣列
     const userPermissions = user.app_metadata?.permissions || [];
 
-    // 【核心修改】根據使用者擁有的「權限」，來過濾模組
     const accessibleModules = ALL_MODULES.filter(module => {
       const requiredPermission = MODULE_VIEW_PERMISSIONS[module.id];
-      // 檢查使用者權限陣列中，是否包含進入此模組所需的權限
       return userPermissions.includes(requiredPermission);
     });
 
-    // 後續的徽章查詢邏輯維持不變
     const modulePromises = accessibleModules.map(async (module) => {
       let badgeCount = 0;
       if (module.badgeQuery) {
