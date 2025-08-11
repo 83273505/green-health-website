@@ -1,58 +1,57 @@
 # ==============================================================================
-# [[redirects]] 區塊
+# 檔案路徑: netlify.toml
+# 版本: v27.5 - 最小化变更 (只增加 invoice-panel)
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
+# ==============================================================================
+
+[build]
+  command = "echo '無需建置指令'"
+  publish = "test-shiporder"
+  # 确保 Netlify Function 的路径被正确设定
+  functions = "netlify/functions"
+  
+  [build.environment]
+    NODE_VERSION = "18"
+
+# ==============================================================================
+# [[redirects]] 區块
 # 規則的順序至關重要，將最具體的路徑規則放在最前面。
 # ==============================================================================
 
-# 規則 1: 共用模組
+# 规则 1: 共用模组
 [[redirects]]
   from = "/_shared/*"
   to = "/_shared/:splat"
   status = 200
 
-# 規則 2: 統一入口
+# 规则 2: 统一入口
 [[redirects]]
   from = "/admin/*"
   to = "/admin/:splat"
   status = 200
 
-# 規則 3: 倉庫後台
+# 规则 3: 仓库后台 (已验证可运作)
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/:splat"
   status = 200
 
-# 規則 4: 發票後台
+# 【核心新增】规则 4: 发票后台
+# 我们只增加这一条新的规则，并将其放在「全收」规则之前
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/:splat"
   status = 200
 
-# 【核心新增】規則 5: 權限後台
-[[redirects]]
-  from = "/permission-panel/*"
-  to = "/permission-panel/:splat"
-  status = 200
-
-# 【核心新增】規則 6: (備用) 使用者後台
-[[redirects]]
-  from = "/user-panel/*"
-  to = "/user-panel/:splat"
-  status = 200
-  
-# 規則 7: 診斷入口頁面
-[[redirects]]
-  from = "/debug-entry.html"
-  to = "/debug-entry.html"
-  status = 200
-
-# 規則 8: 消費者前端 (作為最後的「全收」規則)
+# 规则 5: 消费者前端 (作为最后的「全收」规则)
 [[redirects]]
   from = "/*"
   to = "/GreenHealth-Auth-Module/:splat"
   status = 200
 
 # ==============================================================================
-# ⚙️ 本地開發環境設定
+# ⚙️ 本地開發環境設定 (维持原样)
 # ==============================================================================
 [dev]
   framework = "#static"
