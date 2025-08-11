@@ -1,6 +1,6 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v27.5 - 最小化变更 (只增加 invoice-panel)
+# 版本: v27.5 - 最終 SPA 路由修正版
 # ------------------------------------------------------------------------------
 # 【此為完整檔案，可直接覆蓋】
 # ==============================================================================
@@ -19,35 +19,50 @@
 # 規則的順序至關重要，將最具體的路徑規則放在最前面。
 # ==============================================================================
 
-# 规则 1: 共用模组
+# 规则 1: 共用模组 (处理 .js, .css 等实体档案)
 [[redirects]]
   from = "/_shared/*"
   to = "/_shared/:splat"
   status = 200
 
-# 规则 2: 统一入口
+# 规则 2: 统一入口 (处理实体档案)
 [[redirects]]
   from = "/admin/*"
   to = "/admin/:splat"
   status = 200
+# 【核心修正】为 admin 这个 SPA 增加「全收」规则
+[[redirects]]
+  from = "/admin/*"
+  to = "/admin/index.html"
+  status = 200
 
-# 规则 3: 仓库后台 (已验证可运作)
+# 规则 3: 仓库后台 (处理实体档案)
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/:splat"
   status = 200
+# 【核心修正】为 warehouse-panel 这个 SPA 增加「全收」规则
+[[redirects]]
+  from = "/warehouse-panel/*"
+  to = "/warehouse-panel/shipping-dashboard.html"
+  status = 200
 
-# 【核心新增】规则 4: 发票后台
-# 我们只增加这一条新的规则，并将其放在「全收」规则之前
+# 规则 4: 发票后台 (处理实体档案)
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/:splat"
   status = 200
+# 【核心修正】为 invoice-panel 这个 SPA 增加「全收」规则
+[[redirects]]
+  from = "/invoice-panel/*"
+  to = "/invoice-panel/index.html"
+  status = 200
 
 # 规则 5: 消费者前端 (作为最后的「全收」规则)
+# 这条规则会捕捉所有其他未匹配的路由
 [[redirects]]
   from = "/*"
-  to = "/GreenHealth-Auth-Module/:splat"
+  to = "/GreenHealth-Auth-Module/index.html"
   status = 200
 
 # ==============================================================================
