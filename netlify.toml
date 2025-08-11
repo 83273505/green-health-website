@@ -1,6 +1,6 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v27.5 - 最終 SPA 路由修正版
+# 版本: v28.0 - 精準路由修正版
 # ------------------------------------------------------------------------------
 # 【此為完整檔案，可直接覆蓋】
 # ==============================================================================
@@ -8,65 +8,85 @@
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
-  # 确保 Netlify Function 的路径被正确设定
   functions = "netlify/functions"
   
   [build.environment]
     NODE_VERSION = "18"
 
 # ==============================================================================
-# [[redirects]] 區块
-# 規則的順序至關重要，將最具體的路徑規則放在最前面。
+# [[redirects]] 區塊
+# 規則順序至關重要：為了解決 MIME type 衝突，我們必須將「實體檔案」的規則
+# 放在「SPA 回退」規則之前，並且使用更具體的 from 路徑。
 # ==============================================================================
 
-# 规则 1: 共用模组 (处理 .js, .css 等实体档案)
+# --- 核心靜態資源 ---
+# 規則 1: 共用模組 (處理 .js, .css 等實體檔案)
 [[redirects]]
   from = "/_shared/*"
   to = "/_shared/:splat"
   status = 200
 
-# 规则 2: 统一入口 (处理实体档案)
+# --- 後台應用程式模組 (每個模組分為「實體檔案」和「SPA 回退」兩條規則) ---
+
+# 模組 A: 統一入口 (admin)
 [[redirects]]
-  from = "/admin/*"
+  from = "/admin/*.*" # 匹配所有包含副檔名的實體檔案請求
   to = "/admin/:splat"
   status = 200
-# 【核心修正】为 admin 这个 SPA 增加「全收」规则
 [[redirects]]
-  from = "/admin/*"
+  from = "/admin/*"   # 作為 SPA 回退，處理虛擬路由
   to = "/admin/index.html"
   status = 200
 
-# 规则 3: 仓库后台 (处理实体档案)
+# 模組 B: 倉庫後台 (warehouse-panel)
 [[redirects]]
-  from = "/warehouse-panel/*"
+  from = "/warehouse-panel/*.*"
   to = "/warehouse-panel/:splat"
   status = 200
-# 【核心修正】为 warehouse-panel 这个 SPA 增加「全收」规则
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/shipping-dashboard.html"
   status = 200
 
-# 规则 4: 发票后台 (处理实体档案)
+# 模組 C: 發票後台 (invoice-panel)
 [[redirects]]
-  from = "/invoice-panel/*"
+  from = "/invoice-panel/*.*"
   to = "/invoice-panel/:splat"
   status = 200
-# 【核心修正】为 invoice-panel 这个 SPA 增加「全收」规则
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/index.html"
   status = 200
 
-# 规则 5: 消费者前端 (作为最后的「全收」规则)
-# 这条规则会捕捉所有其他未匹配的路由
+# 模組 D: 權限後台 (permission-panel)
+[[redirects]]
+  from = "/permission-panel/*.*"
+  to = "/permission-panel/:splat"
+  status = 200
+[[redirects]]
+  from = "/permission-panel/*"
+  to = "/permission-panel/index.html"
+  status = 200
+
+# 模組 E: (備用) 使用者後台 (user-panel)
+[[redirects]]
+  from = "/user-panel/*.*"
+  to = "/user-panel/:splat"
+  status = 200
+[[redirects]]
+  from = "/user-panel/*"
+  to = "/user-panel/index.html"
+  status = 200
+  
+# --- 消費者前端 (作為最後的「全收」規則) ---
+# 這條規則會捕捉所有其他未匹配的路由
 [[redirects]]
   from = "/*"
   to = "/GreenHealth-Auth-Module/index.html"
   status = 200
 
 # ==============================================================================
-# ⚙️ 本地開發環境設定 (维持原样)
+# ⚙️ 本地開發環境設定 (維持原樣)
 # ==============================================================================
 [dev]
   framework = "#static"
