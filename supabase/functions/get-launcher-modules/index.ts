@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-launcher-modules/index.ts
-// 版本: v25.1 - 權限管理儀表板
+// 版本: v28.3 - 修正啟動台模組 URL
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,11 +8,10 @@
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "get-launcher-modules" (v25.1 - Permissions-Driven) 已啟動`);
+console.log(`函式 "get-launcher-modules" (v28.3 - URL Fix) 已啟動`);
 
 // --- 權限驅動模型定義 ---
 
-// 步驟 1: 定義所有可能的模組
 const ALL_MODULES = [
   {
     id: 'shipping',
@@ -38,10 +37,10 @@ const ALL_MODULES = [
     id: 'user_management',
     name: '使用者權限管理',
     description: '管理後台人員的角色與存取權限。',
-    url: '/user-panel/index.html', // 假設未來會有獨立的使用者管理面板
+    // 【核心修正】將 URL 指向 warehouse-panel 內部已存在的正確頁面
+    url: '/warehouse-panel/user-management.html', 
     badgeQuery: null
   },
-  // 【核心新增】新增權限設定模組的定義
   {
     id: 'permission_management',
     name: '權限設定',
@@ -51,12 +50,10 @@ const ALL_MODULES = [
   }
 ];
 
-// 步驟 2: 建立「模組 ID」與「所需權限」的對照表
 const MODULE_VIEW_PERMISSIONS = {
   shipping: 'module:shipping:view',
   invoicing: 'module:invoicing:view',
   user_management: 'module:users:view',
-  // 【核心新增】將新模組與其進入權限綁定
   permission_management: 'module:permissions:view'
 };
 
