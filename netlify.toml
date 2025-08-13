@@ -1,6 +1,6 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v29.2 - 最終語法修正版
+# 版本: v30.0 - _redirects 最終方案
 # ------------------------------------------------------------------------------
 # 【此為完整檔案，可直接覆蓋】
 # ==============================================================================
@@ -15,63 +15,11 @@
 
 # ==============================================================================
 # [[redirects]] 區塊
-# 規則順序至關重要：為了解決 MIME type 衝突，我們必須將「實體檔案」的規則
-# 放在「SPA 回退」規則之前，並且使用更具體的 from 路徑。
+# 根據 v30.0 架構，所有路由規則已遷移至 `test-shiporder/_redirects` 檔案中，
+# 以獲得更明確、更可預測的路由行為。
 # ==============================================================================
 
-# --- 核心靜態資源 ---
-[[redirects]]
-  from = "/_shared/*.*"
-  to = "/_shared/:splat"
-  status = 200
-
-# --- 後台應用程式模組 ---
-
-# 模組 A: 統一入口 (admin)
-[[redirects]]
-  from = "/admin/*.*"
-  to = "/admin/:splat"
-  status = 200
-[[redirects]]
-  from = "/admin/*"
-  to = "/admin/index.html"
-  status = 200
-
-# 模組 B: 倉庫後台 (warehouse-panel)
-[[redirects]]
-  from = "/warehouse-panel/*.*"
-  to = "/warehouse-panel/:splat"
-  status = 200
-[[redirects]]
-  from = "/warehouse-panel/*"
-  to = "/warehouse-panel/index.html"
-  status = 200
-
-# 模組 C: 發票後台 (invoice-panel)
-[[redirects]]
-  from = "/invoice-panel/*.*"
-  to = "/invoice-panel/:splat"
-  status = 200
-[[redirects]]
-  from = "/invoice-panel/*"
-  to = "/invoice-panel/index.html"
-  status = 200
-
-# 模組 D: 權限後台 (permission-panel)
-[[redirects]]
-  from = "/permission-panel/*.*"
-  to = "/permission-panel/:splat"
-  status = 200
-[[redirects]]
-  from = "/permission-panel/*"
-  to = "/permission-panel/index.html"
-  status = 200
-
-# --- 消費者前端 (作為最後的「全收」規則) ---
-[[redirects]]
-  from = "/*"
-  to = "/GreenHealth-Auth-Module/index.html"
-  status = 200
+# (此處的所有 [[redirects]] 規則已被移除)
 
 # ==============================================================================
 # ⚙️ 本地開發環境設定 (維持原樣)
