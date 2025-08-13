@@ -1,9 +1,9 @@
-# ==============================================================================
-# 檔案路徑: netlify.toml
-# 版本: v28.0 - 精準路由修正版
-# ------------------------------------------------------------------------------
-# 【此為完整檔案，可直接覆蓋】
-# ==============================================================================
+// ==============================================================================
+// 檔案路徑: netlify.toml
+// 版本: v29.1 - 鏡像 warehouse-panel (統一入口)
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
 
 [build]
   command = "echo '無需建置指令'"
@@ -20,21 +20,20 @@
 # ==============================================================================
 
 # --- 核心靜態資源 ---
-# 規則 1: 共用模組 (處理 .js, .css 等實體檔案)
 [[redirects]]
-  from = "/_shared/*"
+  from = "/_shared/*.*"
   to = "/_shared/:splat"
   status = 200
 
-# --- 後台應用程式模組 (每個模組分為「實體檔案」和「SPA 回退」兩條規則) ---
+# --- 後台應用程式模組 ---
 
 # 模組 A: 統一入口 (admin)
 [[redirects]]
-  from = "/admin/*.*" # 匹配所有包含副檔名的實體檔案請求
+  from = "/admin/*.*"
   to = "/admin/:splat"
   status = 200
 [[redirects]]
-  from = "/admin/*"   # 作為 SPA 回退，處理虛擬路由
+  from = "/admin/*"
   to = "/admin/index.html"
   status = 200
 
@@ -45,7 +44,8 @@
   status = 200
 [[redirects]]
   from = "/warehouse-panel/*"
-  to = "/warehouse-panel/shipping-dashboard.html"
+  # 【核心修正】將 SPA 回退指向新的統一入口 index.html
+  to = "/warehouse-panel/index.html"
   status = 200
 
 # 模組 C: 發票後台 (invoice-panel)
@@ -68,18 +68,7 @@
   to = "/permission-panel/index.html"
   status = 200
 
-# 模組 E: (備用) 使用者後台 (user-panel)
-[[redirects]]
-  from = "/user-panel/*.*"
-  to = "/user-panel/:splat"
-  status = 200
-[[redirects]]
-  from = "/user-panel/*"
-  to = "/user-panel/index.html"
-  status = 200
-  
 # --- 消費者前端 (作為最後的「全收」規則) ---
-# 這條規則會捕捉所有其他未匹配的路由
 [[redirects]]
   from = "/*"
   to = "/GreenHealth-Auth-Module/index.html"
