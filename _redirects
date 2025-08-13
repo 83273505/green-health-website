@@ -1,0 +1,24 @@
+# ==============================================================================
+# 檔案路徑: test-shiporder/_redirects
+# 版本: v31.3 - 最終 MPA/SPA 混合版
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋，並需同步至 main 分支】
+# ==============================================================================
+
+# --- 核心 API 路由 (最高優先級) ---
+/.netlify/functions/*    /.netlify/functions/:splat    200
+
+# --- 後台 SPA 模組 ---
+# 這些是單頁應用，所有找不到實體檔案的請求，都應回退到各自的入口 HTML
+/admin/*                          /admin/index.html                      200
+/warehouse-panel/*                /warehouse-panel/index.html            200
+# /invoice-panel/*                  /invoice-panel/index.html              200  (暫時禁用)
+# /permission-panel/*               /permission-panel/index.html           200  (暫時禁用)
+
+
+# --- 消費者前端 (多頁應用 MPA) ---
+# 【核心修正】這不再是一個「全收」規則。
+# 它只處理對 GreenHealth-Auth-Module 內部「虛擬路由」的回退。
+# 對實體檔案 (例如 .js, .css, images/*, product-detail.html) 的請求，
+# 因為 publish 目錄的設定，會被 Netlify 自動地、正確地找到，無需在此處定義。
+/*                                /GreenHealth-Auth-Module/index.html    200
