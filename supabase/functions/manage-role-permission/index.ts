@@ -1,14 +1,14 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/manage-role-permission/index.ts
-// 版本: v25.1 - 權限管理儀表板
+// 版本: v29.1 - 鏡像 warehouse-panel
 // ------------------------------------------------------------------------------
-// 【此為新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
-console.log(`函式 "manage-role-permission" (v25.1) 已啟動`);
+console.log(`函式 "manage-role-permission" (v29.1) 已啟動`);
 
 // --- Edge Function 主邏輯 ---
 
