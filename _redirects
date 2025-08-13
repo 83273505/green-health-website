@@ -1,0 +1,34 @@
+# ==============================================================================
+# 檔案路徑: test-shiporder/_redirects
+# 版本: v30.0 - _redirects 最終方案
+# ------------------------------------------------------------------------------
+# 【此為新檔案，可直接覆蓋】
+# ==============================================================================
+
+# --- 靜態資源優先處理 (確保 .js, .css, .html 等實體檔案被正確提供) ---
+/_shared/*                     /_shared/:splat                     200
+/admin/js/*                    /admin/js/:splat                    200
+/admin/css/*                   /admin/css/:splat                   200
+/warehouse-panel/js/*          /warehouse-panel/js/:splat          200
+/warehouse-panel/css/*         /warehouse-panel/css/:splat         200
+/invoice-panel/js/*            /invoice-panel/js/:splat            200
+/invoice-panel/css/*           /invoice-panel/css/:splat           200
+/permission-panel/js/*         /permission-panel/js/:splat         200
+/permission-panel/css/*        /permission-panel/css/:splat        200
+/GreenHealth-Auth-Module/js/*  /GreenHealth-Auth-Module/js/:splat  200
+/GreenHealth-Auth-Module/css/* /GreenHealth-Auth-Module/css/:splat 200
+# 如果有圖片等其他靜態資源資料夾，也請比照辦理
+/GreenHealth-Auth-Module/images/* /GreenHealth-Auth-Module/images/:splat 200
+
+
+# --- SPA 路由回退 (處理虛擬路由，例如頁面重新整理) ---
+# 這些規則的順序很重要，將最具體的放在最前面
+
+# 後台模組
+/admin/*                       /admin/index.html                   200
+/warehouse-panel/*             /warehouse-panel/index.html         200
+/invoice-panel/*               /invoice-panel/index.html           200
+/permission-panel/*            /permission-panel/index.html        200
+
+# 消費者前端 (作為最後的「全收」規則)
+/*                             /GreenHealth-Auth-Module/index.html    200
