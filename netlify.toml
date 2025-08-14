@@ -1,23 +1,55 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v31.7 - MPA/SPA 混合路由最終版
+# 版本: v31.7 - 最終 MPA/SPA 混合路由實作版（含匿名購物車商品詳情例外）
 # ==============================================================================
 
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
   functions = "test-shiporder/netlify/functions"
-  
+
   [build.environment]
     NODE_VERSION = "18"
 
-# 所有路由規則在 test-shiporder/_redirects
-# 此處不重複設定 [[redirects]]
+# ==============================================================================
+# [[redirects]] 規則直接內嵌
+# ==============================================================================
 
+[[redirects]]
+  from = "/GreenHealth-Auth-Module/product-detail.html*"
+  to = "/GreenHealth-Auth-Module/product-detail.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/GreenHealth-Auth-Module/*"
+  to = "/GreenHealth-Auth-Module/index.html"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/shiporder/*"
+  to = "/shiporder/index.html"
+  status = 200
+  force = true
+
+# 針對其他未匹配路由的 SPA fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  force = true
+
+# ==============================================================================
+# 開發環境
+# ==============================================================================
 [dev]
   framework = "#static"
   publish = "."
 
+# ==============================================================================
+# 環境變數（示範，實際金鑰請在 Netlify UI 設定）
+# ==============================================================================
 [context.production.environment]
   SUPABASE_URL = "https://your-project.supabase.co"
   SUPABASE_ANON_KEY = "your-anon-key"
