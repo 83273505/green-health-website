@@ -1,55 +1,81 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v31.7 - 最終 MPA/SPA 混合路由實作版（含匿名購物車商品詳情例外）
+# 版本: v32.0 - 最終消費者端模組拆分版
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
 # ==============================================================================
 
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
   functions = "test-shiporder/netlify/functions"
-
+  
   [build.environment]
     NODE_VERSION = "18"
 
 # ==============================================================================
-# [[redirects]] 規則直接內嵌
+# [[redirects]] 區块
+# 规则顺序至关重要：我们将为每个模组都定义清晰的规则。
 # ==============================================================================
 
+# 规则 1: 共用模组 (确保实体档案被正确找到)
 [[redirects]]
-  from = "/GreenHealth-Auth-Module/product-detail.html*"
-  to = "/GreenHealth-Auth-Module/product-detail.html"
+  from = "/_shared/*"
+  to = "/_shared/:splat"
   status = 200
-  force = true
 
+# 规则 2: 后台 SPA (将所有后台模组都作为独立的 SPA 处理)
 [[redirects]]
-  from = "/GreenHealth-Auth-Module/*"
-  to = "/GreenHealth-Auth-Module/index.html"
+  from = "/admin/*"
+  to = "/admin/index.html"
   status = 200
-  force = true
-
 [[redirects]]
-  from = "/shiporder/*"
-  to = "/shiporder/index.html"
+  from = "/warehouse-panel/*"
+  to = "/warehouse-panel/index.html"
   status = 200
-  force = true
+[[redirects]]
+  from = "/invoice-panel/*"
+  to = "/invoice-panel/index.html"
+  status = 200
+[[redirects]]
+  from = "/permission-panel/*"
+  to = "/permission-panel/index.html"
+  status = 200
 
-# 針對其他未匹配路由的 SPA fallback
+# 【核心修正】规则 3: 消费者端模组
+# 这一组规则，将完美地处理我们新的、拆分后的 MPA 和 SPA 模组
+
+# 3a. 会员中心 (SPA) - 将所有 /account-module/... 的请求，都交给会员中心的 SPA 入口处理
+[[redirects]]
+  from = "/account-module/*"
+  to = "/account-module/index.html"
+  status = 200
+
+# 3b. 商店前端 (MPA) - 优先寻找实体档案
+# 这条规则将确保对 /storefront-module/product-detail.html 的请求，能正确地回传实体档案
+[[redirects]]
+  from = "/storefront-module/*"
+  to = "/storefront-module/:splat"
+  status = 200
+
+# 规则 4: 最后的「全收」规则
+# 只在访问根目录 (/) 或完全不存在的顶层路径时，才导向商店的前端首页
 [[redirects]]
   from = "/*"
-  to = "/index.html"
+  to = "/storefront-module/products.html"
   status = 200
-  force = true
 
-# ==============================================================================
-# 開發環境
-# ==============================================================================
+# ... (dev 和 context 區块维持不变) ...
+
+==============================================================================
+開發環境
+==============================================================================
 [dev]
-  framework = "#static"
-  publish = "."
-
-# ==============================================================================
-# 環境變數（示範，實際金鑰請在 Netlify UI 設定）
-# ==============================================================================
+framework = "#static"
+publish = "."
+==============================================================================
+環境變數（示範，實際金鑰請在 Netlify UI 設定）
+==============================================================================
 [context.production.environment]
-  SUPABASE_URL = "https://your-project.supabase.co"
-  SUPABASE_ANON_KEY = "your-anon-key"
+SUPABASE_URL = "https://your-project.supabase.co"
+SUPABASE_ANON_KEY = "your-anon-key"
