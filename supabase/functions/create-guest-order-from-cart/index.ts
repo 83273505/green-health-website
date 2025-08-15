@@ -1,7 +1,8 @@
 // ==============================================================================
-// 檔案路徑: supabase/functions/create-order-from-cart/index.ts
+// 檔案路徑: supabase/functions/create-guest-order-from-cart/index.ts
+// 版本: v32.2 - 結帳流程最終拆分
 // ------------------------------------------------------------------------------
-// 【此為完整重構版，可直接覆蓋】
+// 【此為新檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -10,15 +11,13 @@ import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
 import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
 /**
- * @class CreateOrderHandler
- * @description 將建立訂單的所有相關邏輯封裝在一個類別中，
- *              以提升程式碼的可讀性、可維護性和可測試性。
+ * @class CreateGuestOrderHandler
+ * @description 將建立「訪客」訂單的所有相關邏輯封裝在一個類別中。
  */
-class CreateOrderHandler {
+class CreateGuestOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
 
-  // 在建構函式中初始化所有需要的客戶端實例
   constructor() {
     this.supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '', 
@@ -31,7 +30,7 @@ class CreateOrderHandler {
   // --- 私有輔助方法 (Private Helper Methods) ---
 
   /**
-   * [私有] 後端購物車金額計算核心引擎
+   * [私有] 後端購物車金額計算核心引擎 (與會員版共用)
    */
   private async _calculateCartSummary(cartId: string, couponCode?: string, shippingMethodId?: string) {
     const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
@@ -71,7 +70,7 @@ class CreateOrderHandler {
   }
 
   /**
-   * [私有] 產生訂單確認郵件的純文字內容
+   * [私有] 產生訂單確認郵件的純文字內容 (與會員版共用)
    */
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
@@ -148,7 +147,7 @@ Green Health 團隊 敬上
   }
   
   /**
-   * [私有] 處理發票記錄的建立，並隔離錯誤
+   * [私有] 處理發票記錄的建立，並隔離錯誤 (與會員版共用)
    */
   private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any) {
     try {
@@ -165,14 +164,17 @@ Green Health 團隊 敬上
   }
 
   /**
-   * [私有] 驗證傳入的請求資料是否完整
+   * [私有] 驗證匿名訪客的請求資料是否完整
    */
   private _validateRequest(data: any): { valid: boolean; message: string } {
-    const requiredFields = ['cartId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    const requiredFields = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
     for (const field of requiredFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
       }
+    }
+    if (!data.shippingDetails.guestInfo) {
+      return { valid: false, message: 'shippingDetails 中缺少 guestInfo' };
     }
     return { valid: true, message: '驗證通過' };
   }
@@ -188,7 +190,7 @@ Green Health 團隊 敬上
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-    const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
+    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
 
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('缺少授權標頭。');
@@ -203,10 +205,12 @@ Green Health 團隊 敬上
     }
     if (!backendSnapshot.items || backendSnapshot.items.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
     
-    const { data: address } = await this.supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).single();
+    // 【核心修正】直接使用 guestInfo 作為地址快照
+    const address = shippingDetails.guestInfo;
+    
     const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
-    if (!address || !shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(地址、運送或付款方式)。');
+    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(運送或付款方式)。');
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
@@ -259,13 +263,12 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders }); 
   }
   try {
-    const handler = new CreateOrderHandler();
-    // 使用 .bind(handler) 確保 handler 內部的方法在呼叫時，'this' 的指向是正確的 handler 實例
+    const handler = new CreateGuestOrderHandler();
     return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
-    console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
+    console.error('[create-guest-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
     return new Response(JSON.stringify({ 
-      error: `[create-order-from-cart]: ${error.message}` 
+      error: `[create-guest-order-from-cart]: ${error.message}` 
     }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 })
