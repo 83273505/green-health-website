@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-guest-order-from-cart/index.ts
-// 版本: v32.2 - 結帳流程最終拆分
+// 版本: v32.3 - 結帳流程最終拆分 (完整性複製)
 // ------------------------------------------------------------------------------
 // 【此為新檔案，可直接覆蓋】
 // ==============================================================================
@@ -30,7 +30,7 @@ class CreateGuestOrderHandler {
   // --- 私有輔助方法 (Private Helper Methods) ---
 
   /**
-   * [私有] 後端購物車金額計算核心引擎 (與會員版共用)
+   * [私有] 後端購物車金額計算核心引擎
    */
   private async _calculateCartSummary(cartId: string, couponCode?: string, shippingMethodId?: string) {
     const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
@@ -70,7 +70,7 @@ class CreateGuestOrderHandler {
   }
 
   /**
-   * [私有] 產生訂單確認郵件的純文字內容 (與會員版共用)
+   * [私有] 產生訂單確認郵件的純文字內容
    */
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
@@ -147,7 +147,7 @@ Green Health 團隊 敬上
   }
   
   /**
-   * [私有] 處理發票記錄的建立，並隔離錯誤 (與會員版共用)
+   * [私有] 處理發票記錄的建立，並隔離錯誤
    */
   private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any) {
     try {

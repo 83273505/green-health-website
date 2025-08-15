@@ -1,7 +1,8 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
+// 版本: v32.3 - 結帳流程最終拆分 (完整性複製)
 // ------------------------------------------------------------------------------
-// 【此為完整重構版，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -10,15 +11,13 @@ import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
 import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
 /**
- * @class CreateOrderHandler
- * @description 將建立訂單的所有相關邏輯封裝在一個類別中，
- *              以提升程式碼的可讀性、可維護性和可測試性。
+ * @class CreateMemberOrderHandler
+ * @description 將建立「會員」訂單的所有相關邏輯封裝在一個類別中。
  */
-class CreateOrderHandler {
+class CreateMemberOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
 
-  // 在建構函式中初始化所有需要的客戶端實例
   constructor() {
     this.supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '', 
@@ -165,7 +164,7 @@ Green Health 團隊 敬上
   }
 
   /**
-   * [私有] 驗證傳入的請求資料是否完整
+   * [私有] 驗證會員請求資料是否完整
    */
   private _validateRequest(data: any): { valid: boolean; message: string } {
     const requiredFields = ['cartId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
@@ -259,8 +258,7 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders }); 
   }
   try {
-    const handler = new CreateOrderHandler();
-    // 使用 .bind(handler) 確保 handler 內部的方法在呼叫時，'this' 的指向是正確的 handler 實例
+    const handler = new CreateMemberOrderHandler();
     return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
     console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
