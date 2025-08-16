@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
-// 版本: v33.0 - 統一流程與體驗終局
+// 版本: v33.0 - 統一流程與體驗終局 (最終修正)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -152,7 +152,7 @@ function handleFormChange(event) {
         shippingDetails[name] = value;
     }
     if (name === 'shipping') {
-        selectedShippingMethodId = value;
+        selectedPaymentMethodId = null; // 重置付款方式選擇
         CartService.selectShippingMethod(value);
     }
     if (name === 'payment') {
@@ -244,6 +244,7 @@ async function handlePlaceOrder() {
     placeOrderBtn.textContent = '訂單處理中...';
     
     const cartState = CartService.getState();
+    const { selectedShippingMethodId } = cartState; // 從 cartState 獲取
     const frontendValidationSummary = { ...cartState.summary, couponCode: cartState.appliedCoupon?.code };
     
     try {
