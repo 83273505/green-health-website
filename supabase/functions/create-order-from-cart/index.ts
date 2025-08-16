@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v32.3 - 結帳流程最終拆分 (完整性複製)
+// 版本: v32.3 - 後端匿名容錯
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -193,6 +193,9 @@ Green Health 團隊 敬上
     if (!authHeader) throw new Error('缺少授權標頭。');
     const { data: { user } } = await this.supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
     if (!user) throw new Error('使用者未登入或授權無效。');
+    
+    const { data: profile, error: profileError } = await this.supabaseAdmin.from('profiles').select('name').eq('id', user.id).single();
+    if (profileError) throw new Error('找不到對應的會員資料。');
 
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -212,7 +215,9 @@ Green Health 團隊 敬上
       subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
-      payment_status: 'pending'
+      payment_status: 'pending',
+      customer_email: user.email,
+      customer_name: profile.name
     }).select().single();
     if (orderError) throw orderError;
 
@@ -234,7 +239,7 @@ Green Health 團隊 敬上
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await this.resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
-        to: [user.email], 
+        to: [newOrder.customer_email], 
         bcc: ['a896214@gmail.com'],
         reply_to: 'service@greenhealthtw.com.tw',
         subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,

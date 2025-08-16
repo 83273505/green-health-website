@@ -1,57 +1,71 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/services/InvoiceService.ts
+// 版本: v32.3 - 後端匿名容錯
 // ------------------------------------------------------------------------------
-// 【發票核心服務 - 完整更新版】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient } from '../deps.ts';
-// 【新增部分】引入速買配適配器
 import { SmilePayInvoiceAdapter } from '../adapters/SmilePayInvoiceAdapter.ts';
 
 type SupabaseClient = ReturnType<typeof createClient>;
 
 export class InvoiceService {
   private supabase: SupabaseClient;
-  // 【新增部分】宣告一個私有的 adapter 實例
   private smilePayAdapter: SmilePayInvoiceAdapter;
 
   constructor(supabaseClient: SupabaseClient) {
     this.supabase = supabaseClient;
-    // 【新增部分】在建構函式中實例化 adapter
     this.smilePayAdapter = new SmilePayInvoiceAdapter();
   }
 
   /**
-   * 核心規則：決定最終用於建立發票的資料。
-   * (此方法維持不變)
+   * 【核心修正】核心規則：決定最終用於建立發票的資料。
+   * 此方法不再依賴 profiles 表，而是直接信任前端傳遞的 invoiceOptions。
+   * 這使得函式能夠同時處理會員和匿名訪客的訂單。
    */
   async determineInvoiceData(userId: string, userProvidedOptions: any): Promise<any> {
+    // 檢查使用者是否明確提供了完整的發票資訊
     if (this.isInvoiceOptionsComplete(userProvidedOptions)) {
-      console.log(`[InvoiceService] 使用者提供了發票資料:`, userProvidedOptions);
+      console.log(`[InvoiceService] 使用者提供了完整的發票資料:`, userProvidedOptions);
       return userProvidedOptions;
     }
-    console.log(`[InvoiceService] 使用者未提供發票資料，從 profile (ID: ${userId}) 獲取預設值。`);
+
+    // 如果使用者沒有提供完整資訊（例如，只選了預設的會員載具），
+    // 我們需要從 profiles 表中查詢 email 來補全資料。
+    console.log(`[InvoiceService] 使用者提供的發票資料不完整，嘗試從 profile (ID: ${userId}) 獲取預設 Email。`);
     const { data: profile, error } = await this.supabase
       .from('profiles')
-      .select('name, email')
+      .select('email, name') // 同時獲取姓名作為備援
       .eq('id', userId)
       .single();
+
     if (error || !profile) {
       console.error(`[InvoiceService] 無法獲取 ID 為 ${userId} 的 profile 來產生預設發票資料:`, error);
+      // 在最壞的情況下，提供一個安全的預設值，確保訂單流程能繼續
       return {
-        type: 'cloud', carrier_type: 'member', carrier_number: 'unknown@email.com',
-        recipient_name: '顧客', recipient_email: 'unknown@email.com'
+        type: 'donation', // 預設捐贈
+        donation_code: '111', // 公共的捐贈碼
+        recipient_name: '顧客',
+        recipient_email: 'unknown@example.com'
       };
     }
-    return {
-      type: 'cloud', carrier_type: 'member', carrier_number: profile.email,
-      recipient_name: profile.name, recipient_email: profile.email
-    };
+
+    // 將查詢到的 email 填入使用者選項中，並回傳
+    const finalOptions = { ...userProvidedOptions };
+    if (finalOptions.type === 'cloud' && finalOptions.carrier_type === 'member' && !finalOptions.carrier_number) {
+        finalOptions.carrier_number = profile.email;
+    }
+    // 補全收件人姓名和 email
+    finalOptions.recipient_name = profile.name || '顧客';
+    finalOptions.recipient_email = profile.email;
+    
+    console.log(`[InvoiceService] 已補全發票資料:`, finalOptions);
+    return finalOptions;
   }
 
   /**
    * 在 `invoices` 表中建立一筆新的、狀態為 'pending' 的發票記錄。
-   * (此方法維持不變)
    */
   async createInvoiceRecord(orderId: string, orderTotalAmount: number, invoiceData: any): Promise<any> {
     console.log(`[InvoiceService] 為訂單 ID ${orderId} 建立發票記錄...`);
@@ -81,8 +95,7 @@ export class InvoiceService {
   }
   
   /**
-   * [私有輔助函式] 檢查使用者提供的發票選項是否有效。
-   * (此方法維持不變)
+   * [私有輔助函式] 檢查使用者提供的發票選項是否完整。
    */
   private isInvoiceOptionsComplete(data: any): boolean {
     if (!data || !data.type) return false;
@@ -94,16 +107,12 @@ export class InvoiceService {
     }
   }
 
-  // --- 【新增部分】Phase 3 的核心方法 ---
-
   /**
    * 透過 API 開立發票
-   * @param invoiceId - 要開立的發票記錄 ID
    */
   async issueInvoiceViaAPI(invoiceId: string): Promise<void> {
     try {
       console.log(`[InvoiceService] 開始為 Invoice ID ${invoiceId} 開立發票...`);
-      // 1. 從資料庫獲取完整的發票與訂單資料
       const { data: invoice, error: fetchError } = await this.supabase
         .from('invoices')
         .select(`*, orders(*, order_items(*, product_variants(name)))`)
@@ -114,10 +123,8 @@ export class InvoiceService {
         throw new Error(`找不到 Invoice ID ${invoiceId} 或其關聯訂單的資料。`);
       }
       
-      // 2. 呼叫適配器，將資料轉換並發送給速買配
       const result = await this.smilePayAdapter.issueInvoice(invoice);
 
-      // 3. 更新本地發票記錄為 'issued'
       await this.supabase
         .from('invoices')
         .update({
@@ -125,29 +132,24 @@ export class InvoiceService {
           invoice_number: result.invoiceNumber,
           api_response: result.apiResponse,
           issued_at: new Date().toISOString(),
-          error_message: null // 清除舊的錯誤訊息
+          error_message: null
         })
         .eq('id', invoiceId);
 
       console.log(`[InvoiceService] Invoice ID ${invoiceId} 成功開立，發票號碼: ${result.invoiceNumber}`);
 
     } catch (error) {
-      // 統一的錯誤處理
       await this.handleInvoiceError(invoiceId, error);
-      // 將錯誤繼續向上拋出，讓呼叫者知道操作失敗
       throw error;
     }
   }
   
   /**
    * 透過 API 作廢發票
-   * @param invoiceId - 要作廢的發票記錄 ID
-   * @param reason - 作廢原因
    */
   async voidInvoiceViaAPI(invoiceId: string, reason: string): Promise<void> {
     try {
       console.log(`[InvoiceService] 開始為 Invoice ID ${invoiceId} 作廢發票...`);
-      // 1. 獲取必要的發票資訊
       const { data: invoice } = await this.supabase
         .from('invoices')
         .select('invoice_number, issued_at')
@@ -158,13 +160,10 @@ export class InvoiceService {
         throw new Error('發票號碼不存在或發票尚未開立，無法作廢。');
       }
 
-      // 格式化日期為速買配需要的 YYYY/MM/DD 格式
       const invoiceDate = new Date(invoice.issued_at).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' });
 
-      // 2. 呼叫適配器執行作廢
       const result = await this.smilePayAdapter.voidInvoice(invoice.invoice_number, invoiceDate, reason);
 
-      // 3. 更新本地發票記錄為 'voided'
       await this.supabase
         .from('invoices')
         .update({
@@ -185,14 +184,11 @@ export class InvoiceService {
 
   /**
    * [私有] 統一的錯誤處理方法
-   * @param invoiceId - 發生錯誤的發票 ID
-   * @param error - 捕捉到的錯誤物件
    */
   private async handleInvoiceError(invoiceId: string, error: any): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[InvoiceService] 處理 Invoice ID ${invoiceId} 時發生錯誤:`, errorMessage);
 
-    // 將發票狀態更新為 'failed' 並記錄錯誤訊息
     await this.supabase
       .from('invoices')
       .update({

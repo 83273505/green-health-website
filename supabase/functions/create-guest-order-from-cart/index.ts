@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-guest-order-from-cart/index.ts
-// 版本: v32.3 - 結帳流程最終拆分 (完整性複製)
+// 版本: v32.3 - 後端匿名容錯
 // ------------------------------------------------------------------------------
 // 【此為新檔案，可直接覆蓋】
 // ==============================================================================
@@ -176,6 +176,10 @@ Green Health 團隊 敬上
     if (!data.shippingDetails.guestInfo) {
       return { valid: false, message: 'shippingDetails 中缺少 guestInfo' };
     }
+    // 增加對 guestInfo 內部 email 的驗證
+    if (!data.shippingDetails.guestInfo.email) {
+      return { valid: false, message: 'guestInfo 中缺少 email 欄位' };
+    }
     return { valid: true, message: '驗證通過' };
   }
 
@@ -205,19 +209,20 @@ Green Health 團隊 敬上
     }
     if (!backendSnapshot.items || backendSnapshot.items.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
     
-    // 【核心修正】直接使用 guestInfo 作為地址快照
     const address = shippingDetails.guestInfo;
     
     const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
-    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(運送或付款方式)。');
+    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(地址、運送或付款方式)。');
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
       subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
-      payment_status: 'pending'
+      payment_status: 'pending',
+      customer_email: address.email,
+      customer_name: address.recipient_name
     }).select().single();
     if (orderError) throw orderError;
 
@@ -239,7 +244,7 @@ Green Health 團隊 敬上
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await this.resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
-        to: [user.email], 
+        to: [newOrder.customer_email], 
         bcc: ['a896214@gmail.com'],
         reply_to: 'service@greenhealthtw.com.tw',
         subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
