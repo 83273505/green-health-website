@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v32.3 - 後端匿名容錯
+// 版本: v32.4 - 後端匿名容錯 (體驗修正)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -167,7 +167,7 @@ Green Health 團隊 敬上
    * [私有] 驗證會員請求資料是否完整
    */
   private _validateRequest(data: any): { valid: boolean; message: string } {
-    const requiredFields = ['cartId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    const requiredFields = ['cartId', 'userId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
     for (const field of requiredFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
@@ -187,15 +187,14 @@ Green Health 團隊 敬上
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-    const { cartId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
-
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('缺少授權標頭。');
-    const { data: { user } } = await this.supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!user) throw new Error('使用者未登入或授權無效。');
+    const { cartId, userId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
     
+    const user = { id: userId };
+    
+    const { data: authUser, error: authUserError } = await this.supabaseAdmin.auth.admin.getUserById(user.id);
+    if (authUserError || !authUser.user) throw new Error('找不到對應的 auth 使用者資料。');
     const { data: profile, error: profileError } = await this.supabaseAdmin.from('profiles').select('name').eq('id', user.id).single();
-    if (profileError) throw new Error('找不到對應的會員資料。');
+    if (profileError) throw new Error('找不到對應的會員 profile 資料。');
 
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -216,7 +215,7 @@ Green Health 團隊 敬上
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending',
-      customer_email: user.email,
+      customer_email: authUser.user.email,
       customer_name: profile.name
     }).select().single();
     if (orderError) throw orderError;

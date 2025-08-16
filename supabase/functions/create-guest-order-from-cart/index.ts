@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-guest-order-from-cart/index.ts
-// 版本: v32.3 - 後端匿名容錯
+// 版本: v32.4 - 後端匿名容錯 (體驗修正)
 // ------------------------------------------------------------------------------
 // 【此為新檔案，可直接覆蓋】
 // ==============================================================================
@@ -167,7 +167,7 @@ Green Health 團隊 敬上
    * [私有] 驗證匿名訪客的請求資料是否完整
    */
   private _validateRequest(data: any): { valid: boolean; message: string } {
-    const requiredFields = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    const requiredFields = ['cartId', 'userId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
     for (const field of requiredFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
@@ -176,7 +176,6 @@ Green Health 團隊 敬上
     if (!data.shippingDetails.guestInfo) {
       return { valid: false, message: 'shippingDetails 中缺少 guestInfo' };
     }
-    // 增加對 guestInfo 內部 email 的驗證
     if (!data.shippingDetails.guestInfo.email) {
       return { valid: false, message: 'guestInfo 中缺少 email 欄位' };
     }
@@ -194,12 +193,9 @@ Green Health 團隊 敬上
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
-
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) throw new Error('缺少授權標頭。');
-    const { data: { user } } = await this.supabaseAdmin.auth.getUser(authHeader.replace('Bearer ', ''));
-    if (!user) throw new Error('使用者未登入或授權無效。');
+    const { cartId, userId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
+    
+    const user = { id: userId };
 
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -213,7 +209,7 @@ Green Health 團隊 敬上
     
     const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
-    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(地址、運送或付款方式)。');
+    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(運送或付款方式)。');
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
