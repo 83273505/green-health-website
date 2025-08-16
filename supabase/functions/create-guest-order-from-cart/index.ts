@@ -2,7 +2,7 @@
 // 檔案路徑: supabase/functions/create-guest-order-from-cart/index.ts
 // 版本: v32.4 - 後端匿名容錯 (體驗修正)
 // ------------------------------------------------------------------------------
-// 【此為新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -147,12 +147,12 @@ Green Health 團隊 敬上
   }
   
   /**
-   * [私有] 處理發票記錄的建立，並隔離錯誤
+   * 【核心修正】處理發票記錄的建立，現在接收 address 物件作為備援資料
    */
-  private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any) {
+  private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any, address: any) {
     try {
       const invoiceService = new InvoiceService(this.supabaseAdmin);
-      const finalInvoiceData = await invoiceService.determineInvoiceData(userId, invoiceOptions);
+      const finalInvoiceData = await invoiceService.determineInvoiceData(userId, { ...invoiceOptions, ...address });
       await invoiceService.createInvoiceRecord(orderId, totalAmount, finalInvoiceData);
       console.log(`[INFO] 訂單 ${orderId} 的發票記錄已成功排入佇列。`);
     } catch (invoiceError) {
@@ -230,7 +230,8 @@ Green Health 團隊 敬上
     
     await Promise.allSettled([
         this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
-        this._handleInvoiceCreation(newOrder.id, user.id, backendSnapshot.summary.total, invoiceOptions)
+        // 【核心修正】將 address (guestInfo) 傳遞給發票處理函式
+        this._handleInvoiceCreation(newOrder.id, user.id, backendSnapshot.summary.total, invoiceOptions, address)
     ]);
     
     const { data: finalOrderItems } = await this.supabaseAdmin
