@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>權限管理 - Green Health 後台</title>
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link rel="stylesheet" href="/permission-panel/css/permission-style.css">
+</head>
+
+<body id="permission-dashboard">
+
+    <header class="main-header">
+        <h1>權限設定</h1>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="permission-container">
+        
+        <div id="loading-view" class="loading-view">
+            <p>正在載入權限設定...</p>
+        </div>
+        
+        <div id="main-content" class="hidden">
+            <div class="permission-table-container">
+                <table id="permission-matrix" class="permission-table">
+                    <!-- 表頭和內容將由 permissions.js 動態生成 -->
+                </table>
+            </div>
+            <p style="margin-top: 1rem; font-size: 0.9rem; color: var(--text-light);">
+                提示：超級管理員 (super_admin) 的權限為系統預設且無法修改。
+            </p>
+        </div>
+    </main>
+
+    <!-- 【核心修正】移除对 config.js 的引用 -->
+    <script type="module" src="/permission-panel/js/core/app.js"></script> 
+</body>
+</html>

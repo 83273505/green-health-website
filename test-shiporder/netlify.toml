@@ -1,0 +1,82 @@
+# ==============================================================================
+# 檔案路徑: netlify.toml
+# 版本: v32.1 - 最終絕對路徑版
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
+# ==============================================================================
+
+[build]
+  command = "echo '無需建置指令'"
+  publish = "test-shiporder"
+  functions = "test-shiporder/netlify/functions"
+  
+  [build.environment]
+    NODE_VERSION = "18"
+
+# ==============================================================================
+# [[redirects]] 區块
+# 规则顺序至关重要：我们将为每一个实体页面都建立绝对规则。
+# ==============================================================================
+
+# 规则 1: 共用模组 (确保实体档案被正确找到)
+[[redirects]]
+  from = "/_shared/*"
+  to = "/_shared/:splat"
+  status = 200
+
+# 【核心修正】规则 2: 消费者端 MPA 实体页面 (最高优先级)
+# 我们将所有需要被直接访问的 .html 档案，都明确地列在这里。
+# 它们的优先级，高于下面所有的 SPA 规则。
+[[redirects]]
+  from = "/storefront-module/products.html"
+  to = "/storefront-module/products.html"
+  status = 200
+[[redirects]]
+  from = "/storefront-module/product-detail.html"
+  to = "/storefront-module/product-detail.html"
+  status = 200
+[[redirects]]
+  from = "/storefront-module/checkout.html"
+  to = "/storefront-module/checkout.html"
+  status = 200
+[[redirects]]
+  from = "/storefront-module/order-success.html"
+  to = "/storefront-module/order-success.html"
+  status = 200
+[[redirects]]
+  from = "/storefront-module/terms.html"
+  to = "/storefront-module/terms.html"
+  status = 200
+
+# 规则 3: 后台 SPA (将所有后台模组都作为独立的 SPA 处理)
+[[redirects]]
+  from = "/admin/*"
+  to = "/admin/index.html"
+  status = 200
+[[redirects]]
+  from = "/warehouse-panel/*"
+  to = "/warehouse-panel/index.html"
+  status = 200
+[[redirects]]
+  from = "/invoice-panel/*"
+  to = "/invoice-panel/index.html"
+  status = 200
+[[redirects]]
+  from = "/permission-panel/*"
+  to = "/permission-panel/index.html"
+  status = 200
+
+# 规则 4: 会员中心 SPA
+[[redirects]]
+  from = "/account-module/*"
+  to = "/account-module/index.html"
+  status = 200
+
+# 规则 5: 最后的「全收」规则
+# 这条规则现在只会在访问根目录 (/) 或完全不存在的路径时，才导向商店的首页
+[[redirects]]
+  from = "/*"
+  to = "/storefront-module/products.html"
+  status = 200
+
+# ... (dev 和 context 區块维持不变) ..

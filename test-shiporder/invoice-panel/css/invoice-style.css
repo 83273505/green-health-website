@@ -1,0 +1,78 @@
+/* ============================================================================== */
+/* 檔案路徑: invoice-panel/css/invoice-style.css                               */
+/* ------------------------------------------------------------------------------ */
+/* 【發票管理後台 - 專屬樣式表】                                              */
+/* ============================================================================== */
+
+/* --- 全域與基礎設定 (與 warehouse-style 共用) --- */
+:root {
+    --primary-color: #4CAF50;
+    --primary-dark: #388E3C;
+    --secondary-color: #6c757d;
+    --border-color: #ddd;
+    --text-color: #333;
+    --text-light: #666;
+    --error-color: #e74c3c;
+    --success-color: #2ecc71;
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: var(--font-family); background-color: #f9f9f9; color: var(--text-color); line-height: 1.6; }
+
+/* --- 頁首 (共用) --- */
+.main-header { display: flex; justify-content: space-between; align-items: center; padding: 0.8rem 1.5rem; background-color: #fff; border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.main-header h1 { font-size: 1.5rem; }
+.header-actions { display: flex; align-items: center; gap: 1rem; }
+#logout-btn { background: none; border: 1px solid var(--error-color); color: var(--error-color); padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer; transition: all 0.3s; }
+#logout-btn:hover { background-color: var(--error-color); color: white; }
+
+/* --- 主要容器 --- */
+.invoice-container { max-width: 1400px; margin: 2rem auto; padding: 2rem; background-color: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+.hidden { display: none !important; }
+.loading-text, .error-message { padding: 2rem; text-align: center; color: var(--text-light); }
+.error-message { color: var(--error-color); }
+
+/* --- 篩選與搜尋區域 --- */
+.filters-and-search { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-end; padding-bottom: 1.5rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1.5rem; }
+.form-group { display: flex; flex-direction: column; gap: 0.5rem; }
+.form-group label { font-size: 0.9rem; font-weight: 500; color: var(--text-light); }
+.form-group input, .form-group select { padding: 0.6rem; border: 1px solid var(--border-color); border-radius: 4px; font-size: 1rem; }
+.date-range { display: flex; align-items: center; gap: 0.5rem; }
+.search-group { flex-grow: 1; }
+
+/* --- 按鈕樣式 (共用) --- */
+.btn-submit { padding: 0.6rem 1.5rem; background-color: var(--primary-color); color: white; border: none; border-radius: 4px; font-size: 1rem; font-weight: 500; cursor: pointer; transition: background-color 0.3s; }
+.btn-submit:hover:not(:disabled) { background-color: var(--primary-dark); }
+.btn-submit:disabled { background-color: #ccc; cursor: not-allowed; }
+.btn-secondary { padding: 0.6rem 1.5rem; background-color: #f0f0f0; color: var(--text-color); border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer; transition: background-color 0.3s; }
+.btn-secondary:hover { background-color: #e0e0e0; }
+.btn-danger { background-color: var(--error-color); color: white; border: 1px solid var(--error-color); }
+.btn-danger:hover { background-color: #c0392b; }
+
+/* --- 發票列表格 --- */
+.invoice-table-container { overflow-x: auto; }
+.invoice-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.invoice-table th, .invoice-table td { padding: 0.8rem; text-align: left; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+.invoice-table th { background-color: #f8f9fa; font-weight: 600; }
+.invoice-table .invoice-row { cursor: pointer; transition: background-color 0.2s; }
+.invoice-table .invoice-row:hover { background-color: #f5f5f5; }
+.invoice-table td .status-tag { padding: 0.2rem 0.6rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; color: white; display: inline-block; }
+.status-issued { background-color: var(--primary-color); }
+.status-pending { background-color: #f39c12; }
+.status-failed { background-color: var(--error-color); }
+.status-voided { background-color: var(--secondary-color); }
+
+/* --- Modal (彈窗) 樣式 --- */
+.modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.6); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+.modal-content { background-color: white; border-radius: 8px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 100%; max-width: 600px; max-height: 90vh; display: flex; flex-direction: column; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; border-bottom: 1px solid var(--border-color); }
+.modal-header h2 { margin: 0; font-size: 1.25rem; }
+.modal-close { background: none; border: none; font-size: 2rem; line-height: 1; cursor: pointer; color: var(--text-light); }
+.modal-body { padding: 1.5rem; overflow-y: auto; }
+.modal-section { margin-bottom: 1.5rem; padding-bottom: 1.5rem; border-bottom: 1px solid #f0f0f0; }
+.modal-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.modal-section h4 { font-size: 1rem; margin-top: 0; margin-bottom: 1rem; color: var(--primary-color); }
+.modal-section p { margin: 0.5rem 0; }
+.modal-section .error-text { color: var(--error-color); font-weight: 500; }
+.modal-footer { display: flex; justify-content: flex-end; gap: 1rem; padding: 1rem 1.5rem; border-top: 1px solid var(--border-color); background-color: #f8f9fa; }
