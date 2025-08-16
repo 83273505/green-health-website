@@ -1,15 +1,16 @@
+// ==============================================================================
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
-// ----------------------------------------------------
+// 版本: v32.4 - 後端驅動體驗
+// ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
-// ----------------------------------------------------
+// ==============================================================================
 
-// 【核心修正】從 deps.ts 引入依賴
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
 const handler = {
   /**
-   * [私有方法] 購物車計算核心引擎 - 與 create-order-from-cart 完全一致
+   * [私有方法] 購物車計算核心引擎
    */
   async _calculateCartSummary(supabase, cartId, couponCode, shippingMethodId) {
     const { data: cartItems, error: cartItemsError } = await supabase
@@ -24,7 +25,8 @@ const handler = {
         items: [], 
         itemCount: 0, 
         summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 }, 
-        appliedCoupon: null 
+        appliedCoupon: null,
+        shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } // 【新增】回傳預設值
       };
     }
 
@@ -69,6 +71,23 @@ const handler = {
       }
     }
 
+    // 【核心新增】計算免運門檻相關資訊
+    let freeShippingThreshold = 0;
+    let amountNeededForFreeShipping = 0;
+    
+    const { data: allShippingRates } = await supabase
+        .from('shipping_rates')
+        .select('free_shipping_threshold')
+        .eq('is_active', true)
+        .gt('free_shipping_threshold', 0); // 只選擇有設定免運門檻的
+        
+    if (allShippingRates && allShippingRates.length > 0) {
+        freeShippingThreshold = Math.max(...allShippingRates.map(r => r.free_shipping_threshold));
+        if (subtotalAfterDiscount < freeShippingThreshold) {
+            amountNeededForFreeShipping = freeShippingThreshold - subtotalAfterDiscount;
+        }
+    }
+
     const total = subtotal - couponDiscount + shippingFee;
     
     return {
@@ -81,6 +100,11 @@ const handler = {
         total: total < 0 ? 0 : total 
       },
       appliedCoupon,
+      // 【核心新增】將計算好的免運資訊加入回傳物件
+      shippingInfo: {
+        freeShippingThreshold,
+        amountNeededForFreeShipping
+      }
     };
   },
 
