@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v33.0 - 統一流程與體驗終局
+// 版本: v33.0 - 統一流程與體驗終局 (最終修正)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -261,15 +261,17 @@ Green Health 團隊 敬上
     }));
     await this.supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     
+    // 【核心修正】在發送 Email 前，先查詢完整的訂單項目
+    const { data: finalOrderItems } = await this.supabaseAdmin
+        .from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
+    
     await Promise.allSettled([
         this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
         this._handleInvoiceCreation(newOrder.id, user.id, backendSnapshot.summary.total, invoiceOptions)
     ]);
     
-    const { data: finalOrderItems } = await this.supabaseAdmin
-        .from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
-
     try {
+      // 【核心修正】使用查詢到的 finalOrderItems 來產生 Email
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await this.resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
