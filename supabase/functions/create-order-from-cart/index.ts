@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v32.4 - 後端匿名容錯 (體驗修正)
+// 版本: v33.0 - 統一流程與體驗終局
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -11,10 +11,11 @@ import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
 import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
 /**
- * @class CreateMemberOrderHandler
- * @description 將建立「會員」訂單的所有相關邏輯封裝在一個類別中。
+ * @class CreateUnifiedOrderHandler
+ * @description 將建立「統一流程」訂單的所有相關邏輯封裝在一個類別中，
+ *              能夠智慧處理新註冊與已存在會員的下單請求。
  */
-class CreateMemberOrderHandler {
+class CreateUnifiedOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
 
@@ -28,6 +29,42 @@ class CreateMemberOrderHandler {
   }
 
   // --- 私有輔助方法 (Private Helper Methods) ---
+
+  /**
+   * [私有] 智慧型使用者處理：取得或建立使用者
+   */
+  private async _getOrCreateUser(customerInfo: any) {
+    const { email, password, recipient_name } = customerInfo;
+
+    // 1. 檢查 Email 是否已存在
+    const { data: { users }, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email });
+    if (listError) throw new Error(`查詢使用者時發生錯誤: ${listError.message}`);
+    
+    if (users && users.length > 0) {
+      console.log(`[INFO] 找到已存在的使用者: ${email}`);
+      return users[0];
+    }
+
+    // 2. 如果不存在，則建立新使用者
+    console.log(`[INFO] 建立新使用者: ${email}`);
+    const { data: newUser, error: createError } = await this.supabaseAdmin.auth.admin.createUser({
+      email: email,
+      password: password,
+      email_confirm: true, // 自動確認 Email，簡化流程
+    });
+
+    if (createError || !newUser.user) throw new Error(`建立新使用者時發生錯誤: ${createError?.message}`);
+    
+    // 3. 同時在 profiles 表中建立對應的記錄
+    await this.supabaseAdmin.from('profiles').insert({
+      id: newUser.user.id,
+      email: email,
+      name: recipient_name,
+      is_profile_complete: true,
+    }).throwOnError();
+
+    return newUser.user;
+  }
 
   /**
    * [私有] 後端購物車金額計算核心引擎
@@ -164,14 +201,17 @@ Green Health 團隊 敬上
   }
 
   /**
-   * [私有] 驗證會員請求資料是否完整
+   * [私有] 驗證統一流程的請求資料是否完整
    */
   private _validateRequest(data: any): { valid: boolean; message: string } {
-    const requiredFields = ['cartId', 'userId', 'selectedAddressId', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    const requiredFields = ['cartId', 'customerInfo', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
     for (const field of requiredFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
       }
+    }
+    if (!data.customerInfo.email || !data.customerInfo.password) {
+      return { valid: false, message: 'customerInfo 中缺少 email 或 password' };
     }
     return { valid: true, message: '驗證通過' };
   }
@@ -187,15 +227,10 @@ Green Health 團隊 敬上
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-    const { cartId, userId, selectedAddressId, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
-    
-    const user = { id: userId };
-    
-    const { data: authUser, error: authUserError } = await this.supabaseAdmin.auth.admin.getUserById(user.id);
-    if (authUserError || !authUser.user) throw new Error('找不到對應的 auth 使用者資料。');
-    const { data: profile, error: profileError } = await this.supabaseAdmin.from('profiles').select('name').eq('id', user.id).single();
-    if (profileError) throw new Error('找不到對應的會員 profile 資料。');
+    const { cartId, customerInfo, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
 
+    const user = await this._getOrCreateUser(customerInfo);
+    
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
       return new Response(JSON.stringify({ 
@@ -204,10 +239,10 @@ Green Health 團隊 敬上
     }
     if (!backendSnapshot.items || backendSnapshot.items.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
     
-    const { data: address } = await this.supabaseAdmin.from('addresses').select('*').eq('id', selectedAddressId).single();
+    const address = shippingDetails;
     const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
-    if (!address || !shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(地址、運送或付款方式)。');
+    if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(運送或付款方式)。');
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
@@ -215,8 +250,8 @@ Green Health 團隊 敬上
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending',
-      customer_email: authUser.user.email,
-      customer_name: profile.name
+      customer_email: user.email,
+      customer_name: address.recipient_name
     }).select().single();
     if (orderError) throw orderError;
 
@@ -262,7 +297,7 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders }); 
   }
   try {
-    const handler = new CreateMemberOrderHandler();
+    const handler = new CreateUnifiedOrderHandler();
     return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
     console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
