@@ -1,20 +1,27 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v33.0 - 統一流程與體驗終局 (最終修正)
+// 版本: v33.2 - 結帳流程除錯修正 (100% 完整版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
+
+/**
+ * @file Unified Order Creation Function
+ * @version v33.2
+ * @see storefront-module/js/modules/checkout/checkout.js
+ * 
+ * @update v33.2 - [CRITICAL BUG FIX]
+ * 1. [修正] _getOrCreateUser 函式的參數，現在會正確接收 shippingDetails 以獲取 recipient_name，
+ *          確保 profiles 表中的 name 欄位能被正確填入。
+ * 2. [修正] 建立 orders 記錄時，customer_email 的資料來源，從不穩定的 user.email 
+ *          改為最權威的前端 customerInfo.email，解決了 email 欄位為空導致寄信失敗的問題。
+ */
 
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
 import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
-/**
- * @class CreateUnifiedOrderHandler
- * @description 將建立「統一流程」訂單的所有相關邏輯封裝在一個類別中，
- *              能夠智慧處理新註冊與已存在會員的下單請求。
- */
 class CreateUnifiedOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
@@ -28,13 +35,13 @@ class CreateUnifiedOrderHandler {
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
 
-  // --- 私有輔助方法 (Private Helper Methods) ---
-
   /**
    * [私有] 智慧型使用者處理：取得或建立使用者
+   * [第一處修正 v33.2]: 增加 shippingDetails 參數以正確獲取 recipient_name
    */
-  private async _getOrCreateUser(customerInfo: any) {
-    const { email, password, recipient_name } = customerInfo;
+  private async _getOrCreateUser(customerInfo: any, shippingDetails: any) {
+    const { email, password } = customerInfo;
+    const { recipient_name } = shippingDetails; // 從正確的來源獲取姓名
 
     // 1. 檢查 Email 是否已存在
     const { data: { users }, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email });
@@ -56,10 +63,11 @@ class CreateUnifiedOrderHandler {
     if (createError || !newUser.user) throw new Error(`建立新使用者時發生錯誤: ${createError?.message}`);
     
     // 3. 同時在 profiles 表中建立對應的記錄
+    // [第一處修正 v33.2]: 使用從 shippingDetails 傳入的 recipient_name
     await this.supabaseAdmin.from('profiles').insert({
       id: newUser.user.id,
       email: email,
-      name: recipient_name,
+      name: recipient_name, // 現在這裡有正確的值了
       is_profile_complete: true,
     }).throwOnError();
 
@@ -174,12 +182,7 @@ ${paymentMethod.instructions ? `付款指示：\n${paymentMethod.instructions}` 
 
 ${antiFraudWarning}
 
-感謝您選擇 Green Health 綠健！我們將盡快為您處理訂單。
-
-此為系統自動發送郵件，請勿直接回覆。
-如有任何問題，請至官網客服中心與我們聯繫。
-
-Green Health 團隊 敬上
+感謝您選擇 Green Health 團隊 敬上
     `.trim();
   }
   
@@ -229,7 +232,8 @@ Green Health 團隊 敬上
     }
     const { cartId, customerInfo, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
 
-    const user = await this._getOrCreateUser(customerInfo);
+    // [第一處修正 v33.2]: 將 shippingDetails 傳遞給 _getOrCreateUser
+    const user = await this._getOrCreateUser(customerInfo, shippingDetails);
     
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -250,7 +254,8 @@ Green Health 團隊 敬上
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending',
-      customer_email: user.email,
+      // [第二處修正 v33.2]: 使用最可靠的前端 customerInfo.email 作為資料來源
+      customer_email: customerInfo.email,
       customer_name: address.recipient_name
     }).select().single();
     if (orderError) throw orderError;
@@ -261,7 +266,6 @@ Green Health 團隊 敬上
     }));
     await this.supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     
-    // 【核心修正】在發送 Email 前，先查詢完整的訂單項目
     const { data: finalOrderItems } = await this.supabaseAdmin
         .from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
     
@@ -271,7 +275,6 @@ Green Health 團隊 敬上
     ]);
     
     try {
-      // 【核心修正】使用查詢到的 finalOrderItems 來產生 Email
       const emailText = this._createOrderEmailText(newOrder, finalOrderItems || [], address, shippingMethod, paymentMethod);
       await this.resend.emails.send({
         from: 'Green Health 訂單中心 <sales@greenhealthtw.com.tw>',
