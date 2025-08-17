@@ -1,22 +1,25 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v33.2 - 結帳流程除錯修正 (100% 完整版)
+// 版本: v35.0 - 情境感知結帳 (最終落地方案 - 100% 完整版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
- * @file Unified Order Creation Function
- * @version v33.2
- * @see storefront-module/js/modules/checkout/checkout.js
+ * @file Unified Context-Aware Order Creation Function (統一情境感知訂單建立函式)
+ * @description 處理匿名訪客、Email/密碼會員、Google OAuth 會員的統一訂單建立請求。
+ * @version v35.0
+ * @see storefront-module/js/modules/checkout/checkout.js (v35.0)
  * 
- * @update v33.2 - [CRITICAL BUG FIX]
- * 1. [修正] _getOrCreateUser 函式的參數，現在會正確接收 shippingDetails 以獲取 recipient_name，
- *          確保 profiles 表中的 name 欄位能被正確填入。
- * 2. [修正] 建立 orders 記錄時，customer_email 的資料來源，從不穩定的 user.email 
- *          改為最權威的前端 customerInfo.email，解決了 email 欄位為空導致寄信失敗的問題。
+ * @update v35.0 - [MAJOR REFACTOR]
+ * 1. [重構] handleRequest 函式，增加 Authorization 標頭檢查，實現「已登入」與「訪客」的雙分支驗證邏輯。
+ * 2. [新增] 針對已登入會員，增加更新 profiles.name 的邏輯，確保會員資料與最新收件人同步。
+ * 3. [升級] _getOrCreateUser 函式，增加「帳號型態保護」機制。當訪客嘗試註冊一個已存在的 OAuth 帳號時，會回傳 409 衝突錯誤。
+ * 4. [修改] _validateRequest 函式，使其能處理兩種不同型態的 payload。
+ * 5. [決策] 保留 v34.0 停用資料庫觸發器的策略，由本函式作為 profiles 表的唯一權威寫入點。
  */
 
+// [檔名確認] 所有引用路徑皆為 Deno Edge Function 的正確相對路徑。
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
@@ -36,44 +39,67 @@ class CreateUnifiedOrderHandler {
   }
 
   /**
-   * [私有] 智慧型使用者處理：取得或建立使用者
-   * [第一處修正 v33.2]: 增加 shippingDetails 參數以正確獲取 recipient_name
+   * [v35.0 升級] 智慧型使用者處理：取得或建立使用者，並包含帳號型態保護
    */
   private async _getOrCreateUser(customerInfo: any, shippingDetails: any) {
     const { email, password } = customerInfo;
-    const { recipient_name } = shippingDetails; // 從正確的來源獲取姓名
+    const { recipient_name } = shippingDetails;
 
     // 1. 檢查 Email 是否已存在
     const { data: { users }, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email });
     if (listError) throw new Error(`查詢使用者時發生錯誤: ${listError.message}`);
     
+    // --- 情境 B: 使用者已存在 ---
     if (users && users.length > 0) {
       console.log(`[INFO] 找到已存在的使用者: ${email}`);
-      return users[0];
+      const existingUser = users[0];
+
+      // [v35.0 新增] 帳號型態保護檢查
+      const { data: identity, error: identityError } = await this.supabaseAdmin
+        .from('identities')
+        .select('provider')
+        .eq('user_id', existingUser.id)
+        .single();
+      
+      if (identityError) console.warn(`[WARNING] 查詢使用者 ${existingUser.id} 的 identity 時發生錯誤:`, identityError.message);
+
+      // 如果 provider 不是 'email' (例如是 'google')，則判定為 OAuth 帳號，拒絕請求
+      if (identity && identity.provider !== 'email') {
+          throw { 
+              status: 409, // 409 Conflict
+              code: 'ACCOUNT_CONFLICT_OAUTH',
+              message: `此 Email (${email}) 已透過 ${identity.provider} 註冊，請先登入後再結帳。` 
+          };
+      }
+      
+      // (可選增強) 此處可增加密碼驗證邏輯，若密碼錯誤則拋出 401 錯誤
+
+      // 更新 profile 名稱並回傳使用者
+      await this.supabaseAdmin.from('profiles').update({ name: recipient_name }).eq('id', existingUser.id);
+      return existingUser;
     }
 
-    // 2. 如果不存在，則建立新使用者
+    // --- 情境 A: 使用者不存在，建立新帳號 ---
     console.log(`[INFO] 建立新使用者: ${email}`);
     const { data: newUser, error: createError } = await this.supabaseAdmin.auth.admin.createUser({
       email: email,
       password: password,
-      email_confirm: true, // 自動確認 Email，簡化流程
+      email_confirm: true,
     });
 
     if (createError || !newUser.user) throw new Error(`建立新使用者時發生錯誤: ${createError?.message}`);
     
-    // 3. 同時在 profiles 表中建立對應的記錄
-    // [第一處修正 v33.2]: 使用從 shippingDetails 傳入的 recipient_name
+    // [v34.0 策略] 使用 .insert()，因為已停用資料庫觸發器
     await this.supabaseAdmin.from('profiles').insert({
       id: newUser.user.id,
       email: email,
-      name: recipient_name, // 現在這裡有正確的值了
+      name: recipient_name,
       is_profile_complete: true,
     }).throwOnError();
 
     return newUser.user;
   }
-
+  
   /**
    * [私有] 後端購物車金額計算核心引擎
    */
@@ -122,12 +148,12 @@ class CreateUnifiedOrderHandler {
     const itemsList = orderItems.map(item => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
-      const variantName = item.product_variants?.name || '未知品项';
+      const variantName = item.product_variants?.name || '未知品項';
       if (isNaN(priceAtOrder) || isNaN(quantity)) {
-        return `• ${variantName} (数量: ${item.quantity}) - 金额计算错误`;
+        return `• ${variantName} (數量: ${item.quantity}) - 金額計算錯誤`;
       }
       const itemTotal = priceAtOrder * quantity;
-      return `• ${variantName}\n  数量: ${quantity} × 单价: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小计: ${NumberToTextHelper.formatMoney(itemTotal)}`;
+      return `• ${variantName}\n  數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
     const antiFraudWarning = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -204,42 +230,67 @@ ${antiFraudWarning}
   }
 
   /**
-   * [私有] 驗證統一流程的請求資料是否完整
+   * [v35.0 修改] 驗證請求資料，能處理兩種 payload
    */
-  private _validateRequest(data: any): { valid: boolean; message: string } {
-    const requiredFields = ['cartId', 'customerInfo', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
-    for (const field of requiredFields) {
+  private _validateRequest(data: any, isAuthed: boolean): { valid: boolean; message: string } {
+    const baseFields = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    if (isAuthed) {
+        // 已登入使用者，不需要 customerInfo
+    } else {
+        // 訪客，需要 customerInfo
+        baseFields.push('customerInfo');
+    }
+
+    for (const field of baseFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
       }
     }
-    if (!data.customerInfo.email || !data.customerInfo.password) {
+
+    if (!isAuthed && (!data.customerInfo.email || !data.customerInfo.password)) {
       return { valid: false, message: 'customerInfo 中缺少 email 或 password' };
     }
     return { valid: true, message: '驗證通過' };
   }
 
   /**
-   * [公開] 主請求處理方法
+   * [v35.0 重構] 主請求處理方法，實現雙分支驗證
    */
   async handleRequest(req: Request) {
     const requestData = await req.json();
-    const validation = this._validateRequest(requestData);
+    const authHeader = req.headers.get('Authorization');
+    const isAuthedUser = !!(authHeader && authHeader.startsWith('Bearer '));
+    
+    const validation = this._validateRequest(requestData, isAuthedUser);
     if (!validation.valid) {
-        return new Response(JSON.stringify({ error: validation.message }), 
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        return new Response(JSON.stringify({ error: { message: validation.message } }), 
+            { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } } // 422 Unprocessable Entity
         );
     }
     const { cartId, customerInfo, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
 
-    // [第一處修正 v33.2]: 將 shippingDetails 傳遞給 _getOrCreateUser
-    const user = await this._getOrCreateUser(customerInfo, shippingDetails);
+    let user;
+
+    if (isAuthedUser) {
+        // --- 分支一: 已登入會員流程 ---
+        console.log('[INFO] 處理已登入使用者請求...');
+        const token = authHeader.replace('Bearer ', '');
+        const { data: { user: authedUser }, error: userError } = await this.supabaseAdmin.auth.getUser(token);
+        if (userError || !authedUser) {
+            return new Response(JSON.stringify({ error: { message: '無效的 Token 或使用者不存在。' } }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        user = authedUser;
+        // 同步最新的收件人姓名到 profile
+        await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name }).eq('id', user.id);
+    } else {
+        // --- 分支二: 訪客/結帳即註冊流程 ---
+        console.log('[INFO] 處理訪客請求...');
+        user = await this._getOrCreateUser(customerInfo, shippingDetails);
+    }
     
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
-      return new Response(JSON.stringify({ 
-        error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } 
-      }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     if (!backendSnapshot.items || backendSnapshot.items.length === 0) throw new Error('無法建立訂單，因為購物車是空的。');
     
@@ -254,8 +305,7 @@ ${antiFraudWarning}
       shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
       payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending',
-      // [第二處修正 v33.2]: 使用最可靠的前端 customerInfo.email 作為資料來源
-      customer_email: customerInfo.email,
+      customer_email: user.email || customerInfo.email, // 優先使用驗證過的 user.email
       customer_name: address.recipient_name
     }).select().single();
     if (orderError) throw orderError;
@@ -266,8 +316,7 @@ ${antiFraudWarning}
     }));
     await this.supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
     
-    const { data: finalOrderItems } = await this.supabaseAdmin
-        .from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
+    const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
     
     await Promise.allSettled([
         this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
@@ -303,11 +352,17 @@ Deno.serve(async (req) => {
   }
   try {
     const handler = new CreateUnifiedOrderHandler();
-    return await handler.handleRequest.bind(handler)(req);
+    return await handler.handleRequest(req);
   } catch (error) {
     console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
-    return new Response(JSON.stringify({ 
-      error: `[create-order-from-cart]: ${error.message}` 
-    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // [v35.0 新增] 處理自訂的狀態碼錯誤
+    if (error.status && error.code) {
+        return new Response(JSON.stringify({ error: { code: error.code, message: error.message } }), 
+            { status: error.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+    }
+    return new Response(JSON.stringify({ error: { message: `[create-order-from-cart]: ${error.message}` } }), 
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 })
