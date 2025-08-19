@@ -1,15 +1,34 @@
-# supabase/config.toml
+# ==============================================================================
+# 檔案路徑: supabase/config.toml
+# 版本: v1.1 - 新增 Functions 配置以支援匿名结帐
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
+# ==============================================================================
 
+# [INFO] 专案 ID
 project_id = "zeezdsypknngfcodgjkd"
 
+# [INFO] 本地 API 伺服器设定
 [api]
 port = 54321
 schemas = ["public", "storage", "graphql"]
 max_rows = 1000
 
+# [INFO] 本地资料库设定
 [db]
 port = 54322
 major_version = 15
 
+# [INFO] 本地 Supabase Studio 设定
 [studio]
 port = 54323
+
+# [v1.1 核心新增] Edge Functions 的部署设定
+# 这个区块明确地定义了每个 Edge Function 的部署行为。
+[functions]
+  # 为 "create-order-from-cart" 这个函式进行特定设定
+  [functions.create-order-from-cart]
+    # 关键设定：关闭强制性的 JWT 验证。
+    # 这将允许匿名访客的请求到达我们的函式，
+    # 函式内部的程式码将自行处理认证逻辑。
+    verify_jwt = false
