@@ -1,4 +1,4 @@
-// ==============================================================================
+// ============================================================================== 
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
 // 版本: v38.1 - 保留會員便利性的統一結帳流程 (最終完整版)
 // ------------------------------------------------------------------------------
@@ -41,16 +41,28 @@ class CreateUnifiedOrderHandler {
   // --- 輔助函式 (維持不變) ---
 
   private async _calculateCartSummary(cartId: string, couponCode?: string, shippingMethodId?: string) {
-    const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
+    const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin
+      .from('cart_items')
+      .select(`*, product_variants(name, price, sale_price, products(image_url))`)
+      .eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
+
     if (!cartItems || cartItems.length === 0) {
       return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 }, appliedCoupon: null };
     }
-    const subtotal = cartItems.reduce((sum, item) => sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
+
+    const subtotal = cartItems.reduce((sum, item) => 
+      sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
+
     let couponDiscount = 0;
     let appliedCoupon = null;
     if (couponCode) {
-      const { data: coupon } = await this.supabaseAdmin.from('coupons').select('*').eq('code', couponCode).eq('is_active', true).single();
+      const { data: coupon } = await this.supabaseAdmin
+        .from('coupons')
+        .select('*')
+        .eq('code', couponCode)
+        .eq('is_active', true)
+        .single();
       if (coupon && subtotal >= coupon.min_purchase_amount) {
         if (coupon.discount_type === 'PERCENTAGE' && coupon.discount_percentage) {
           couponDiscount = Math.round(subtotal * (coupon.discount_percentage / 100));
@@ -60,15 +72,23 @@ class CreateUnifiedOrderHandler {
         appliedCoupon = { code: coupon.code, discountAmount: couponDiscount };
       }
     }
+
     let shippingFee = 0;
     const subtotalAfterDiscount = subtotal - couponDiscount;
     if (shippingMethodId) {
-      const { data: shippingRate } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', shippingMethodId).eq('is_active', true).single();
+      const { data: shippingRate } = await this.supabaseAdmin
+        .from('shipping_rates')
+        .select('*')
+        .eq('id', shippingMethodId)
+        .eq('is_active', true)
+        .single();
       if (shippingRate && (!shippingRate.free_shipping_threshold || subtotalAfterDiscount < shippingRate.free_shipping_threshold)) {
         shippingFee = Math.round(shippingRate.rate);
       }
     }
+
     const total = subtotal - couponDiscount + shippingFee;
+
     return {
       items: cartItems,
       itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
@@ -79,6 +99,7 @@ class CreateUnifiedOrderHandler {
 
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
+
     const itemsList = orderItems.map(item => {
       const priceAtOrder = parseFloat(item.price_at_order);
       const quantity = parseInt(item.quantity, 10);
@@ -89,6 +110,7 @@ class CreateUnifiedOrderHandler {
       const itemTotal = priceAtOrder * quantity;
       return `• ${variantName}\n  數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}`;
     }).join('\n\n');
+
     const antiFraudWarning = `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
@@ -97,6 +119,7 @@ Green Health 綠健 絕對不會以任何名義，透過電話、簡訊或 Email
 
 若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
     `.trim();
+
     return `
 Green Health 綠健 訂單確認
 
