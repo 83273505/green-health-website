@@ -1,22 +1,23 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v35.3 - 安全与合规化流程整合 (最终 100% 完整版)
+// 版本: v38.1 - 保留會員便利性的統一結帳流程 (最終完整版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Unified Context-Aware Order Creation Function (統一情境感知訂單建立函式)
- * @description 處理匿名訪客、Email/密碼會員、Google OAuth 會員的統一訂單建立請求。
- * @version v35.3
- * @see storefront-module/js/modules/checkout/checkout.js (v35.3)
+ * @description 最終版訂單建立函式。能智慧處理已登入會員和匿名訪客的請求，
+ *              並徹底分離了交易與註冊的邏輯。
+ * @version v38.1
+ * @see storefront-module/js/modules/checkout/checkout.js (v38.1)
  * 
- * @update v35.3 - [COMPLIANCE & FINALIZATION]
- * 1. [修正] 在 _getOrCreateUser 函式中，將 createUser 的 email_confirm 參數設為 false，
- *          以符合 Supabase 標準的雙重確認註冊流程，並由 Supabase 自動發送驗證信。
- * 2. [新增] 在建立新的 profiles 記錄時，增加 status: 'pending_verification' 欄位，
- *          用於標記透過結帳流程建立但尚未驗證信箱的帳號。
- * 3. [整合] 此版本包含 v35.0 的所有安全與雙分支驗證邏輯。
+ * @update v38.1 - [MAJOR REFACTOR - SIMPLIFICATION]
+ * 1. [移除] 徹底刪除了 _getOrCreateUser 函式以及所有與建立使用者、註冊相關的邏輯。
+ * 2. [重構] handleRequest 函式，保留雙分支驗證，但職責更清晰：
+ *          - 已登入會員：驗證 token，建立關聯 user_id 的訂單，並更新 profile。
+ *          - 匿名訪客：直接建立 user_id 為 NULL 的訂單。
+ * 3. [簡化] _validateRequest 函式，以適應不再包含註冊資訊的 payload。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -36,68 +37,9 @@ class CreateUnifiedOrderHandler {
     );
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
-
-  /**
-   * [v35.3 升級] 智慧型使用者處理：取得或建立使用者，並實現合規化註冊
-   */
-  private async _getOrCreateUser(customerInfo: any, shippingDetails: any) {
-    const { email, password } = customerInfo;
-    const { recipient_name } = shippingDetails;
-
-    // 1. 檢查 Email 是否已存在
-    const { data: { users }, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email });
-    if (listError) throw new Error(`查詢使用者時發生錯誤: ${listError.message}`);
-    
-    // --- 情境 B: 使用者已存在 ---
-    if (users && users.length > 0) {
-      console.log(`[INFO] 找到已存在的使用者: ${email}`);
-      const existingUser = users[0];
-
-      // 帳號型態保護檢查
-      const { data: identity } = await this.supabaseAdmin
-        .from('identities')
-        .select('provider')
-        .eq('user_id', existingUser.id)
-        .single();
-      
-      if (identity && identity.provider !== 'email') {
-          throw { 
-              status: 409, // 409 Conflict
-              code: 'ACCOUNT_CONFLICT_OAUTH',
-              message: `此 Email (${email}) 已透過 ${identity.provider} 註冊，請先登入後再結帳。` 
-          };
-      }
-      
-      // 更新 profile 名稱並回傳使用者
-      await this.supabaseAdmin.from('profiles').update({ name: recipient_name }).eq('id', existingUser.id);
-      return existingUser;
-    }
-
-    // --- 情境 A: 使用者不存在，建立新帳號 ---
-    console.log(`[INFO] 建立新使用者 (待驗證): ${email}`);
-    const { data: newUser, error: createError } = await this.supabaseAdmin.auth.admin.createUser({
-      email: email,
-      password: password,
-      email_confirm: false, // [v35.3 核心修正] 設為 false，由 Supabase 自動發送驗證信
-    });
-
-    if (createError || !newUser.user) throw new Error(`建立新使用者時發生錯誤: ${createError?.message}`);
-    
-    // 使用 .insert()，因為已停用資料庫觸發器
-    await this.supabaseAdmin.from('profiles').insert({
-      id: newUser.user.id,
-      email: email,
-      name: recipient_name,
-      is_profile_complete: true,
-      status: 'pending_verification' // [v35.3 新增] 標記帳號為待驗證
-    }).throwOnError();
-
-    return newUser.user;
-  }
   
-  /**
-   * [私有] 後端購物車金額計算核心引擎
-   */
+  // --- 輔助函式 (維持不變) ---
+
   private async _calculateCartSummary(cartId: string, couponCode?: string, shippingMethodId?: string) {
     const { data: cartItems, error: cartItemsError } = await this.supabaseAdmin.from('cart_items').select(`*, product_variants(name, price, sale_price, products(image_url))`).eq('cart_id', cartId);
     if (cartItemsError) throw cartItemsError;
@@ -135,9 +77,6 @@ class CreateUnifiedOrderHandler {
     };
   }
 
-  /**
-   * [私有] 產生訂單確認郵件的純文字內容
-   */
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     const itemsList = orderItems.map(item => {
@@ -207,10 +146,7 @@ ${antiFraudWarning}
     `.trim();
   }
   
-  /**
-   * [私有] 處理發票記錄的建立，並隔離錯誤
-   */
-  private async _handleInvoiceCreation(orderId: string, userId: string, totalAmount: number, invoiceOptions: any) {
+  private async _handleInvoiceCreation(orderId: string, userId: string | null, totalAmount: number, invoiceOptions: any) {
     try {
       const invoiceService = new InvoiceService(this.supabaseAdmin);
       const finalInvoiceData = await invoiceService.determineInvoiceData(userId, invoiceOptions);
@@ -224,56 +160,51 @@ ${antiFraudWarning}
     }
   }
 
-  /**
-   * [v35.0] 驗證請求資料，能處理兩種 payload
-   */
-  private _validateRequest(data: any, isAuthed: boolean): { valid: boolean; message: string } {
-    const baseFields = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
-    if (isAuthed) {
-    } else {
-        baseFields.push('customerInfo');
-    }
-    for (const field of baseFields) {
+  private _validateRequest(data: any): { valid: boolean; message: string } {
+    const requiredFields = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
+    for (const field of requiredFields) {
       if (!data[field]) {
         return { valid: false, message: `請求中缺少必要的參數: ${field}` };
       }
     }
-    if (!isAuthed && (!data.customerInfo.email || !data.customerInfo.password)) {
-      return { valid: false, message: 'customerInfo 中缺少 email 或 password' };
+    if (!data.shippingDetails.email) {
+      return { valid: false, message: 'shippingDetails 中缺少 email' };
     }
     return { valid: true, message: '驗證通過' };
   }
 
-  /**
-   * [v35.0] 主請求處理方法，實現雙分支驗證
-   */
+  // --- 主請求處理函式 ---
+
   async handleRequest(req: Request) {
     const requestData = await req.json();
-    const authHeader = req.headers.get('Authorization');
-    const isAuthedUser = !!(authHeader && authHeader.startsWith('Bearer '));
-    
-    const validation = this._validateRequest(requestData, isAuthedUser);
+    const validation = this._validateRequest(requestData);
     if (!validation.valid) {
         return new Response(JSON.stringify({ error: { message: validation.message } }), 
             { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
-    const { cartId, customerInfo, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
+    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
 
-    let user;
+    let userId = null;
+    const authHeader = req.headers.get('Authorization');
 
-    if (isAuthedUser) {
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        // --- 分支一: 已登入會員流程 ---
         console.log('[INFO] 處理已登入使用者請求...');
         const token = authHeader.replace('Bearer ', '');
-        const { data: { user: authedUser }, error: userError } = await this.supabaseAdmin.auth.getUser(token);
-        if (userError || !authedUser) {
+        const { data: { user }, error: userError } = await this.supabaseAdmin.auth.getUser(token);
+        
+        if (userError || !user) {
             return new Response(JSON.stringify({ error: { message: '無效的 Token 或使用者不存在。' } }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-        user = authedUser;
-        await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name }).eq('id', user.id);
+        userId = user.id;
+        // 同步最新的收件人姓名到 profile
+        await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name }).eq('id', userId);
+        console.log(`[INFO] 已為會員 ${userId} 更新 profile 名稱。`);
     } else {
-        console.log('[INFO] 處理訪客請求...');
-        user = await this._getOrCreateUser(customerInfo, shippingDetails);
+        // --- 分支二: 匿名訪客流程 ---
+        console.log('[INFO] 處理匿名訪客請求...');
+        // userId 保持為 null
     }
     
     const backendSnapshot = await this._calculateCartSummary(cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
@@ -288,12 +219,17 @@ ${antiFraudWarning}
     if (!shippingMethod || !paymentMethod) throw new Error('結帳所需資料不完整(運送或付款方式)。');
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
-      user_id: user.id, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
-      subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
-      shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: address,
-      payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
+      user_id: userId, // <-- 如果是訪客，這裡會是 null
+      status: 'pending_payment', 
+      total_amount: backendSnapshot.summary.total,
+      subtotal_amount: backendSnapshot.summary.subtotal, 
+      coupon_discount: backendSnapshot.summary.couponDiscount,
+      shipping_fee: backendSnapshot.summary.shippingFee, 
+      shipping_address_snapshot: address,
+      payment_method: paymentMethod.method_name, 
+      shipping_method_id: selectedShippingMethodId,
       payment_status: 'pending',
-      customer_email: user.email || customerInfo.email,
+      customer_email: address.email, // <-- 資料來源統一為 shippingDetails
       customer_name: address.recipient_name
     }).select().single();
     if (orderError) throw orderError;
@@ -308,7 +244,7 @@ ${antiFraudWarning}
     
     await Promise.allSettled([
         this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
-        this._handleInvoiceCreation(newOrder.id, user.id, backendSnapshot.summary.total, invoiceOptions)
+        this._handleInvoiceCreation(newOrder.id, userId, backendSnapshot.summary.total, invoiceOptions)
     ]);
     
     try {
@@ -342,13 +278,8 @@ Deno.serve(async (req) => {
     return await handler.handleRequest(req);
   } catch (error) {
     console.error('[create-order-from-cart] 函式最外層錯誤:', error.message, error.stack);
-    if (error.status && error.code) {
-        return new Response(JSON.stringify({ error: { code: error.code, message: error.message } }), 
-            { status: error.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-    }
-    return new Response(JSON.stringify({ error: { message: `[create-order-from-cart]: ${error.message}` } }), 
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ 
+      error: { message: `[create-order-from-cart]: ${error.message}` } 
+    }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 })
