@@ -1,6 +1,46 @@
-# Local Netlify folder
+# ==============================================================================
+# 檔案路徑: .gitignore
+# 版本: v1.1 - 标准 Node.js 专案增强版
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
+# ==============================================================================
+
+# 外部依赖项
+# 这个目录由 package managers (如 npm, yarn, pnpm) 自动生成，绝不应纳入版本控制。
+# [v1.1 核心新增] 解决 GitHub Desktop 显示上千个变更档案的问题。
+/node_modules
+
+# Local Netlify folder (维持原设计)
 .netlify
 
-# Supabase local development files
+# Supabase local development files (维持原设计)
 supabase/.temp
 supabase/.branches
+
+# [v1.1 新增] 忽略 Supabase functions 目录中可能存在的本地环境变数档案
+supabase/functions/**/.env
+supabase/functions/**/deno.lock
+
+# [v1.1 新增] 各作业系统产生的系统档案
+.DS_Store
+Thumbs.db
+
+# [v1.1 新增] 编辑器和 IDE 设定档
+.vscode/
+.idea/
+
+# [v1.1 新增] Log 档案
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# [v1.1 新增] 建置产出目录 (为未来预留)
+/dist
+/build
+/.output
+/.next
+
+# [v1.1 新增] 环境变数档案 (机密资讯绝不应上传至 Git)
+.env
+.env.local
+*.env
