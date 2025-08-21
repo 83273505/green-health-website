@@ -1,30 +1,30 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
-// 版本: v41.0 - 活水行動 v1.1 (升級與純化)
+// 版本: v42.0 - 活水行動 v2.0 (撥亂反正)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
- * @file Authoritative Cart Recalculation Function (權威購物車重新計算函式)
- * @description 「活水行動」第一階段核心產物。此函式為一個職責純粹的唯讀 (read-only)
- *              端點。它的唯一目標是接收前端傳來的購物車狀態，在後端進行一次絕對權威
- *              的、安全的價格計算，並回傳完整的購物車快照。這為前端 checkout.js
- *              的「下單前強制同步」機制提供了必要的後端支援。
+ * @file Unified Cart Management Function (統一購物車管理函式)
+ * @description 「活水行動」v2.0 修正版。此函式恢復了其雙重職責：
+ *              1. 處理購物車的增、刪、改 (actions) 等寫入操作。
+ *              2. 在操作完成後，對最新的購物車狀態進行權威計算並回傳快照。
  * 
  * @architectural_notes
- * 1.  [純化 v41.0] 移除了所有與 'actions' (ADD/UPDATE/REMOVE) 相關的資料庫寫入邏輯，
- *                   使其職責單一化，專注於計算。
- * 2.  [升級 v41.0] 引入了來自 create-order-from-cart (v39.2) 的核心計算引擎，
- *                  採用「權限透傳」模式，以正確處理匿名及登入使用者的 RLS 策略。
- * 3.  [保留 v32.4 優點] 保留並整合了原版計算免運門檻 (shippingInfo) 的邏輯。
+ * 1.  [功能恢復 v42.0] 重新植入了來自 v32.4 版本的 actions 處理邏輯，
+ *                   修復了「加入購物車」功能失效的嚴重回歸錯誤。
+ * 2.  [職責複合] 此函式現在既是寫入端點 (若有 actions)，也是唯讀端點，
+ *                統一處理所有來自 CartService 的請求。
+ * 3.  [保留 RLS 升級] 核心計算引擎 calculateCartSummary 依然使用 v41.0 的
+ *                   最新版本，保留了 RLS 權限透傳的架構優勢。
  */
 
 import { createClient } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 
 /**
- * [v41.0 新增] 核心計算引擎，負責執行所有購物車相關的金額計算。
+ * [v41.0] 核心計算引擎，負責執行所有購物車相關的金額計算。
  * 此版本為最新實作，包含 RLS 權限透傳。
  * @param req - 原始的 HTTP 請求物件，用於透傳 Authorization 標頭。
  * @param supabaseAdmin - 一個使用 service_role_key 初始化的 Supabase 客戶端。
@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
   }
   
   try {
-    const { cartId, couponCode, shippingMethodId } = await req.json();
+    const { cartId, couponCode, shippingMethodId, actions } = await req.json();
 
     if (!cartId) {
       return new Response(JSON.stringify({ error: '缺少必要參數: cartId' }), { 
@@ -167,14 +167,64 @@ Deno.serve(async (req) => {
       });
     }
 
-    // 建立一個具有最高權限的 Admin Client，用於查詢公開資訊 (如優惠券、運費)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!, 
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, 
       { auth: { persistSession: false } }
     );
     
-    // 呼叫核心計算引擎
+    // [v42.0 恢復] 處理購物車的寫入操作
+    if (actions && Array.isArray(actions) && actions.length > 0) {
+      for (const action of actions) {
+        switch (action.type) {
+          case 'ADD_ITEM': {
+            const { variantId, quantity } = action.payload;
+            const { data: variant, error: vError } = await supabaseAdmin
+              .from('product_variants')
+              .select('price, sale_price')
+              .eq('id', variantId)
+              .single();
+            
+            if (vError) throw new Error('找不到指定的商品規格。');
+            
+            const price_snapshot = (variant.sale_price && variant.sale_price > 0) ? variant.sale_price : variant.price;
+            
+            await supabaseAdmin.from('cart_items').upsert({
+              cart_id: cartId, 
+              product_variant_id: variantId, 
+              quantity: quantity, 
+              price_snapshot: price_snapshot,
+            }, { onConflict: 'cart_id,product_variant_id' }).throwOnError();
+            break;
+          }
+          case 'UPDATE_ITEM_QUANTITY': {
+            const { itemId, newQuantity } = action.payload;
+            if (newQuantity > 0) {
+              await supabaseAdmin.from('cart_items')
+                .update({ quantity: newQuantity })
+                .eq('id', itemId)
+                .throwOnError();
+            } else {
+              await supabaseAdmin.from('cart_items')
+                .delete()
+                .eq('id', itemId)
+                .throwOnError();
+            }
+            break;
+          }
+          case 'REMOVE_ITEM': {
+            const { itemId } = action.payload;
+            await supabaseAdmin.from('cart_items')
+              .delete()
+              .eq('id', itemId)
+              .throwOnError();
+            break;
+          }
+        }
+      }
+    }
+    
+    // 在執行完所有操作後，呼叫核心計算引擎獲取最新的狀態
     const cartSnapshot = await calculateCartSummary(req, supabaseAdmin, cartId, couponCode, shippingMethodId);
 
     // 回傳完整的購物車快照
@@ -191,82 +241,3 @@ Deno.serve(async (req) => {
     });
   }
 });
-
-
-/*
-// ==============================================================================
-// 歷史封存: v32.4 版本核心邏輯
-// ------------------------------------------------------------------------------
-// 以下為 v32.4 版本中的 handleRequest 函式。其中的 actions 處理邏輯
-// 已在 v41.0 中被移除，以確保此函式的職責純粹性。
-// 特此封存以供歷史追溯。
-// ==============================================================================
-async function handleRequest_v32_4(req) {
-  const { cartId, couponCode, shippingMethodId, actions } = await req.json();
-  const supabaseAdmin = createClient(
-    Deno.env.get('SUPABASE_URL')!, 
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, 
-    { auth: { persistSession: false } }
-  );
-  
-  if (actions && actions.length > 0) {
-    if (!cartId) throw new Error("執行購物車操作時需要 cartId。");
-    
-    for (const action of actions) {
-      switch (action.type) {
-        case 'ADD_ITEM': {
-          const { variantId, quantity } = action.payload;
-          const { data: variant, error: vError } = await supabaseAdmin
-            .from('product_variants')
-            .select('price, sale_price')
-            .eq('id', variantId)
-            .single();
-          
-          if(vError) throw new Error('找不到指定的商品規格。');
-          
-          const price_snapshot = (variant.sale_price && variant.sale_price > 0) ? variant.sale_price : variant.price;
-          
-          await supabaseAdmin.from('cart_items').upsert({
-            cart_id: cartId, 
-            product_variant_id: variantId, 
-            quantity: quantity, 
-            price_snapshot: price_snapshot,
-          }, { onConflict: 'cart_id,product_variant_id' }).throwOnError();
-          break;
-        }
-        case 'UPDATE_ITEM_QUANTITY': {
-          const { itemId, newQuantity } = action.payload;
-          if (newQuantity > 0) {
-            await supabaseAdmin.from('cart_items')
-              .update({ quantity: newQuantity })
-              .eq('id', itemId)
-              .throwOnError();
-          } else {
-            await supabaseAdmin.from('cart_items')
-              .delete()
-              .eq('id', itemId)
-              .throwOnError();
-          }
-          break;
-        }
-        case 'REMOVE_ITEM': {
-          const { itemId } = action.payload;
-          await supabaseAdmin.from('cart_items')
-            .delete()
-            .eq('id', itemId)
-            .throwOnError();
-          break;
-        }
-      }
-    }
-  }
-  
-  // _calculateCartSummary 在 v32.4 中是直接在 handler 物件下的
-  const cartSnapshot = await _calculateCartSummary_v32_4(supabaseAdmin, cartId, couponCode, shippingMethodId);
-
-  return new Response(JSON.stringify(cartSnapshot), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    status: 200,
-  });
-}
-*/
