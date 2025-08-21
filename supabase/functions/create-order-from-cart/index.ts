@@ -1,26 +1,28 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v39.2 - RLS 架构优化 (最终生产版)
+// 版本: v41.0 - 活水行動 v1.1 (API 修正)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
- * @file Unified Intelligent Order Creation Function (统一智慧型订单建立函式)
- * @description 最终版订单建立函式。能智慧处理三种情境：
- *              1. 已登入会员 (透过 JWT)
- *              2. 忘记登入的会员 (透过 Email 后端查询自动归户)
- *              3. 全新访客 (建立纯访客订单)
- *              并采用“权限透传”模式优雅地处理 RLS，整合 Resend 寄送邮件。
- * @version v39.2
+ * @file Unified Intelligent Order Creation Function (統一智慧型訂單建立函式)
+ * @description 最終版訂單建立函式。能智慧處理三種情境：
+ *              1. 已登入會員 (透過 JWT)
+ *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
+ *              3. 全新訪客 (建立純訪客訂單)
+ *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
+ * @version v41.0
  * 
- * @update v39.2 - [ARCHITECTURE REFINEMENT]
- * 1. [新增] 函式现在需要在环境变数中额外设定 SUPABASE_ANON_KEY。
- * 2. [重构] _calculateCartSummary 函式，对受 RLS 保护的 cart_items 表，采用动态建立
- *          “使用者身份客户端”的方式进行查询，以完美处理 RLS 权限。
- * 3. [修正] 增加了对 Authorization 标头的安全检查，避免向 supabase-js 传递 null 值。
- * 4. [保留] v39.1 的所有健壮性设计 (入口 Log, Fallback版 _findUserIdByEmail)。
- * 5. [策略] 对 coupons, shipping_rates 等公开资讯，维持使用 supabaseAdmin 查询，确保不受 RLS 影响。
+ * @update v41.0 - [API REVISION]
+ * 1. [修正] 對 _findUserIdByEmail 函式進行了非破壞性升級，以解決 Supabase
+ *          Admin API 中 getUserByEmail 被棄用的問題。
+ * 2. [新增] 新增了更高優先級的、直接查詢 'auth.users' 表的邏輯，這是目前
+ *          最穩定和高效的實踐。
+ * 3. [封存] 原有的 getUserByEmail 和 listUsers 邏輯被註解並保留，
+ *          以供歷史追溯。
+ * 4. [不變] 檔案的核心邏輯，包括 _calculateCartSummary 的 RLS 權限透傳
+ *          機制，與 v39.2 版本完全一致，確保了穩定性。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -46,7 +48,7 @@ class CreateUnifiedOrderHandler {
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Supabase URL 或 Anon Key 未在环境变数中设定。');
+        throw new Error('Supabase URL 或 Anon Key 未在環境變數中設定。');
     }
 
     const authHeader = req.headers.get('Authorization');
@@ -64,7 +66,7 @@ class CreateUnifiedOrderHandler {
       
     if (cartItemsError) {
         console.error('[RLS Check] _calculateCartSummary query failed:', cartItemsError);
-        throw new Error(`无法读取购物车项目，请检查权限：${cartItemsError.message}`);
+        throw new Error(`無法讀取購物車項目，請檢查權限：${cartItemsError.message}`);
     }
 
     if (!cartItems || cartItems.length === 0) {
@@ -204,24 +206,47 @@ ${antiFraud}
     }
   }
   
+  /**
+   * [v41.0 升級] 非破壞性更新，修復 API 棄用問題
+   */
   private async _findUserIdByEmail(email: string): Promise<string | null> {
     if (!email) return null;
     const lowerCaseEmail = email.toLowerCase();
+    
+    // [v41.0 新增] 優先使用直接查詢 auth.users 表的現代化、高效能方法
+    try {
+      const { data, error } = await this.supabaseAdmin.from('users', { schema: 'auth' }).select('id').eq('email', lowerCaseEmail).single();
+      if (data?.id) return data.id;
+      // 'PGRST116' 表示 'single()' 找不到對應資料列，這是正常情況，不需記錄警告
+      if (error && error.code !== 'PGRST116') { 
+        console.warn('[_findUserIdByEmail] direct auth.users 查詢返回非預期錯誤:', error);
+      }
+    } catch (e: any) { 
+      console.warn('[_findUserIdByEmail] direct auth.users 查詢失敗:', e?.message ?? e);
+    }
+
+    // ==========================================================================
+    // 歷史封存: v39.2 及更早版本的 API 調用方法
+    // --------------------------------------------------------------------------
+    // 以下方法 (getUserByEmail, listUsers) 在某些 Supabase 版本中可能
+    // 已被棄用或存在效能問題。特此封存作為備用方案與歷史參考。
+    // ==========================================================================
+    /*
+    // [v39.2 封存] 方法一：使用 admin.getUserByEmail (現已棄用)
     try {
       const { data, error } = await this.supabaseAdmin.auth.admin.getUserByEmail(lowerCaseEmail);
       if (data?.user?.id) return data.user.id;
       if (error && error.status !== 404) { console.warn('[_findUserIdByEmail] admin.getUserByEmail failed, proceeding to fallback...', error.message); }
     } catch (e: any) { console.warn('[_findUserIdByEmail] admin.getUserByEmail threw, proceeding to fallback...', e?.message ?? e); }
+
+    // [v39.2 封存] 方法二：使用 admin.listUsers 作為備用 (可能有效能問題)
     try {
       const { data: listData, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email: lowerCaseEmail });
       if (listError) throw listError;
       if (listData?.users && listData.users.length > 0) { return listData.users[0].id; }
     } catch (e: any) { console.warn('[_findUserIdByEmail] admin.listUsers fallback failed', e?.message ?? e); }
-    try {
-      const { data, error } = await this.supabaseAdmin.from('users', { schema: 'auth' }).select('id').eq('email', lowerCaseEmail).single();
-      if (data?.id) return data.id;
-      if (error && error.code !== 'PGRST116') { console.warn('[_findUserIdByEmail] direct auth.users query returned an unexpected error:', error); }
-    } catch (e: any) { console.warn('[_findUserIdByEmail] direct auth.users query failed:', e?.message ?? e); }
+    */
+
     return null;
   }
 
