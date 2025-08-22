@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v41.0 - 活水行動 v1.1 (API 修正)
+// 版本: v43.0 - 滴水不漏：Profiles 完整性修正
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,17 +12,14 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v41.0
+ * @version v43.0
  * 
- * @update v41.0 - [API REVISION]
- * 1. [修正] 對 _findUserIdByEmail 函式進行了非破壞性升級，以解決 Supabase
- *          Admin API 中 getUserByEmail 被棄用的問題。
- * 2. [新增] 新增了更高優先級的、直接查詢 'auth.users' 表的邏輯，這是目前
- *          最穩定和高效的實踐。
- * 3. [封存] 原有的 getUserByEmail 和 listUsers 邏輯被註解並保留，
- *          以供歷史追溯。
- * 4. [不變] 檔案的核心邏輯，包括 _calculateCartSummary 的 RLS 權限透傳
- *          機制，與 v39.2 版本完全一致，確保了穩定性。
+ * @update v43.0 - [FOREIGN KEY INTEGRITY FIX]
+ * 1. [核心修復] 解決了因 Supabase 觸發器未在匿名使用者創建時可靠同步 profiles 
+ *          記錄，導致的 orders 表外鍵約束違例 (錯誤碼 23503)。
+ * 2. [新增方法] 引入了 _ensureProfileExists 函式，在建立訂單前，強制檢查 
+ *          public.profiles 表中是否存在對應的 user_id，若無則立即創建一筆基礎記錄。
+ * 3. [策略升級] 將資料同步模式從「被動依賴觸發器」升級為「主動確保一致性」，提升系統健壯性。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -120,7 +117,7 @@ class CreateUnifiedOrderHandler {
   }
 
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, magicLink?: string | null): string {
-    const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
+    const fullAddress = `${address.postal_code || ''} address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     const itemsList = (orderItems || []).map((item: any) => {
       const priceAtOrder = Number(item.price_at_order);
       const quantity = Number(item.quantity);
@@ -207,6 +204,44 @@ ${antiFraud}
   }
   
   /**
+   * [v43.0 新增] 核心修復方法：確保 public.profiles 記錄存在
+   * @description 解決匿名使用者建立時，profiles 觸發器不可靠的問題。
+   */
+  private async _ensureProfileExists(userId: string): Promise<void> {
+    // 1. 嘗試查詢 profiles 記錄
+    const { data: existingProfile, error: selectError } = await this.supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (selectError && selectError.code !== 'PGRST116') {
+        console.error(`[_ensureProfileExists] 查詢 profiles 失敗:`, selectError);
+        throw selectError;
+    }
+
+    // 2. 如果 profiles 記錄不存在，則手動創建
+    if (!existingProfile) {
+      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 創建基礎資料...`);
+      // 這裡使用 upsert 策略，確保即使在極端情況下也不會重複插入
+      const { error: upsertError } = await this.supabaseAdmin
+        .from('profiles')
+        .upsert({ 
+          id: userId, 
+          status: 'active', 
+          // 由於 email 是從 auth.users 傳遞而來，此處不寫入，保持其預設值或讓觸發器處理 (但我們不依賴觸發器)
+          // 為了安全，只寫入最少的必要欄位
+        });
+
+      if (upsertError) {
+          console.error(`[_ensureProfileExists] 創建基礎 profiles 記錄失敗:`, upsertError);
+          throw upsertError;
+      }
+      console.log(`[_ensureProfileExists] 成功為 User ID ${userId} 創建 profiles 基礎記錄。`);
+    }
+  }
+  
+  /**
    * [v41.0 升級] 非破壞性更新，修復 API 棄用問題
    */
   private async _findUserIdByEmail(email: string): Promise<string | null> {
@@ -226,27 +261,8 @@ ${antiFraud}
     }
 
     // ==========================================================================
-    // 歷史封存: v39.2 及更早版本的 API 調用方法
-    // --------------------------------------------------------------------------
-    // 以下方法 (getUserByEmail, listUsers) 在某些 Supabase 版本中可能
-    // 已被棄用或存在效能問題。特此封存作為備用方案與歷史參考。
+    // 歷史封存: v39.2 及更早版本的 API 調用方法 (程式碼已省略，詳見 v41.0 原始檔)
     // ==========================================================================
-    /*
-    // [v39.2 封存] 方法一：使用 admin.getUserByEmail (現已棄用)
-    try {
-      const { data, error } = await this.supabaseAdmin.auth.admin.getUserByEmail(lowerCaseEmail);
-      if (data?.user?.id) return data.user.id;
-      if (error && error.status !== 404) { console.warn('[_findUserIdByEmail] admin.getUserByEmail failed, proceeding to fallback...', error.message); }
-    } catch (e: any) { console.warn('[_findUserIdByEmail] admin.getUserByEmail threw, proceeding to fallback...', e?.message ?? e); }
-
-    // [v39.2 封存] 方法二：使用 admin.listUsers 作為備用 (可能有效能問題)
-    try {
-      const { data: listData, error: listError } = await this.supabaseAdmin.auth.admin.listUsers({ email: lowerCaseEmail });
-      if (listError) throw listError;
-      if (listData?.users && listData.users.length > 0) { return listData.users[0].id; }
-    } catch (e: any) { console.warn('[_findUserIdByEmail] admin.listUsers fallback failed', e?.message ?? e); }
-    */
-
     return null;
   }
 
@@ -283,6 +299,7 @@ ${antiFraud}
     let userId: string | null = null;
     let wasAutoLinked = false;
 
+    // --- 1. 識別使用者身份 ---
     const authHeader = req.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '');
@@ -290,12 +307,14 @@ ${antiFraud}
       if (user) {
         userId = user.id;
         console.log(`[INFO] Request authorized for member: ${userId}`);
+        // 由於我們接下來會執行 _ensureProfileExists，此處更新 name 的操作保留
         await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name ?? null }).eq('id', userId);
       } else {
          console.warn(`[WARN] Invalid token received. Proceeding as guest.`);
       }
     } 
     
+    // --- 2. 智慧歸戶 (如果未登入) ---
     if (!userId && shippingDetails?.email) {
       const maybeExistingUserId = await this._findUserIdByEmail(shippingDetails.email);
       if (maybeExistingUserId) {
@@ -304,7 +323,15 @@ ${antiFraud}
         console.log(`[INFO] Guest email matches existing member. Auto-linking order to user: ${userId}`);
       }
     }
+    
+    // [v43.0 核心修復] 確保 profiles 記錄存在，解決外鍵問題
+    // 該函式會處理匿名使用者、剛社交登入但 profiles 尚未建立的邊界情境
+    if (userId) {
+        await this._ensureProfileExists(userId);
+    }
+    // 註：如果沒有 userId，則 orders.user_id 將為 NULL，不違反外鍵約束。
 
+    // --- 3. 執行金額權威比對 ---
     const backendSnapshot = await this._calculateCartSummary(req, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
 
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -323,6 +350,7 @@ ${antiFraud}
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    // --- 4. 寫入訂單核心資料 ---
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: userId, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
       subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
@@ -344,6 +372,7 @@ ${antiFraud}
 
     const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
+    // --- 5. 清理與後續非同步處理 ---
     await Promise.allSettled([
       this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
       this._handleInvoiceCreation(newOrder.id, userId, backendSnapshot.summary.total, invoiceOptions),
