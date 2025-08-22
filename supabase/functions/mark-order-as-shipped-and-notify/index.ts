@@ -1,29 +1,32 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/mark-order-as-shipped-and-notify/index.ts
-// 版本: v45.2 - 「資料來源」終局統一
+// 版本: v46.0 - 「職責回歸」最終版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
-// =================================--------------------------------=============
+// ==============================================================================
 
 /**
  * @file Mark as Shipped & Notify Function (標記出貨並通知函式)
- * @description 將標記出貨、發送通知、觸發發票開立的所有相關邏輯封裝在一起。
- * @version v45.2
+ * @description 處理訂單出貨的核心後端邏輯。職責單一：更新訂單狀態並發送出貨通知。
+ * @version v46.0
  * 
- * @update v45.2 - [DATA SOURCE UNIFICATION]
- * 1. [核心重構] 彻底重构了 _handleInvoiceIssuance 函式。现在，当需要补建发票时，
- *          它不再自己拼凑 invoiceOptions，而是直接呼叫 InvoiceService 中为
- *          此情境量身打造的 `createAndIssueInvoiceFromOrder` 快捷方法。
- * 2. [原理] 此修正确保了“出货后自动开票”这一流程，使用的是最权威、最完整的
- *          订单资料 (`orderDetails`) 作为唯一资料来源，彻底解决了因资料来源
- *          不一致或二次查询失败导致的静默错误。
- * 3. [保留] 完整保留了 v45.1 的所有健壮性修正。
+ * @update v46.0 - [RESPONSIBILITY RESTORATION]
+ * 1. [核心修正] 徹底移除了 _handleInvoiceIssuance 函式以及所有與自動開立發票
+ *          相關的呼叫。
+ * 2. [職責回歸] 此函式的職責已回歸純粹：僅負責將訂單狀態更新為 'shipped'，
+ *          並向顧客發送出貨通知 Email。它不再負責任何發票相關的業務。
+ * 3. [原理] 此修正遵循了您最初的、正確的業務流程設計，將「出貨」與「開票」
+ *          這兩個獨立的業務流程進行了徹底的解耦，避免了因發票 API 問題
+ *          而污染核心出貨流程的風險。
+ * 4. [健壯性保留] 完整保留了先前版本中對關聯查詢的強化和對顧客 Email 的
+ *          備援讀取邏輯，確保出貨通知能夠可靠地發送。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
 import { corsHeaders } from '../_shared/cors.ts'
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
-import { InvoiceService } from '../_shared/services/InvoiceService.ts'
+// [v46.0] InvoiceService 已不再需要，故移除 import
+// import { InvoiceService } from '../_shared/services/InvoiceService.ts'
 
 class MarkAsShippedHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
@@ -111,41 +114,9 @@ Green Health 團隊 敬上
   }
 
   /**
-   * [v45.2 核心重構] 確保發票能被成功建立並觸發開立
+   * [v46.0 核心修正] _handleInvoiceIssuance 函式已被完全移除
+   * 職責回歸單一化，此函式不再處理任何與發票相關的邏輯。
    */
-  private async _handleInvoiceIssuance(orderId: string, orderDetails: any) {
-    console.log(`[INFO] 訂單 ${orderId} 已出貨，開始觸發發票開立流程...`);
-    try {
-      const invoiceService = new InvoiceService(this.supabaseAdmin);
-
-      const { data: existingInvoice, error: findError } = await this.supabaseAdmin
-        .from('invoices')
-        .select('id, status')
-        .eq('order_id', orderId)
-        .maybeSingle();
-
-      if (findError) {
-        console.error(`[CRITICAL] 查詢發票記錄時發生資料庫錯誤:`, findError);
-        return;
-      }
-
-      if (!existingInvoice) {
-        // [v45.2 核心修正] 如果找不到發票記錄，直接呼叫快捷方法处理
-        console.warn(`[WARNING] 訂單 ${orderId} 尚未建立發票記錄，將立即呼叫快捷流程補建並開立。`);
-        await invoiceService.createAndIssueInvoiceFromOrder(orderDetails);
-      } else if (existingInvoice.status === 'pending') {
-        // 如果记录已存在且状态为 pending，则正常触发开立
-        console.log(`[INFO] 找到待開立的發票記錄 ${existingInvoice.id}，觸發開立流程。`);
-        await invoiceService.issueInvoiceViaAPI(existingInvoice.id);
-      } else {
-        // 如果记录已存在且状态不是 pending，则记录警告并跳过
-        console.warn(`[WARNING] 訂單 ${orderId} 的發票狀態為 ${existingInvoice.status}，無需處理。`);
-      }
-      
-    } catch (error) {
-      console.error(`[CRITICAL] 訂單 ${orderId} 的自動發票開立流程最終失敗:`, error.message);
-    }
-  }
 
   /**
    * [主方法] 處理整個出貨請求
@@ -161,6 +132,7 @@ Green Health 團隊 敬上
     if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
     if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
 
+    // --- 核心出貨流程 ---
     await this.supabaseAdmin.from('orders').update({
         status: 'shipped',
         shipping_tracking_code: shippingTrackingCode,
@@ -168,6 +140,7 @@ Green Health 團隊 敬上
         shipped_at: new Date().toISOString(),
       }).eq('id', orderId).throwOnError();
       
+    // 為了發送郵件，我們依然需要查詢訂單的詳細資料
     const { data: orderDetails, error: detailsError } = await this.supabaseAdmin
       .from('orders')
       .select(`
@@ -182,14 +155,12 @@ Green Health 團隊 敬上
       .eq('id', orderId)
       .single();
 
+    // 發送出貨通知郵件 (非阻塞)
     if (detailsError) {
-      console.error(`[CRITICAL] 訂單 ${orderId} 已出貨，但獲取郵件與發票的詳細資料失敗:`, detailsError);
-      // 即使获取失败，也要立即返回成功，因为核心的出货状态已经更新
+      // 即使獲取郵件詳情失敗，出貨流程的核心（更新訂單狀態）也已完成。
+      // 我們只記錄一個嚴重錯誤，但不應讓整個請求失敗。
+      console.error(`[CRITICAL] 訂單 ${orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
     } else if (orderDetails) {
-      // 将邮件发送和发票处理作为非阻塞的背景任务执行
-      // (Deno.serve 会等待这些 Promise 完成，但不会阻塞对前端的回应)
-      
-      // 邮件通知
       const recipientEmail = orderDetails.profiles?.email || orderDetails.customer_email;
       if (recipientEmail) {
         this.resend.emails.send({
@@ -200,19 +171,20 @@ Green Health 團隊 敬上
           subject: `您的 Green Health 訂單 ${orderDetails.order_number} 已出貨`,
           text: this._createShippedEmailText(orderDetails),
         }).catch(emailError => {
-            console.error(`[WARNING] 訂單 ${orderDetails.order_number} 的出貨通知郵件發送失敗:`, emailError);
+            // 郵件發送失敗不應阻塞主流程，僅記錄警告。
+            console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 的出貨通知郵件發送失敗:`, emailError);
         });
       } else {
         console.warn(`[WARNING] 訂單 ${orderId} 找不到顧客 Email，無法發送通知。`);
       }
-
-      // 自动开票
-      this._handleInvoiceIssuance(orderId, orderDetails);
     }
+
+    // [v46.0 核心修正] 移除對 _handleInvoiceIssuance 的呼叫
     
+    // 立即回傳成功響應給前端
     return new Response(JSON.stringify({ 
       success: true, 
-      message: '訂單已成功標記為已出貨，並已觸發後續通知與發票流程。' 
+      message: '訂單已成功標記為已出貨，出貨通知已排入佇列。' 
     }), { 
       status: 200, 
       headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -226,7 +198,7 @@ Deno.serve(async (req) => {
   }
   try {
     const handler = new MarkAsShippedHandler();
-    return await handler.handleRequest(req);
+    return await handler.handleRequest.bind(handler)(req);
   } catch (error) {
     console.error(`[mark-order-as-shipped] 函式最外層錯誤:`, error.message, error.stack);
     return new Response(JSON.stringify({ 
