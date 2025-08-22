@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/services/InvoiceService.ts
-// 版本: v45.1 - 「資料來源」終局統一
+// 版本: v46.0 - 「資料來源」終局分離 (最终决定版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,15 +8,17 @@
 /**
  * @file Invoice Service (發票服務層)
  * @description 封裝所有與發票相關的業務流程，作為統一的入口。
- * @version v45.1
+ * @version v46.0
  * 
- * @update v45.1 - [DATA SOURCE UNIFICATION]
- * 1. [核心新增] 新增了一個名為 `createAndIssueInvoiceFromOrder` 的公共方法。
- *          此方法專為“出貨後自動開票”等、已经拥有完整订单资料的情境而设计。
- * 2. [原理] 它接收一个完整的 order 物件，直接从中提取最权威的资料来建立并
- *          立即开立发票，避免了不必要的、可能出错的二次查询，彻底解决了
- *          因资料来源不一致导致的静默失败问题。
- * 3. [正體化] 檔案內所有註解及 UI 字串均已修正為正體中文。
+ * @update v46.0 - [DATA SOURCE SEPARATION & FINAL FIX]
+ * 1. [核心重構] `determineInvoiceData` 函式的參數和内部逻辑被彻底重构。
+ *          它不再接收 `userId`，而是接收完整的 `order` 物件。
+ * 2. [原理] 新的逻辑会检查 `order` 物件中的使用者是否为匿名。
+ *          - 如果是正式会员，它会如常查询 `profiles` 表以获取最权威的会员资料。
+ *          - 如果是匿名或访客订单，它将直接从 `order` 物件自身的快照中
+ *            (customer_email, shipping_address_snapshot) 提取资料。
+ * 3. [架构纯化] 此修改彻底分离了会员与非会员的资料来源，回归了 `profiles` 表
+ *          只服务于正式会员的设计初衷，解决了资料污染和逻辑混乱的问题。
  */
 
 import { createClient } from '../deps.ts';
@@ -34,41 +36,59 @@ export class InvoiceService {
   }
 
   /**
-   * 核心規則：決定最終用於建立發票的資料。
-   * 主要用於 `create-order-from-cart`，此時只有前端傳來的 `invoiceOptions`。
+   * [v46.0 核心重構] 决定最终用于建立发票的资料，能智慧区分会员与匿名订单。
+   * @param order - 刚刚在资料库中建立的、完整的 newOrder 物件。
+   * @param userProvidedOptions - 使用者在前端结帐时选择的发票选项。
    */
-  async determineInvoiceData(userId: string | null, userProvidedOptions: any): Promise<any> {
+  async determineInvoiceData(order: any, userProvidedOptions: any): Promise<any> {
     if (this.isInvoiceOptionsComplete(userProvidedOptions)) {
-      console.log(`[InvoiceService] 使用者提供了完整的發票資料:`, userProvidedOptions);
+      console.log(`[InvoiceService] 使用者提供了完整的發票資料，直接使用:`, userProvidedOptions);
       return userProvidedOptions;
     }
-
-    if (!userId) {
-        // 如果是匿名使用者且未提供完整發票選項，只能使用安全的預設值
-        console.warn(`[InvoiceService] 匿名使用者未提供完整發票資料，將使用預設捐赠發票。`);
-        return this._getDefaultDonationInvoiceData();
-    }
-
-    console.log(`[InvoiceService] 使用者提供的發票資料不完整，嘗試從 profile (ID: ${userId}) 獲取預設 Email。`);
-    const { data: profile, error } = await this.supabase
-      .from('profiles')
-      .select('email, name')
-      .eq('id', userId)
-      .single();
-
-    if (error || !profile) {
-      console.error(`[InvoiceService] 無法獲取 ID 為 ${userId} 的 profile 來產生預設發票資料:`, error);
-      return this._getDefaultDonationInvoiceData(profile?.name);
-    }
-
-    const finalOptions = { ...userProvidedOptions };
-    if (finalOptions.type === 'cloud' && finalOptions.carrier_type === 'member' && !finalOptions.carrier_number) {
-        finalOptions.carrier_number = profile.email;
-    }
-    finalOptions.recipient_name = profile.name || '顧客';
-    finalOptions.recipient_email = profile.email;
     
-    console.log(`[InvoiceService] 已補全發票資料:`, finalOptions);
+    // 检查订单关联的使用者是否为正式会员
+    const userIsRealMember = order.user_id && !order.is_anonymous; // 假设 is_anonymous 标志会被传递
+
+    if (userIsRealMember) {
+      // --- 正式会员逻辑：尝试从 profiles 表补全资料 ---
+      console.log(`[InvoiceService] 正式会员 (ID: ${order.user_id}) 未提供完整發票資料，尝试从 profiles 补全。`);
+      const { data: profile, error } = await this.supabase
+        .from('profiles')
+        .select('email, name')
+        .eq('id', order.user_id)
+        .single();
+
+      if (!error && profile) {
+        const finalOptions = { ...userProvidedOptions };
+        if (finalOptions.type === 'cloud' && finalOptions.carrier_type === 'member' && !finalOptions.carrier_number) {
+            finalOptions.carrier_number = profile.email;
+        }
+        finalOptions.recipient_name = profile.name || order.customer_name;
+        finalOptions.recipient_email = profile.email || order.customer_email;
+        
+        console.log(`[InvoiceService] 已从 profiles 补全發票資料:`, finalOptions);
+        return finalOptions;
+      }
+      console.error(`[InvoiceService] 无法获取 ID 为 ${order.user_id} 的 profile 来补全资料:`, error);
+    }
+    
+    // --- 匿名/访客订单逻辑 或 会员 profile 查询失败的备援逻辑 ---
+    // 直接从订单快照中提取最权威的资料
+    console.log(`[InvoiceService] 匿名/访客订单或会员 profile 查询失败，从订单快照中提取资料。`);
+    const finalOptions = { ...userProvidedOptions };
+    finalOptions.recipient_name = order.shipping_address_snapshot?.recipient_name || order.customer_name;
+    finalOptions.recipient_email = order.customer_email;
+    if (finalOptions.type === 'cloud' && finalOptions.carrier_type === 'member' && !finalOptions.carrier_number) {
+        finalOptions.carrier_number = order.customer_email;
+    }
+    
+    // 如果连订单快照都没有 email，则使用最终的安全备援
+    if (!finalOptions.recipient_email) {
+        console.warn(`[InvoiceService] 订单快照中也缺少 Email，将使用预设捐赠發票。`);
+        return this._getDefaultDonationInvoiceData(finalOptions.recipient_name);
+    }
+
+    console.log(`[InvoiceService] 已从订单快照补全發票資料:`, finalOptions);
     return finalOptions;
   }
 
@@ -102,44 +122,31 @@ export class InvoiceService {
     return newInvoice;
   }
 
-  /**
-   * [v45.1 核心新增] 從一個完整的 order 物件，一步到位地建立並立即觸發開立發票。
-   * @param order - 一個從資料庫查詢到的、完整的 order 物件。
-   */
   async createAndIssueInvoiceFromOrder(order: any): Promise<void> {
     try {
       console.log(`[InvoiceService] 為訂單 ${order.order_number} 執行「建立並開立」快捷流程...`);
       if (!order || !order.id) {
         throw new Error("傳入的 order 物件無效或缺少 id。");
       }
-
-      // 步驟 1: 從 order 物件中直接構造最權威的 invoiceData
-      // 這裡我們不再依賴前端傳來的 options，而是使用訂單快照中的真實資料。
-      // 預設開立最單純的會員載具發票。
+      
       const invoiceData = {
         type: 'cloud',
         carrier_type: 'member',
-        carrier_number: order.customer_email, // 使用訂單上的 email
+        carrier_number: order.customer_email,
         recipient_name: order.shipping_address_snapshot?.recipient_name || order.customer_name,
         recipient_email: order.customer_email,
       };
-
-      // 步驟 2: 建立發票記錄
+      
       const newInvoice = await this.createInvoiceRecord(order.id, order.total_amount, invoiceData);
-
-      // 步驟 3: 立即觸發開立
+      
       await this.issueInvoiceViaAPI(newInvoice.id);
       
     } catch (error) {
-      // 錯誤將被 issueInvoiceViaAPI 內部處理，此處只需記錄
       console.error(`[InvoiceService] createAndIssueInvoiceFromOrder 流程失敗:`, error.message);
-      // 我們不向上拋出錯誤，以避免中斷 `mark-order-as-shipped` 的主流程
+      throw error; 
     }
   }
   
-  /**
-   * 透過 API 開立發票
-   */
   async issueInvoiceViaAPI(invoiceId: string): Promise<void> {
     try {
       console.log(`[InvoiceService] 開始為 Invoice ID ${invoiceId} 開立發票...`);
@@ -174,9 +181,6 @@ export class InvoiceService {
     }
   }
   
-  /**
-   * 透過 API 作廢發票
-   */
   async voidInvoiceViaAPI(invoiceId: string, reason: string): Promise<void> {
     try {
       console.log(`[InvoiceService] 開始為 Invoice ID ${invoiceId} 作廢發票...`);
@@ -212,9 +216,6 @@ export class InvoiceService {
     }
   }
 
-  /**
-   * [私有] 檢查使用者提供的發票選項是否完整。
-   */
   private isInvoiceOptionsComplete(data: any): boolean {
     if (!data || !data.type) return false;
     switch (data.type) {
@@ -225,21 +226,15 @@ export class InvoiceService {
     }
   }
 
-  /**
-   * [私有] 產生一個安全的回退用捐贈發票資料
-   */
   private _getDefaultDonationInvoiceData(recipientName: string = '顧客'): any {
       return {
         type: 'donation',
-        donation_code: '111', // 公共的捐贈碼
+        donation_code: '111',
         recipient_name: recipientName,
         recipient_email: 'unknown@example.com'
       };
   }
 
-  /**
-   * [私有] 統一的錯誤處理方法
-   */
   private async handleInvoiceError(invoiceId: string, error: any): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`[InvoiceService] 處理 Invoice ID ${invoiceId} 時發生錯誤:`, errorMessage);

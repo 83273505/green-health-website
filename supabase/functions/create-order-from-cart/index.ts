@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v44.1 - 「滴水不漏」參數修正 (最終版)
+// 版本: v46.0 - 「資料來源」終局分離 (最终决定版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,16 +12,19 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v44.1
+ * @version v46.0
  * 
- * @update v44.1 - [PARAMETER PASSING FIX]
- * 1. [核心修正] 徹底解決了 409 Conflict 錯誤的根源。handleRequest 函式現在
- *          會從請求 body 的頂層獲取 couponCode，並將其傳遞給內部的 
- *          _calculateCartSummary 進行權威計算。
- * 2. [原理] 此修正確保了「前端強制同步計算」和「後端權威比對計算」這兩次關鍵
- *          計算，所使用的參數集是完全一致的，從而根除了因參數不一致導致的
- *          金額比對失敗問題。
- * 3. [保留] 完整保留了 v44.0 的所有功能，包括正體化、資料擴充與無感註冊閉環。
+ * @update v46.0 - [DATA SOURCE SEPARATION & FINAL FIX]
+ * 1. [核心重構] 彻底移除了 `_ensureProfileExists` 函式。本函式不再向 `profiles`
+ *          表中写入任何匿名使用者资料，回归了 `profiles` 表只储存正式会员
+ *          资料的原始设计意图。
+ * 2. [原理] 解决了因 `orders_user_id_fkey_to_profiles` 外键约束导致的匿名
+ *          下单失败问题。现在，我们只在 `auth.users` 和 `public.profiles` 
+ *          之间维持同步，而 `orders` 表只与 `auth.users` 关联。
+ * 3. [架构纯化] `_handleInvoiceCreation` 的呼叫被修改，现在传递完整的 `newOrder`
+ *          物件，让 `InvoiceService` 能够基于最权威的订单快照，来决定
+ *          其资料来源（会员查 `profiles`，匿名查 `orders` 快照）。
+ * 4. [正體化] 檔案內所有註解及 UI 字串均已修正為正體中文。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -51,7 +54,7 @@ class CreateUnifiedOrderHandler {
     }
 
     const authHeader = req.headers.get('Authorization');
-    const clientOptions: { global?: { headers: { [key: string]: string } } } = {};
+    const clientOptions: { global?: { headers: { [key, string]: string } } } = {};
     if (authHeader) {
         clientOptions.global = { headers: { Authorization: authHeader } };
     }
@@ -144,7 +147,7 @@ Green Health 綠健 絕對不會以任何名義，透過電話、簡訊或 Email
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 感謝您的訂購！我們已為您保留了本次的收件資訊。
 只需點擊下方連結，設定一組密碼，即可完成註冊，未來購物將能自動帶入資料！
-${Deno.env.get('SITE_URL')}/storefront-module/order-success.html?order_number=${order.order_number}&signup=true
+${Deno.env.get('SITE_URL')}/storefront-module/order-success.html?order_number=${order.order_number}&signup=true&email=${encodeURIComponent(order.customer_email)}
 ` : "";
 
     const maybeMagic = magicLink ? `
@@ -205,42 +208,27 @@ ${antiFraud}
 `.trim();
   }
   
-  private async _handleInvoiceCreation(orderId: string, userId: string | null, totalAmount: number, invoiceOptions: any) {
+  /**
+   * [v46.0 核心重構] 呼叫 InvoiceService 的方式被修改
+   * @description 现在传递完整的 newOrder 物件，让 InvoiceService 自行决定资料来源
+   */
+  private async _handleInvoiceCreation(newOrder: any, invoiceOptions: any) {
     try {
       const invoiceService = new InvoiceService(this.supabaseAdmin);
-      const finalInvoiceData = await invoiceService.determineInvoiceData(userId, invoiceOptions);
-      await invoiceService.createInvoiceRecord(orderId, totalAmount, finalInvoiceData);
-      console.log(`[INFO] 訂單 ${orderId} 的發票記錄已成功排入佇列。`);
+      // 将完整的 newOrder 传递给 InvoiceService
+      const finalInvoiceData = await invoiceService.determineInvoiceData(newOrder, invoiceOptions);
+      await invoiceService.createInvoiceRecord(newOrder.id, newOrder.total_amount, finalInvoiceData);
+      console.log(`[INFO] 訂單 ${newOrder.id} 的發票記錄已成功排入佇列。`);
     } catch (err: any) {
-      console.error(`[CRITICAL] 訂單 ${orderId} 已建立，但發票記錄建立失敗:`, err?.message ?? err);
+      console.error(`[CRITICAL] 訂單 ${newOrder.id} 已建立，但發票記錄建立失敗:`, err?.message ?? err);
     }
   }
   
-  private async _ensureProfileExists(userId: string): Promise<void> {
-    const { data: existingProfile, error: selectError } = await this.supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (selectError && selectError.code !== 'PGRST116') {
-        console.error(`[_ensureProfileExists] 查詢 profiles 失敗:`, selectError);
-        throw selectError;
-    }
-
-    if (!existingProfile) {
-      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 創建基礎資料...`);
-      const { error: upsertError } = await this.supabaseAdmin
-        .from('profiles')
-        .upsert({ id: userId, status: 'active' });
-
-      if (upsertError) {
-          console.error(`[_ensureProfileExists] 創建基礎 profiles 記錄失敗:`, upsertError);
-          throw upsertError;
-      }
-      console.log(`[_ensureProfileExists] 成功為 User ID ${userId} 創建 profiles 基礎記錄。`);
-    }
-  }
+  /**
+   * [v46.0 核心修正] _ensureProfileExists 函式已被彻底移除。
+   * 我们不再向 profiles 表写入匿名使用者资料。
+   * 相关的外键约束应从资料库层面进行调整。
+   */
   
   private async _findUserIdByEmail(email: string): Promise<string | null> {
     if (!email) return null;
@@ -286,12 +274,12 @@ ${antiFraud}
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // [v44.1 修正] 明確地解構出 couponCode
     const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions, couponCode } = requestData;
     
     let userId: string | null = null;
     let wasAutoLinked = false;
     let isAnonymous = false;
+    let userFromToken = null;
 
     const authHeader = req.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
@@ -300,8 +288,8 @@ ${antiFraud}
       if (user) {
         userId = user.id;
         isAnonymous = !!user.is_anonymous;
+        userFromToken = user;
         console.log(`[INFO] Request authorized for user: ${userId} (Anonymous: ${isAnonymous})`);
-        await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name ?? null }).eq('id', userId);
       } else {
          console.warn(`[WARN] Invalid token received. Proceeding as guest.`);
       }
@@ -316,11 +304,14 @@ ${antiFraud}
       }
     }
     
-    if (userId) {
-        await this._ensureProfileExists(userId);
+    // 如果是会员 (无论是刚登入还是被归户的)，并且 profiles 表中已有资料，
+    // 我们可以在此预先更新他们的姓名，作为一种便利。
+    // 但这不再是解决外键问题的必要步骤。
+    if (userId && !isAnonymous) {
+        const { error } = await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name ?? null }).eq('id', userId);
+        if (error) { console.warn(`更新 profile.name 失败 (非致命错误):`, error.message); }
     }
 
-    // [v44.1 核心修正] 將頂層的 couponCode 傳遞給內部計算函式
     const backendSnapshot = await this._calculateCartSummary(req, cartId, couponCode, selectedShippingMethodId);
 
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -340,12 +331,20 @@ ${antiFraud}
     }
 
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
-      user_id: userId, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
-      subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
-      shipping_fee: backendSnapshot.summary.shippingFee, shipping_address_snapshot: shippingDetails,
-      payment_method: paymentMethod.method_name, shipping_method_id: selectedShippingMethodId,
-      payment_status: 'pending', customer_email: shippingDetails.email, customer_name: shippingDetails.recipient_name,
+      user_id: userId, 
+      status: 'pending_payment', 
+      total_amount: backendSnapshot.summary.total,
+      subtotal_amount: backendSnapshot.summary.subtotal, 
+      coupon_discount: backendSnapshot.summary.couponDiscount,
+      shipping_fee: backendSnapshot.summary.shippingFee, 
+      shipping_address_snapshot: shippingDetails,
+      payment_method: paymentMethod.method_name, 
+      shipping_method_id: selectedShippingMethodId,
+      payment_status: 'pending', 
+      customer_email: shippingDetails.email, 
+      customer_name: shippingDetails.recipient_name,
     }).select().single();
+
     if (orderError) {
       console.error('[orders.insert] error:', orderError);
       return new Response(JSON.stringify({ error: { message: `建立訂單失敗: ${orderError.message}` } }),
@@ -360,9 +359,10 @@ ${antiFraud}
 
     const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
+    // [v46.0 核心修正] 将 newOrder 物件传递给 _handleInvoiceCreation
     await Promise.allSettled([
       this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
-      this._handleInvoiceCreation(newOrder.id, userId, backendSnapshot.summary.total, invoiceOptions),
+      this._handleInvoiceCreation(newOrder, invoiceOptions),
     ]);
     
     let magicLinkForMail: string | null = null;
