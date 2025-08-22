@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v46.0 - 「資料來源」終局分離 (最终决定版)
+// 版本: v46.1 - 「守衛回歸」終局修正
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,19 +12,17 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v46.0
+ * @version v46.1
  * 
- * @update v46.0 - [DATA SOURCE SEPARATION & FINAL FIX]
- * 1. [核心重構] 彻底移除了 `_ensureProfileExists` 函式。本函式不再向 `profiles`
- *          表中写入任何匿名使用者资料，回归了 `profiles` 表只储存正式会员
- *          资料的原始设计意图。
- * 2. [原理] 解决了因 `orders_user_id_fkey_to_profiles` 外键约束导致的匿名
- *          下单失败问题。现在，我们只在 `auth.users` 和 `public.profiles` 
- *          之间维持同步，而 `orders` 表只与 `auth.users` 关联。
- * 3. [架构纯化] `_handleInvoiceCreation` 的呼叫被修改，现在传递完整的 `newOrder`
- *          物件，让 `InvoiceService` 能够基于最权威的订单快照，来决定
- *          其资料来源（会员查 `profiles`，匿名查 `orders` 快照）。
- * 4. [正體化] 檔案內所有註解及 UI 字串均已修正為正體中文。
+ * @update v46.1 - [FOREIGN KEY GUARD RESTORATION]
+ * 1. [核心修正] 重新引入了 `_ensureProfileExists` 函式。此函式是為了解決
+ *          `orders_user_id_fkey_to_profiles` 這一嚴格的外鍵約束所必需的。
+ * 2. [架構純化] 新版本的 `_ensureProfileExists` 職責極其單一：它只負責在
+ *          `profiles` 表中建立一筆只包含 `id` 和 `status` 的“空殼”記錄，
+ *          絕不寫入 email 或 name 等任何可能污染 `profiles` 表的會員資料。
+ * 3. [原理] 此修正方案，既透過建立“空殼”記錄满足了外键约束，解决了 `500`
+ *          错误，又透过不写入详细资料，维持了 `profiles` 表只储存正式会员
+ *          详细资料的架构纯洁性，是一个两全其美的最终方案。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -54,7 +52,7 @@ class CreateUnifiedOrderHandler {
     }
 
     const authHeader = req.headers.get('Authorization');
-    const clientOptions: { global?: { headers: { [key, string]: string } } } = {};
+    const clientOptions: { global?: { headers: { [key: string]: string } } } = {};
     if (authHeader) {
         clientOptions.global = { headers: { Authorization: authHeader } };
     }
@@ -208,14 +206,9 @@ ${antiFraud}
 `.trim();
   }
   
-  /**
-   * [v46.0 核心重構] 呼叫 InvoiceService 的方式被修改
-   * @description 现在传递完整的 newOrder 物件，让 InvoiceService 自行决定资料来源
-   */
   private async _handleInvoiceCreation(newOrder: any, invoiceOptions: any) {
     try {
       const invoiceService = new InvoiceService(this.supabaseAdmin);
-      // 将完整的 newOrder 传递给 InvoiceService
       const finalInvoiceData = await invoiceService.determineInvoiceData(newOrder, invoiceOptions);
       await invoiceService.createInvoiceRecord(newOrder.id, newOrder.total_amount, finalInvoiceData);
       console.log(`[INFO] 訂單 ${newOrder.id} 的發票記錄已成功排入佇列。`);
@@ -225,10 +218,37 @@ ${antiFraud}
   }
   
   /**
-   * [v46.0 核心修正] _ensureProfileExists 函式已被彻底移除。
-   * 我们不再向 profiles 表写入匿名使用者资料。
-   * 相关的外键约束应从资料库层面进行调整。
+   * [v46.1 核心修正] 重新引入“守卫”函式，以满足外键约束
    */
+  private async _ensureProfileExists(userId: string): Promise<void> {
+    const { data: existingProfile, error: selectError } = await this.supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (selectError) {
+        console.error(`[_ensureProfileExists] 查詢 profiles 失敗:`, selectError);
+        throw selectError;
+    }
+
+    if (!existingProfile) {
+      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 創建“空殼”記錄...`);
+      const { error: upsertError } = await this.supabaseAdmin
+        .from('profiles')
+        .upsert({ 
+          id: userId, 
+          status: 'active',
+          // 刻意不写入 email, name 等任何会员专属资料，保持 profiles 表的纯净性
+        });
+
+      if (upsertError) {
+          console.error(`[_ensureProfileExists] 创建“空壳” profiles 记录失败:`, upsertError);
+          throw upsertError;
+      }
+      console.log(`[_ensureProfileExists] 成功为 User ID ${userId} 创建“空壳” profiles 记录。`);
+    }
+  }
   
   private async _findUserIdByEmail(email: string): Promise<string | null> {
     if (!email) return null;
@@ -279,7 +299,6 @@ ${antiFraud}
     let userId: string | null = null;
     let wasAutoLinked = false;
     let isAnonymous = false;
-    let userFromToken = null;
 
     const authHeader = req.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
@@ -288,7 +307,6 @@ ${antiFraud}
       if (user) {
         userId = user.id;
         isAnonymous = !!user.is_anonymous;
-        userFromToken = user;
         console.log(`[INFO] Request authorized for user: ${userId} (Anonymous: ${isAnonymous})`);
       } else {
          console.warn(`[WARN] Invalid token received. Proceeding as guest.`);
@@ -304,12 +322,9 @@ ${antiFraud}
       }
     }
     
-    // 如果是会员 (无论是刚登入还是被归户的)，并且 profiles 表中已有资料，
-    // 我们可以在此预先更新他们的姓名，作为一种便利。
-    // 但这不再是解决外键问题的必要步骤。
-    if (userId && !isAnonymous) {
-        const { error } = await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name ?? null }).eq('id', userId);
-        if (error) { console.warn(`更新 profile.name 失败 (非致命错误):`, error.message); }
+    // [v46.1 核心修正] 在写入订单前，呼叫“守卫”函式
+    if (userId) {
+        await this._ensureProfileExists(userId);
     }
 
     const backendSnapshot = await this._calculateCartSummary(req, cartId, couponCode, selectedShippingMethodId);
@@ -359,7 +374,6 @@ ${antiFraud}
 
     const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
-    // [v46.0 核心修正] 将 newOrder 物件传递给 _handleInvoiceCreation
     await Promise.allSettled([
       this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
       this._handleInvoiceCreation(newOrder, invoiceOptions),
