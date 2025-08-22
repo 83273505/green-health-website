@@ -1,6 +1,6 @@
 # ==============================================================================
 # 檔案路徑: netlify.toml
-# 版本: v32.1 - 最終絕對路徑版
+# 版本: v45.1 - SPA 路由劫持修正
 # ------------------------------------------------------------------------------
 # 【此為完整檔案，可直接覆蓋】
 # ==============================================================================
@@ -15,68 +15,73 @@
 
 # ==============================================================================
 # [[redirects]] 區块
-# 规则顺序至关重要：我们将为每一个实体页面都建立绝对规则。
+# 规则顺序至关重要。Netlify 会从上到下匹配第一条符合的规则。
 # ==============================================================================
 
-# 规则 1: 共用模组 (确保实体档案被正确找到)
+# 规则 1: 共用模组与静态资源 (最高优先级)
+# 确保所有对实际存在档案的请求都能被正确处理，而不会被下面的 SPA 规则劫持。
 [[redirects]]
   from = "/_shared/*"
   to = "/_shared/:splat"
   status = 200
 
-# 【核心修正】规则 2: 消费者端 MPA 实体页面 (最高优先级)
-# 我们将所有需要被直接访问的 .html 档案，都明确地列在这里。
-# 它们的优先级，高于下面所有的 SPA 规则。
+# 规则 2: 消费者端的多页面应用 (MPA) 实体页面
+# 明确地为每一个需要被直接存取的 .html 档案建立规则。
 [[redirects]]
   from = "/storefront-module/products.html"
   to = "/storefront-module/products.html"
   status = 200
+
 [[redirects]]
   from = "/storefront-module/product-detail.html"
   to = "/storefront-module/product-detail.html"
   status = 200
+
 [[redirects]]
   from = "/storefront-module/checkout.html"
   to = "/storefront-module/checkout.html"
   status = 200
+
 [[redirects]]
   from = "/storefront-module/order-success.html"
   to = "/storefront-module/order-success.html"
   status = 200
+
 [[redirects]]
   from = "/storefront-module/terms.html"
   to = "/storefront-module/terms.html"
   status = 200
 
-# 规则 3: 后台 SPA (将所有后台模组都作为独立的 SPA 处理)
+# 规则 3: 后台单页应用 (SPA) 的路由规则
+# [v45.1 核心修正] 移除了 'status = 200'。
+# 这会启用 Netlify 的标准 SPA 路由行为：
+# 1. 优先尝试寻找真实存在的档案 (例如 /invoice-panel/js/modules/invoicing.js)。
+# 2. 如果找不到真实档案，则将请求重写 (rewrite) 到该 SPA 的入口 index.html。
+# 这彻底解决了因“贪婪匹配”导致 .js/.css 等资源被劫持为 text/html 的问题。
 [[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
-  status = 200
+
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/index.html"
-  status = 200
+
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/index.html"
-  status = 200
+
 [[redirects]]
   from = "/permission-panel/*"
   to = "/permission-panel/index.html"
-  status = 200
 
 # 规则 4: 会员中心 SPA
 [[redirects]]
   from = "/account-module/*"
   to = "/account-module/index.html"
-  status = 200
 
-# 规则 5: 最后的「全收」规则
-# 这条规则现在只会在访问根目录 (/) 或完全不存在的路径时，才导向商店的首页
+# 规则 5: 最终的“兜底”规则
+# 这条规则现在只会在访问根目录 (/) 或完全不存在的一级路径时，才导向商店的首页。
 [[redirects]]
   from = "/*"
   to = "/storefront-module/products.html"
   status = 200
-
-# ... (dev 和 context 區块维持不变) ..
