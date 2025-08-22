@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v43.0 - 滴水不漏：Profiles 完整性修正
+// 版本: v44.0 - 體驗精煉與功能閉環
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,14 +12,14 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v43.0
+ * @version v44.0
  * 
- * @update v43.0 - [FOREIGN KEY INTEGRITY FIX]
- * 1. [核心修復] 解決了因 Supabase 觸發器未在匿名使用者創建時可靠同步 profiles 
- *          記錄，導致的 orders 表外鍵約束違例 (錯誤碼 23503)。
- * 2. [新增方法] 引入了 _ensureProfileExists 函式，在建立訂單前，強制檢查 
- *          public.profiles 表中是否存在對應的 user_id，若無則立即創建一筆基礎記錄。
- * 3. [策略升級] 將資料同步模式從「被動依賴觸發器」升級為「主動確保一致性」，提升系統健壯性。
+ * @update v44.0 - [EXPERIENCE REFINEMENT & FUNCTIONAL CLOSURE]
+ * 1. [本地化] _createOrderEmailText 函式中的靜態文字範本已完全正體化。
+ * 2. [資料擴充] 返回給前端的 orderDetails 物件現在包含了完整的 shippingMethod 
+ *          和 paymentMethod 物件，解決了訂單成功頁無法顯示運送方式名稱的問題。
+ * 3. [功能閉環] _createOrderEmailText 函式新增了對匿名使用者的「無感註冊行動呼籲」，
+ *          在訂單確認信中引導使用者完成註冊，形成完整的體驗閉環。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -116,8 +116,11 @@ class CreateUnifiedOrderHandler {
     };
   }
 
+  /**
+   * [v44.0 修正] 文字正體化，並為匿名使用者增加「無感註冊」行動呼籲
+   */
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, magicLink?: string | null): string {
-    const fullAddress = `${address.postal_code || ''} address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
+    const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     const itemsList = (orderItems || []).map((item: any) => {
       const priceAtOrder = Number(item.price_at_order);
       const quantity = Number(item.quantity);
@@ -134,6 +137,18 @@ Green Health 綠健 絕對不會以任何名義，透過電話、簡訊或 Email
 
 若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
 `.trim();
+    
+    // [v44.0 新增] 為匿名使用者或未歸戶的訂單增加「無感註冊」的行動呼籲
+    const seamlessSignupCTA = (!magicLink && order.user_id) ? `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✨ 讓下次購物更快速
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+感謝您的訂購！我們已為您保留了本次的收件資訊。
+只需點擊下方連結，設定一組密碼，即可完成註冊，未來購物將能自動帶入資料！
+${Deno.env.get('SITE_URL')}/storefront-module/order-success.html?order_number=${order.order_number}&signup=true
+` : "";
+
     const maybeMagic = magicLink ? `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -175,20 +190,20 @@ ${itemsList}
 收件人：${address.recipient_name}
 聯絡電話：${address.phone_number}
 配送地址：${fullAddress}
-配送方式：${shippingMethod.method_name}
+配送方式：${shippingMethod?.method_name || '未指定'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 💳 付款資訊
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-付款方式：${paymentMethod.method_name}
+付款方式：${paymentMethod?.method_name || '未指定'}
 付款狀態：${order.payment_status}
-${paymentMethod.instructions ? `付款指示：\n${paymentMethod.instructions}` : ''}
+${paymentMethod?.instructions ? `付款指示：\n${paymentMethod.instructions}` : ''}
 
-${maybeMagic}
+${magicLink ? maybeMagic : seamlessSignupCTA}
 
 ${antiFraud}
 
-感謝您選擇 Green Health
+感謝您選擇 Green Health 綠健
 `.trim();
   }
   
@@ -203,12 +218,7 @@ ${antiFraud}
     }
   }
   
-  /**
-   * [v43.0 新增] 核心修復方法：確保 public.profiles 記錄存在
-   * @description 解決匿名使用者建立時，profiles 觸發器不可靠的問題。
-   */
   private async _ensureProfileExists(userId: string): Promise<void> {
-    // 1. 嘗試查詢 profiles 記錄
     const { data: existingProfile, error: selectError } = await this.supabaseAdmin
       .from('profiles')
       .select('id')
@@ -220,18 +230,11 @@ ${antiFraud}
         throw selectError;
     }
 
-    // 2. 如果 profiles 記錄不存在，則手動創建
     if (!existingProfile) {
       console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 創建基礎資料...`);
-      // 這裡使用 upsert 策略，確保即使在極端情況下也不會重複插入
       const { error: upsertError } = await this.supabaseAdmin
         .from('profiles')
-        .upsert({ 
-          id: userId, 
-          status: 'active', 
-          // 由於 email 是從 auth.users 傳遞而來，此處不寫入，保持其預設值或讓觸發器處理 (但我們不依賴觸發器)
-          // 為了安全，只寫入最少的必要欄位
-        });
+        .upsert({ id: userId, status: 'active' });
 
       if (upsertError) {
           console.error(`[_ensureProfileExists] 創建基礎 profiles 記錄失敗:`, upsertError);
@@ -241,28 +244,19 @@ ${antiFraud}
     }
   }
   
-  /**
-   * [v41.0 升級] 非破壞性更新，修復 API 棄用問題
-   */
   private async _findUserIdByEmail(email: string): Promise<string | null> {
     if (!email) return null;
     const lowerCaseEmail = email.toLowerCase();
     
-    // [v41.0 新增] 優先使用直接查詢 auth.users 表的現代化、高效能方法
     try {
       const { data, error } = await this.supabaseAdmin.from('users', { schema: 'auth' }).select('id').eq('email', lowerCaseEmail).single();
       if (data?.id) return data.id;
-      // 'PGRST116' 表示 'single()' 找不到對應資料列，這是正常情況，不需記錄警告
       if (error && error.code !== 'PGRST116') { 
         console.warn('[_findUserIdByEmail] direct auth.users 查詢返回非預期錯誤:', error);
       }
     } catch (e: any) { 
       console.warn('[_findUserIdByEmail] direct auth.users 查詢失敗:', e?.message ?? e);
     }
-
-    // ==========================================================================
-    // 歷史封存: v39.2 及更早版本的 API 調用方法 (程式碼已省略，詳見 v41.0 原始檔)
-    // ==========================================================================
     return null;
   }
 
@@ -298,23 +292,22 @@ ${antiFraud}
     
     let userId: string | null = null;
     let wasAutoLinked = false;
+    let isAnonymous = false;
 
-    // --- 1. 識別使用者身份 ---
     const authHeader = req.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '');
       const { data: { user } } = await this.supabaseAdmin.auth.getUser(token);
       if (user) {
         userId = user.id;
-        console.log(`[INFO] Request authorized for member: ${userId}`);
-        // 由於我們接下來會執行 _ensureProfileExists，此處更新 name 的操作保留
+        isAnonymous = !!user.is_anonymous;
+        console.log(`[INFO] Request authorized for user: ${userId} (Anonymous: ${isAnonymous})`);
         await this.supabaseAdmin.from('profiles').update({ name: shippingDetails.recipient_name ?? null }).eq('id', userId);
       } else {
          console.warn(`[WARN] Invalid token received. Proceeding as guest.`);
       }
     } 
     
-    // --- 2. 智慧歸戶 (如果未登入) ---
     if (!userId && shippingDetails?.email) {
       const maybeExistingUserId = await this._findUserIdByEmail(shippingDetails.email);
       if (maybeExistingUserId) {
@@ -324,14 +317,10 @@ ${antiFraud}
       }
     }
     
-    // [v43.0 核心修復] 確保 profiles 記錄存在，解決外鍵問題
-    // 該函式會處理匿名使用者、剛社交登入但 profiles 尚未建立的邊界情境
     if (userId) {
         await this._ensureProfileExists(userId);
     }
-    // 註：如果沒有 userId，則 orders.user_id 將為 NULL，不違反外鍵約束。
 
-    // --- 3. 執行金額權威比對 ---
     const backendSnapshot = await this._calculateCartSummary(req, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
 
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
@@ -350,7 +339,6 @@ ${antiFraud}
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // --- 4. 寫入訂單核心資料 ---
     const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
       user_id: userId, status: 'pending_payment', total_amount: backendSnapshot.summary.total,
       subtotal_amount: backendSnapshot.summary.subtotal, coupon_discount: backendSnapshot.summary.couponDiscount,
@@ -360,7 +348,7 @@ ${antiFraud}
     }).select().single();
     if (orderError) {
       console.error('[orders.insert] error:', orderError);
-      return new Response(JSON.stringify({ error: { message: '建立訂單失敗。' } }),
+      return new Response(JSON.stringify({ error: { message: `建立訂單失敗: ${orderError.message}` } }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -372,7 +360,6 @@ ${antiFraud}
 
     const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
-    // --- 5. 清理與後續非同步處理 ---
     await Promise.allSettled([
       this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
       this._handleInvoiceCreation(newOrder.id, userId, backendSnapshot.summary.total, invoiceOptions),
@@ -389,7 +376,8 @@ ${antiFraud}
       ...(Deno.env.get('ORDER_MAIL_BCC') ? { bcc: [Deno.env.get('ORDER_MAIL_BCC')] } : {}),
       reply_to: Deno.env.get('ORDER_MAIL_REPLY_TO') ?? 'service@greenhealthtw.com.tw',
       subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
-      text: this._createOrderEmailText(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, magicLinkForMail),
+      // [v44.0 修正] 只有當使用者是匿名且未被歸戶時，才不傳入 magicLink
+      text: this._createOrderEmailText(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, (isAnonymous && !wasAutoLinked) ? null : magicLinkForMail),
     }).catch(emailErr => {
         console.error(`[WARNING] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
     });
@@ -397,7 +385,14 @@ ${antiFraud}
     return new Response(JSON.stringify({
         success: true,
         orderNumber: newOrder.order_number,
-        orderDetails: { order: newOrder, items: finalOrderItems ?? [] }
+        // [v44.0 核心修正] 將 shippingMethod 和 paymentMethod 加入回傳物件
+        orderDetails: { 
+            order: newOrder, 
+            items: finalOrderItems ?? [],
+            address: shippingDetails, // 將地址快照也一併回傳
+            shippingMethod,
+            paymentMethod
+        }
     }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 }
