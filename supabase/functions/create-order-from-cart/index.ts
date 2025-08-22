@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v44.0 - 體驗精煉與功能閉環
+// 版本: v44.1 - 「滴水不漏」參數修正 (最終版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,14 +12,16 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v44.0
+ * @version v44.1
  * 
- * @update v44.0 - [EXPERIENCE REFINEMENT & FUNCTIONAL CLOSURE]
- * 1. [本地化] _createOrderEmailText 函式中的靜態文字範本已完全正體化。
- * 2. [資料擴充] 返回給前端的 orderDetails 物件現在包含了完整的 shippingMethod 
- *          和 paymentMethod 物件，解決了訂單成功頁無法顯示運送方式名稱的問題。
- * 3. [功能閉環] _createOrderEmailText 函式新增了對匿名使用者的「無感註冊行動呼籲」，
- *          在訂單確認信中引導使用者完成註冊，形成完整的體驗閉環。
+ * @update v44.1 - [PARAMETER PASSING FIX]
+ * 1. [核心修正] 徹底解決了 409 Conflict 錯誤的根源。handleRequest 函式現在
+ *          會從請求 body 的頂層獲取 couponCode，並將其傳遞給內部的 
+ *          _calculateCartSummary 進行權威計算。
+ * 2. [原理] 此修正確保了「前端強制同步計算」和「後端權威比對計算」這兩次關鍵
+ *          計算，所使用的參數集是完全一致的，從而根除了因參數不一致導致的
+ *          金額比對失敗問題。
+ * 3. [保留] 完整保留了 v44.0 的所有功能，包括正體化、資料擴充與無感註冊閉環。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -116,9 +118,6 @@ class CreateUnifiedOrderHandler {
     };
   }
 
-  /**
-   * [v44.0 修正] 文字正體化，並為匿名使用者增加「無感註冊」行動呼籲
-   */
   private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, magicLink?: string | null): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
     const itemsList = (orderItems || []).map((item: any) => {
@@ -138,7 +137,6 @@ Green Health 綠健 絕對不會以任何名義，透過電話、簡訊或 Email
 若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
 `.trim();
     
-    // [v44.0 新增] 為匿名使用者或未歸戶的訂單增加「無感註冊」的行動呼籲
     const seamlessSignupCTA = (!magicLink && order.user_id) ? `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -288,7 +286,8 @@ ${antiFraud}
         { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions } = requestData;
+    // [v44.1 修正] 明確地解構出 couponCode
+    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions, couponCode } = requestData;
     
     let userId: string | null = null;
     let wasAutoLinked = false;
@@ -321,7 +320,8 @@ ${antiFraud}
         await this._ensureProfileExists(userId);
     }
 
-    const backendSnapshot = await this._calculateCartSummary(req, cartId, frontendValidationSummary.couponCode, selectedShippingMethodId);
+    // [v44.1 核心修正] 將頂層的 couponCode 傳遞給內部計算函式
+    const backendSnapshot = await this._calculateCartSummary(req, cartId, couponCode, selectedShippingMethodId);
 
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
       return new Response(JSON.stringify({ error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } }),
@@ -376,7 +376,6 @@ ${antiFraud}
       ...(Deno.env.get('ORDER_MAIL_BCC') ? { bcc: [Deno.env.get('ORDER_MAIL_BCC')] } : {}),
       reply_to: Deno.env.get('ORDER_MAIL_REPLY_TO') ?? 'service@greenhealthtw.com.tw',
       subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
-      // [v44.0 修正] 只有當使用者是匿名且未被歸戶時，才不傳入 magicLink
       text: this._createOrderEmailText(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, (isAnonymous && !wasAutoLinked) ? null : magicLinkForMail),
     }).catch(emailErr => {
         console.error(`[WARNING] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
@@ -385,11 +384,10 @@ ${antiFraud}
     return new Response(JSON.stringify({
         success: true,
         orderNumber: newOrder.order_number,
-        // [v44.0 核心修正] 將 shippingMethod 和 paymentMethod 加入回傳物件
         orderDetails: { 
             order: newOrder, 
             items: finalOrderItems ?? [],
-            address: shippingDetails, // 將地址快照也一併回傳
+            address: shippingDetails,
             shippingMethod,
             paymentMethod
         }
