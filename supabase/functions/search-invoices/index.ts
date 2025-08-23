@@ -1,24 +1,24 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/search-invoices/index.ts
-// 版本: v45.3 - PostgREST 語法最終修正
+// 版本: v46.0 - RPC 架構重構
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Search Invoices Function (搜尋發票函式)
- * @description 發票管理後台的核心後端服務。負責根據前端傳來的篩選條件，
- *              安全地查詢並回傳發票列表。
- * @version v45.3
+ * @description 發票管理後台的核心後端服務。
+ * @version v46.0
  * 
- * @update v45.3 - [POSTGREST SYNTAX FINAL FIX]
- * 1. [核心錯誤修正] 徹底修正了 .or() 函式在處理跨資料表查詢時的語法。
- *          根據 PostgREST 的官方規範，對主資料表 (`invoices`) 的篩選條件
- *          應作為第一個參數，而對關聯資料表 (`orders`) 的篩選條件，
- *          必須明確地在第二個參數的 `foreignTable` (或 `referencedTable`) 
- *          選項中指定。此修正可徹底解決 PGRST100 解析失敗的問題。
- * 
- * @update v45.2 - 跨資料表查詢修正與功能增強
+ * @update v46.0 - [RPC ARCHITECTURE REFACTOR]
+ * 1. [核心架構重構] 徹底移除了所有客戶端的動態查詢建構邏輯 (.eq, .or 等)，
+ *          改為直接呼叫資料庫中的 `search_invoices_advanced` RPC 函式。
+ * 2. [職責轉移] 將所有複雜的篩選、JOIN 和搜尋邏輯完全轉移到資料庫層，
+ *          使得此 Edge Function 變得極其輕量、穩定且易於維護。
+ * 3. [功能對齊] 為了支援新的 UI (例如獨立欄位查詢)，函式現在能接收並傳遞
+ *          一個更結構化的篩選器物件給 RPC 函式。
+ * 4. [錯誤根除] 此修改從根本上解決了因 PostgREST .or() 語法限制而導致的
+ *          所有 `PGRST100` 解析失敗錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts'
@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const userPermissions = user.app_metadata?.permissions || [];
     if (!userPermissions.includes('module:invoicing:view')) {
       return new Response(JSON.stringify({ error: '權限不足，您無法存取發票資料。' }), { 
-        status: 403, // Forbidden
+        status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -54,54 +54,22 @@ Deno.serve(async (req) => {
     // --- 2. 解析前端傳來的篩選條件 ---
     const filters = await req.json();
 
-    // --- 3. 動態建構查詢語句 ---
-    let query = supabaseAdmin
-      .from('invoices')
-      .select(`
-        *,
-        orders (
-          order_number
-        )
-      `);
+    // --- 3. [v46.0 核心修正] 呼叫 RPC 函式執行查詢 ---
+    const { data: invoices, error: rpcError } = await supabaseAdmin
+      .rpc('search_invoices_advanced', {
+        _status: filters.status || null,
+        _search_term: filters.searchTerm || null,
+        _date_from: filters.dateFrom || null,
+        _date_to: filters.dateTo || null,
+        _order_status: filters.orderStatus || null
+      });
 
-    if (filters.status) {
-      query = query.eq('status', filters.status);
+    if (rpcError) {
+        console.error('[search-invoices] 呼叫 RPC 函式時發生錯誤:', rpcError);
+        throw rpcError;
     }
 
-    const dateColumn = (filters.status === 'issued' || filters.status === 'voided') ? 'issued_at' : 'created_at';
-
-    if (filters.dateFrom) {
-      const startDate = new Date(filters.dateFrom);
-      startDate.setHours(0, 0, 0, 0);
-      query = query.gte(dateColumn, startDate.toISOString());
-    }
-    if (filters.dateTo) {
-      const endDate = new Date(filters.dateTo);
-      endDate.setHours(23, 59, 59, 999);
-      query = query.lte(dateColumn, endDate.toISOString());
-    }
-    
-    if (filters.searchTerm) {
-      const term = `%${filters.searchTerm}%`;
-      // [v45.3 核心修正] 採用 PostgREST 處理關聯資料表的標準語法。
-      // 將主資料表 (invoices) 的篩選條件放在第一個參數。
-      const mainTableOr = `invoice_number.ilike.${term},vat_number.ilike.${term},recipient_email.ilike.${term}`;
-      // 將關聯資料表 (orders) 的篩選條件放在第二個參數中，並明確指定 foreignTable。
-      const foreignTableOr = `order_number.ilike.${term}`;
-      
-      query = query.or(mainTableOr, { foreignTable: 'orders', or: foreignTableOr });
-    }
-
-    // --- 4. 執行查詢並回傳結果 ---
-    const { data: invoices, error: queryError } = await query
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (queryError) {
-        console.error('[search-invoices] 查詢資料庫時發生錯誤:', queryError);
-        throw queryError;
-    }
-
+    // --- 4. 回傳查詢結果 ---
     return new Response(
       JSON.stringify(invoices),
       {
