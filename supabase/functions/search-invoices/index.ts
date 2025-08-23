@@ -1,15 +1,21 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/search-invoices/index.ts
-// 版本: v45.0 - 發票系統激活 (新建檔案)
+// 版本: v45.1 - 智慧日期篩選與正體化
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Search Invoices Function (搜尋發票函式)
  * @description 發票管理後台的核心後端服務。負責根據前端傳來的篩選條件，
  *              安全地查詢並回傳發票列表。
- * @version v45.0
+ * @version v45.1
+ * 
+ * @update v45.1 - [INTELLIGENT DATE FILTERING & LOCALIZATION]
+ * 1. [核心強化] 新增了智慧型日期篩選邏輯。現在，函式會根據篩選的發票狀態
+ *          (`status`)，動態地決定要查詢 `issued_at` (已開立/已作廢) 還是
+ *          `created_at` (待開立/失敗) 欄位，使查詢結果更符合使用者預期。
+ * 2. [正體化] 檔案內所有註解、日誌及錯誤訊息均已修正為標準正體中文。
  * 
  * @architectural_notes
  * 1. [安全] 此函式強制要求 JWT 驗證，並在內部進一步檢查使用者是否擁有
@@ -66,18 +72,23 @@ Deno.serve(async (req) => {
     if (filters.status) {
       query = query.eq('status', filters.status);
     }
+
+    // [v45.1 核心強化] 智慧型日期篩選
+    const dateColumn = (filters.status === 'issued' || filters.status === 'voided') ? 'issued_at' : 'created_at';
+
     if (filters.dateFrom) {
       // 確保查詢包含起始日當天
       const startDate = new Date(filters.dateFrom);
       startDate.setHours(0, 0, 0, 0);
-      query = query.gte('created_at', startDate.toISOString());
+      query = query.gte(dateColumn, startDate.toISOString());
     }
     if (filters.dateTo) {
       // 確保查詢包含結束日當天
       const endDate = new Date(filters.dateTo);
       endDate.setHours(23, 59, 59, 999);
-      query = query.lte('created_at', endDate.toISOString());
+      query = query.lte(dateColumn, endDate.toISOString());
     }
+    
     if (filters.searchTerm) {
       const term = `%${filters.searchTerm}%`;
       // 跨欄位模糊搜尋
