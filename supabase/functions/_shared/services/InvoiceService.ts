@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/services/InvoiceService.ts
-// 版本: v46.0 - 「資料來源」終局分離 (最终决定版)
+// 版本: v46.1 - 作廢日期格式加固 (穩定性提升版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,17 +8,15 @@
 /**
  * @file Invoice Service (發票服務層)
  * @description 封裝所有與發票相關的業務流程，作為統一的入口。
- * @version v46.0
+ * @version v46.1
  * 
- * @update v46.0 - [DATA SOURCE SEPARATION & FINAL FIX]
- * 1. [核心重構] `determineInvoiceData` 函式的參數和内部逻辑被彻底重构。
- *          它不再接收 `userId`，而是接收完整的 `order` 物件。
- * 2. [原理] 新的逻辑会检查 `order` 物件中的使用者是否为匿名。
- *          - 如果是正式会员，它会如常查询 `profiles` 表以获取最权威的会员资料。
- *          - 如果是匿名或访客订单，它将直接从 `order` 物件自身的快照中
- *            (customer_email, shipping_address_snapshot) 提取资料。
- * 3. [架构纯化] 此修改彻底分离了会员与非会员的资料来源，回归了 `profiles` 表
- *          只服务于正式会员的设计初衷，解决了资料污染和逻辑混乱的问题。
+ * @update v46.1 - [VOID INVOICE DATE FORMATTING FIX]
+ * 1. [核心加固] `voidInvoiceViaAPI` 函式中產生 `invoiceDate` 的方式被重構。
+ *          放棄了依賴執行環境的 `toLocaleDateString`，改為手動、明確地
+ *          建構 `YYYY/MM/DD` 格式的字串。
+ * 2. [原理] 此修改確保了傳遞給速買配作廢 API 的日期格式，在任何伺服器
+ *          環境下都保持絕對一致，消除了潛在的因環境差異導致的作廢失敗風險。
+ * 3. [正體化] 修正檔案內所有殘留的簡體中文註解與字詞。
  */
 
 import { createClient } from '../deps.ts';
@@ -36,9 +34,9 @@ export class InvoiceService {
   }
 
   /**
-   * [v46.0 核心重構] 决定最终用于建立发票的资料，能智慧区分会员与匿名订单。
-   * @param order - 刚刚在资料库中建立的、完整的 newOrder 物件。
-   * @param userProvidedOptions - 使用者在前端结帐时选择的发票选项。
+   * [v46.0 核心重構] 決定最終用於建立發票的資料，能智慧區分會員與匿名訂單。
+   * @param order - 剛在資料庫中建立的、完整的 newOrder 物件。
+   * @param userProvidedOptions - 使用者在前端結帳時選擇的發票選項。
    */
   async determineInvoiceData(order: any, userProvidedOptions: any): Promise<any> {
     if (this.isInvoiceOptionsComplete(userProvidedOptions)) {
@@ -46,12 +44,12 @@ export class InvoiceService {
       return userProvidedOptions;
     }
     
-    // 检查订单关联的使用者是否为正式会员
-    const userIsRealMember = order.user_id && !order.is_anonymous; // 假设 is_anonymous 标志会被传递
+    // 檢查訂單關聯的使用者是否為正式會員
+    const userIsRealMember = order.user_id && !order.is_anonymous; // 假設 is_anonymous 標誌會被傳遞
 
     if (userIsRealMember) {
-      // --- 正式会员逻辑：尝试从 profiles 表补全资料 ---
-      console.log(`[InvoiceService] 正式会员 (ID: ${order.user_id}) 未提供完整發票資料，尝试从 profiles 补全。`);
+      // --- 正式會員邏輯：嘗試從 profiles 表補全資料 ---
+      console.log(`[InvoiceService] 正式會員 (ID: ${order.user_id}) 未提供完整發票資料，嘗試從 profiles 補全。`);
       const { data: profile, error } = await this.supabase
         .from('profiles')
         .select('email, name')
@@ -66,15 +64,15 @@ export class InvoiceService {
         finalOptions.recipient_name = profile.name || order.customer_name;
         finalOptions.recipient_email = profile.email || order.customer_email;
         
-        console.log(`[InvoiceService] 已从 profiles 补全發票資料:`, finalOptions);
+        console.log(`[InvoiceService] 已從 profiles 補全發票資料:`, finalOptions);
         return finalOptions;
       }
-      console.error(`[InvoiceService] 无法获取 ID 为 ${order.user_id} 的 profile 来补全资料:`, error);
+      console.error(`[InvoiceService] 無法獲取 ID 為 ${order.user_id} 的 profile 來補全資料:`, error);
     }
     
-    // --- 匿名/访客订单逻辑 或 会员 profile 查询失败的备援逻辑 ---
-    // 直接从订单快照中提取最权威的资料
-    console.log(`[InvoiceService] 匿名/访客订单或会员 profile 查询失败，从订单快照中提取资料。`);
+    // --- 匿名/訪客訂單邏輯 或 會員 profile 查詢失敗的備援邏輯 ---
+    // 直接從訂單快照中提取最權威的資料
+    console.log(`[InvoiceService] 匿名/訪客訂單或會員 profile 查詢失敗，從訂單快照中提取資料。`);
     const finalOptions = { ...userProvidedOptions };
     finalOptions.recipient_name = order.shipping_address_snapshot?.recipient_name || order.customer_name;
     finalOptions.recipient_email = order.customer_email;
@@ -82,13 +80,13 @@ export class InvoiceService {
         finalOptions.carrier_number = order.customer_email;
     }
     
-    // 如果连订单快照都没有 email，则使用最终的安全备援
+    // 如果連訂單快照都沒有 email，則使用最終的安全備援
     if (!finalOptions.recipient_email) {
-        console.warn(`[InvoiceService] 订单快照中也缺少 Email，将使用预设捐赠發票。`);
+        console.warn(`[InvoiceService] 訂單快照中也缺少 Email，將使用預設捐贈發票。`);
         return this._getDefaultDonationInvoiceData(finalOptions.recipient_name);
     }
 
-    console.log(`[InvoiceService] 已从订单快照补全發票資料:`, finalOptions);
+    console.log(`[InvoiceService] 已從訂單快照補全發票資料:`, finalOptions);
     return finalOptions;
   }
 
@@ -194,7 +192,12 @@ export class InvoiceService {
         throw new Error('發票號碼不存在或發票尚未開立，無法作廢。');
       }
 
-      const invoiceDate = new Date(invoice.issued_at).toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '/');
+      // [v46.1 核心加固] 手動建構穩定的日期格式，避免環境差異
+      const issuedDate = new Date(invoice.issued_at);
+      const year = issuedDate.getFullYear();
+      const month = String(issuedDate.getMonth() + 1).padStart(2, '0');
+      const day = String(issuedDate.getDate()).padStart(2, '0');
+      const invoiceDate = `${year}/${month}/${day}`; // 確保為 YYYY/MM/DD
 
       const result = await this.smilePayAdapter.voidInvoice(invoice.invoice_number, invoiceDate, reason);
 
