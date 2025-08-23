@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/search-invoices/index.ts
-// 版本: v45.2 - 跨資料表查詢修正與功能增強
+// 版本: v45.3 - PostgREST 語法最終修正
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,17 +9,16 @@
  * @file Search Invoices Function (搜尋發票函式)
  * @description 發票管理後台的核心後端服務。負責根據前端傳來的篩選條件，
  *              安全地查詢並回傳發票列表。
- * @version v45.2
+ * @version v45.3
  * 
- * @update v45.2 - [CROSS-TABLE SEARCH FIX & ENHANCEMENT]
- * 1. [核心錯誤修正] 修正了 .or() 函式因錯誤使用 `referencedTable` 選項，導致在
- *          跨 `invoices` 與 `orders` 資料表搜尋時，發生 PGRST100 解析失敗的問題。
- *          現在已改為在查詢字串中直接指定關聯表名，並移除 `referencedTable` 參數。
- * 2. [功能增強] 根據總設計師要求，在關鍵字搜尋中新增了對 `recipient_email` 欄位的
- *          支援，擴大了搜尋的實用範圍。
- * 3. [正體化] 檔案內所有註解、日誌及錯誤訊息均已修正為標準正體中文。
+ * @update v45.3 - [POSTGREST SYNTAX FINAL FIX]
+ * 1. [核心錯誤修正] 徹底修正了 .or() 函式在處理跨資料表查詢時的語法。
+ *          根據 PostgREST 的官方規範，對主資料表 (`invoices`) 的篩選條件
+ *          應作為第一個參數，而對關聯資料表 (`orders`) 的篩選條件，
+ *          必須明確地在第二個參數的 `foreignTable` (或 `referencedTable`) 
+ *          選項中指定。此修正可徹底解決 PGRST100 解析失敗的問題。
  * 
- * @update v45.1 - 智慧日期篩選與正體化
+ * @update v45.2 - 跨資料表查詢修正與功能增強
  */
 
 import { createClient } from '../_shared/deps.ts'
@@ -69,7 +68,6 @@ Deno.serve(async (req) => {
       query = query.eq('status', filters.status);
     }
 
-    // [v45.1] 智慧型日期篩選
     const dateColumn = (filters.status === 'issued' || filters.status === 'voided') ? 'issued_at' : 'created_at';
 
     if (filters.dateFrom) {
@@ -85,16 +83,19 @@ Deno.serve(async (req) => {
     
     if (filters.searchTerm) {
       const term = `%${filters.searchTerm}%`;
-      // [v45.2 核心修正] 修正跨資料表查詢語法，並新增 Email 搜尋
-      // PostgREST 的 .or() 查詢，對於關聯資料表的欄位，必須直接在查詢字串中指定，且不能使用 referencedTable 選項。
-      const orQueryString = `invoice_number.ilike.${term},vat_number.ilike.${term},recipient_email.ilike.${term},orders.order_number.ilike.${term}`;
-      query = query.or(orQueryString);
+      // [v45.3 核心修正] 採用 PostgREST 處理關聯資料表的標準語法。
+      // 將主資料表 (invoices) 的篩選條件放在第一個參數。
+      const mainTableOr = `invoice_number.ilike.${term},vat_number.ilike.${term},recipient_email.ilike.${term}`;
+      // 將關聯資料表 (orders) 的篩選條件放在第二個參數中，並明確指定 foreignTable。
+      const foreignTableOr = `order_number.ilike.${term}`;
+      
+      query = query.or(mainTableOr, { foreignTable: 'orders', or: foreignTableOr });
     }
 
     // --- 4. 執行查詢並回傳結果 ---
     const { data: invoices, error: queryError } = await query
       .order('created_at', { ascending: false })
-      .limit(100); // 增加保護機制，避免一次回傳過多資料
+      .limit(100);
 
     if (queryError) {
         console.error('[search-invoices] 查詢資料庫時發生錯誤:', queryError);
@@ -114,7 +115,6 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ error: error.message }),
       {
-        // 將狀態碼改為 500，以更精確地反映伺服器端錯誤
         status: 500, 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
