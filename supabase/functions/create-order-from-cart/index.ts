@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v46.1 - 「守衛回歸」終局修正
+// 版本: v46.2 - 新增訂單通知副本與正體化
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -11,18 +11,18 @@
  *              1. 已登入會員 (透過 JWT)
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
- *              並採用“權限透傳”模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v46.1
+ *              並採用「權限透傳」模式優雅地處理 RLS，整合 Resend 寄送郵件。
+ * @version v46.2
  * 
- * @update v46.1 - [FOREIGN KEY GUARD RESTORATION]
- * 1. [核心修正] 重新引入了 `_ensureProfileExists` 函式。此函式是為了解決
- *          `orders_user_id_fkey_to_profiles` 這一嚴格的外鍵約束所必需的。
- * 2. [架構純化] 新版本的 `_ensureProfileExists` 職責極其單一：它只負責在
- *          `profiles` 表中建立一筆只包含 `id` 和 `status` 的“空殼”記錄，
- *          絕不寫入 email 或 name 等任何可能污染 `profiles` 表的會員資料。
- * 3. [原理] 此修正方案，既透過建立“空殼”記錄满足了外键约束，解决了 `500`
- *          错误，又透过不写入详细资料，维持了 `profiles` 表只储存正式会员
- *          详细资料的架构纯洁性，是一个两全其美的最终方案。
+ * @update v46.2 - [ADD ORDER NOTIFICATION BCC & LOCALIZATION]
+ * 1. [核心功能] 新增了訂單通知副本功能。現在，每一封寄給顧客的訂單確認信，
+ *          都會自動密件副本 (BCC) 一封至 'a896214@gmail.com'，以便即時掌握訂單資訊。
+ * 2. [架構優化] 新增了 `_getBccRecipients` 私有輔助函式，專門處理密件副本收件者
+ *          列表的組合邏輯，使程式碼更清晰且易於維護。
+ * 3. [正體化] 根據約定，對檔案內所有註解、日誌及函式內的簡體中文進行了全面的
+ *          標準化校訂。
+ * 
+ * @update v46.1 - 「守衛回歸」終局修正
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -65,7 +65,7 @@ class CreateUnifiedOrderHandler {
       .eq('cart_id', cartId);
       
     if (cartItemsError) {
-        console.error('[RLS Check] _calculateCartSummary query failed:', cartItemsError);
+        console.error('[RLS 檢查] _calculateCartSummary 查詢失敗:', cartItemsError);
         throw new Error(`無法讀取購物車項目，請檢查權限：${cartItemsError.message}`);
     }
 
@@ -211,15 +211,12 @@ ${antiFraud}
       const invoiceService = new InvoiceService(this.supabaseAdmin);
       const finalInvoiceData = await invoiceService.determineInvoiceData(newOrder, invoiceOptions);
       await invoiceService.createInvoiceRecord(newOrder.id, newOrder.total_amount, finalInvoiceData);
-      console.log(`[INFO] 訂單 ${newOrder.id} 的發票記錄已成功排入佇列。`);
+      console.log(`[資訊] 訂單 ${newOrder.id} 的發票記錄已成功排入佇列。`);
     } catch (err: any) {
-      console.error(`[CRITICAL] 訂單 ${newOrder.id} 已建立，但發票記錄建立失敗:`, err?.message ?? err);
+      console.error(`[嚴重] 訂單 ${newOrder.id} 已建立，但發票記錄建立失敗:`, err?.message ?? err);
     }
   }
   
-  /**
-   * [v46.1 核心修正] 重新引入“守卫”函式，以满足外键约束
-   */
   private async _ensureProfileExists(userId: string): Promise<void> {
     const { data: existingProfile, error: selectError } = await this.supabaseAdmin
       .from('profiles')
@@ -233,20 +230,20 @@ ${antiFraud}
     }
 
     if (!existingProfile) {
-      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 創建“空殼”記錄...`);
+      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 建立「空殼」記錄...`);
       const { error: upsertError } = await this.supabaseAdmin
         .from('profiles')
         .upsert({ 
           id: userId, 
           status: 'active',
-          // 刻意不写入 email, name 等任何会员专属资料，保持 profiles 表的纯净性
+          // 刻意不寫入 email, name 等任何會員專屬資料，保持 profiles 表的純淨性
         });
 
       if (upsertError) {
-          console.error(`[_ensureProfileExists] 创建“空壳” profiles 记录失败:`, upsertError);
+          console.error(`[_ensureProfileExists] 建立「空殼」profiles 記錄失敗:`, upsertError);
           throw upsertError;
       }
-      console.log(`[_ensureProfileExists] 成功为 User ID ${userId} 创建“空壳” profiles 记录。`);
+      console.log(`[_ensureProfileExists] 成功為 User ID ${userId} 建立「空殼」profiles 記錄。`);
     }
   }
   
@@ -258,10 +255,10 @@ ${antiFraud}
       const { data, error } = await this.supabaseAdmin.from('users', { schema: 'auth' }).select('id').eq('email', lowerCaseEmail).single();
       if (data?.id) return data.id;
       if (error && error.code !== 'PGRST116') { 
-        console.warn('[_findUserIdByEmail] direct auth.users 查詢返回非預期錯誤:', error);
+        console.warn('[_findUserIdByEmail] 直接查詢 auth.users 返回非預期錯誤:', error);
       }
     } catch (e: any) { 
-      console.warn('[_findUserIdByEmail] direct auth.users 查詢失敗:', e?.message ?? e);
+      console.warn('[_findUserIdByEmail] 直接查詢 auth.users 失敗:', e?.message ?? e);
     }
     return null;
   }
@@ -269,12 +266,29 @@ ${antiFraud}
   private async _generateMagicLink(email: string): Promise<string | null> {
     try {
       const siteUrl = Deno.env.get('SITE_URL');
-      if (!siteUrl) { console.warn('[MagicLink] SITE_URL is not set, cannot generate link.'); return null; }
+      if (!siteUrl) { console.warn('[MagicLink] SITE_URL 未設定, 無法產生連結。'); return null; }
       const redirectTo = `${siteUrl.replace(/\/+$/, '')}/account-module/dashboard.html`;
       const { data, error } = await this.supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo } });
-      if (error) { console.warn('[admin.generateLink] failed:', error); return null; }
+      if (error) { console.warn('[admin.generateLink] 失敗:', error); return null; }
       return data?.properties?.action_link ?? null;
-    } catch (e: any) { console.warn('[generateMagicLink] unexpected:', e); return null; }
+    } catch (e: any) { console.warn('[generateMagicLink] 未預期錯誤:', e); return null; }
+  }
+
+  /**
+   * [v46.2 新增] 組合密件副本 (BCC) 的收件者列表。
+   * @returns {string[]} BCC 收件者的 Email 陣列。
+   */
+  private _getBccRecipients(): string[] {
+    const primaryBcc = 'a896214@gmail.com'; // 固定的主要通知對象
+    const additionalBcc = Deno.env.get('ORDER_MAIL_BCC'); // 從環境變數讀取的額外對象
+
+    const recipients = [primaryBcc];
+    if (additionalBcc) {
+      recipients.push(additionalBcc);
+    }
+    
+    // 使用 Set 去除重複的 Email，以防萬一
+    return [...new Set(recipients)];
   }
 
   private _validateRequest(data: any): { valid: boolean; message?: string } {
@@ -285,7 +299,7 @@ ${antiFraud}
   }
 
   async handleRequest(req: Request): Promise<Response> {
-    console.log(`[${new Date().toISOString()}] create-order-from-cart received a request.`);
+    console.log(`[${new Date().toISOString()}] create-order-from-cart 收到一個請求。`);
     
     const requestData = await req.json().catch(() => ({}));
     const validation = this._validateRequest(requestData);
@@ -307,9 +321,9 @@ ${antiFraud}
       if (user) {
         userId = user.id;
         isAnonymous = !!user.is_anonymous;
-        console.log(`[INFO] Request authorized for user: ${userId} (Anonymous: ${isAnonymous})`);
+        console.log(`[資訊] 請求已授權給使用者: ${userId} (匿名: ${isAnonymous})`);
       } else {
-         console.warn(`[WARN] Invalid token received. Proceeding as guest.`);
+         console.warn(`[警告] 收到無效的 token。將以訪客身份繼續。`);
       }
     } 
     
@@ -318,11 +332,10 @@ ${antiFraud}
       if (maybeExistingUserId) {
         userId = maybeExistingUserId;
         wasAutoLinked = true;
-        console.log(`[INFO] Guest email matches existing member. Auto-linking order to user: ${userId}`);
+        console.log(`[資訊] 訪客 Email 匹配到已存在會員。自動將訂單歸戶至使用者: ${userId}`);
       }
     }
     
-    // [v46.1 核心修正] 在写入订单前，呼叫“守卫”函式
     if (userId) {
         await this._ensureProfileExists(userId);
     }
@@ -361,7 +374,7 @@ ${antiFraud}
     }).select().single();
 
     if (orderError) {
-      console.error('[orders.insert] error:', orderError);
+      console.error('[orders.insert] 錯誤:', orderError);
       return new Response(JSON.stringify({ error: { message: `建立訂單失敗: ${orderError.message}` } }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
@@ -384,15 +397,18 @@ ${antiFraud}
         magicLinkForMail = await this._generateMagicLink(shippingDetails.email);
     }
     
+    // [v46.2 核心修正] 呼叫輔助函式取得 BCC 列表
+    const bccRecipients = this._getBccRecipients();
+
     await this.resend.emails.send({
       from: `${Deno.env.get('ORDER_MAIL_FROM_NAME') ?? 'Green Health 訂單中心'} <${Deno.env.get('ORDER_MAIL_FROM_ADDR') ?? 'sales@greenhealthtw.com.tw'}>`,
       to: [newOrder.customer_email],
-      ...(Deno.env.get('ORDER_MAIL_BCC') ? { bcc: [Deno.env.get('ORDER_MAIL_BCC')] } : {}),
+      bcc: bccRecipients,
       reply_to: Deno.env.get('ORDER_MAIL_REPLY_TO') ?? 'service@greenhealthtw.com.tw',
       subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
       text: this._createOrderEmailText(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, (isAnonymous && !wasAutoLinked) ? null : magicLinkForMail),
     }).catch(emailErr => {
-        console.error(`[WARNING] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
+        console.error(`[警告] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
     });
 
     return new Response(JSON.stringify({
@@ -417,7 +433,7 @@ Deno.serve(async (req) => {
     const handler = new CreateUnifiedOrderHandler();
     return await handler.handleRequest(req);
   } catch (error: any) {
-    console.error('[create-order-from-cart] 未攔截錯誤:', error?.message, error?.stack);
+    console.error('[create-order-from-cart] 未攔截的錯誤:', error?.message, error?.stack);
     return new Response(
       JSON.stringify({ error: { message: `[create-order-from-cart] ${error?.message ?? 'Unknown error'}` } }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
