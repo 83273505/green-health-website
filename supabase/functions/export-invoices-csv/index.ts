@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/export-invoices-csv/index.ts
-// 版本: v47.1 - 語法修正版
+// 版本: v47.2 - 模組引用修正版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -10,14 +10,14 @@
  * @description 為後台管理員提供一個備用的發票開立方案。此函式會查詢所有
  *              「已出貨」且「待開立」的發票，並將其轉換為速買配 (SmilePay)
  *              批次檔案上傳格式所要求的 CSV 檔案。
- * @version v47.1
+ * @version v47.2
  * 
- * @update v47.1 - 移除非程式碼文字，解決部署時的語法解析錯誤。
+ * @update v47.2 - 修正 import 語句以對齊 import_map.json 的解析規則。
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
-import { stringify } from 'std/csv/stringify.ts';
+import { stringify } from 'std/csv'; // [v47.2 核心修正] 更改引用路徑
 
 // 速買配 CSV 檔案的欄位標頭 (順序至關重要)
 const CSV_HEADERS = [
