@@ -1,17 +1,25 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/clients/SmilePayAPIClient.ts
+// 版本: v46.3 - 網路逾時加固 (穩定性提升版)
 // ------------------------------------------------------------------------------
-// 【速買配 API 客戶端】
-// ------------------------------------------------------------------------------
-// 此類別封裝了與速買配 (SmilePay) 電子發票 API 溝通的所有底層細節，
-// 包括認證、URL 構建、POST 表單請求以及 XML 回應解析。
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
-// --- 型別定義 (與 API 文件對應) ---
-
 /**
- * 發送給速買配「開立發票」API 的參數物件結構。
+ * @file SmilePay API Client (速買配 API 客戶端)
+ * @description 封裝與速買配 API 溝通的細節。
+ * @version v46.3
+ * 
+ * @update v46.3 - [NETWORK TIMEOUT HARDENING]
+ * 1. [核心加固] 新增了一個私有方法 `_fetchWithTimeout`，該方法使用 `AbortController`
+ *          為所有對外的 `fetch` 請求增加了一個 15 秒的逾時機制。
+ * 2. [功能整合] `issueInvoice` 和 `voidInvoice` 方法現在都透過 `_fetchWithTimeout`
+ *          來發送請求，確保任何外部 API 呼叫都不會因網路延遲而無限期等待。
+ * 3. [原理] 此修改能有效防止因第三方 API 無回應而導致 Edge Function 執行超時
+ *          的問題，顯著提升了系統在不穩定網路環境下的健壯性。
+ * 4. [型別修正] 將 `UnitTAX` 參數加入 `SmilePayInvoiceParams` 介面，維持型別一致性。
  */
+
 export interface SmilePayInvoiceParams {
   InvoiceDate: string;
   InvoiceTime: string;
@@ -34,13 +42,11 @@ export interface SmilePayInvoiceParams {
   CarrierID2?: string;
   LoveKey?: string;
   Unit?: string;
+  UnitTAX?: 'Y' | 'N'; // [v46.3] 新增型別定義
   data_id?: string;
   orderid?: string;
 }
 
-/**
- * 從速買配 API 收到的、經過解析的 XML 回應物件結構。
- */
 export interface SmilePayResponse {
   success: boolean;
   status: number;
@@ -63,9 +69,6 @@ export interface SmilePayResponse {
   };
 }
 
-/**
- * 自訂錯誤類別，用於封裝 API 請求過程中發生的錯誤。
- */
 export class SmilePayAPIError extends Error {
   constructor(message: string, public originalError?: any) {
     super(message);
@@ -73,12 +76,11 @@ export class SmilePayAPIError extends Error {
   }
 }
 
-// --- 主要的 API 客戶端類別 ---
-
 export class SmilePayAPIClient {
   private grvc: string;
   private verifyKey: string;
   private baseUrl: string;
+  private readonly TIMEOUT = 15000; // 15 秒
 
   constructor() {
     this.grvc = Deno.env.get('SMILEPAY_GRVC') || '';
@@ -89,7 +91,6 @@ export class SmilePayAPIClient {
       throw new Error("SmilePay API 憑證未設定。");
     }
 
-    // 根據環境變數，自動切換使用正式或測試的 API URL
     const isProduction = Deno.env.get('ENVIRONMENT') === 'production';
     this.baseUrl = isProduction 
       ? 'https://ssl.smse.com.tw/api'
@@ -97,42 +98,28 @@ export class SmilePayAPIClient {
     console.log(`[SmilePayAPIClient] 已初始化，目標環境: ${isProduction ? 'Production' : 'Test'}`);
   }
 
-  /**
-   * 呼叫「開立發票」API
-   * @param params - 符合 SmilePayInvoiceParams 格式的發票資料
-   * @returns {Promise<SmilePayResponse>} - 解析後的 API 回應
-   */
   async issueInvoice(params: SmilePayInvoiceParams): Promise<SmilePayResponse> {
     const urlParams = this._buildUrlParams({
       Grvc: this.grvc,
       Verify_key: this.verifyKey,
       ...params
     });
-
     const url = `${this.baseUrl}/SPEinvoice_Storage.asp`;
-    
     try {
-      const response = await fetch(url, {
+      const response = await this._fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: urlParams
       });
-
       const xmlText = await response.text();
       return this._parseXMLResponse(xmlText);
     } catch (error) {
       console.error('[SmilePayAPIClient] issueInvoice 請求失敗:', error);
-      throw new SmilePayAPIError('向速買配 API 發送請求時失敗。', error);
+      const message = error.name === 'AbortError' ? '向速買配 API 發送請求時逾時。' : '向速買配 API 發送請求時失敗。';
+      throw new SmilePayAPIError(message, error);
     }
   }
 
-  /**
-   * 呼叫「作廢發票」API
-   * @param invoiceNumber - 要作廢的發票號碼
-   * @param invoiceDate - 原始發票開立日期 (YYYY/MM/DD)
-   * @param reason - 作廢原因
-   * @returns {Promise<SmilePayResponse>} - 解析後的 API 回應
-   */
   async voidInvoice(invoiceNumber: string, invoiceDate: string, reason: string): Promise<SmilePayResponse> {
     const urlParams = this._buildUrlParams({
       Grvc: this.grvc,
@@ -142,62 +129,59 @@ export class SmilePayAPIClient {
       types: 'Cancel',
       CancelReason: reason
     });
-
     const url = `${this.baseUrl}/SPEinvoice_Storage_Modify.asp`;
-
     try {
-      const response = await fetch(url, {
+      const response = await this._fetchWithTimeout(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: urlParams
       });
-
       const xmlText = await response.text();
-      return this._parseXMLResponse(xmlText); // 作廢的回應格式與開立相似，可共用解析器
+      return this._parseXMLResponse(xmlText);
     } catch (error) {
       console.error('[SmilePayAPIClient] voidInvoice 請求失敗:', error);
-      throw new SmilePayAPIError('向速買配作廢發票 API 發送請求時失敗。', error);
+      const message = error.name === 'AbortError' ? '向速買配作廢發票 API 發送請求時逾時。' : '向速買配作廢發票 API 發送請求時失敗。';
+      throw new SmilePayAPIError(message, error);
     }
   }
 
-  /**
-   * [私有] 將物件轉換為 URL-encoded 字串
-   * @param params - 包含所有請求參數的物件
-   * @returns {string} - URL-encoded 格式的字串
-   */
+  // [v46.3 新增] 帶有逾時機制的 fetch 封裝
+  private async _fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT);
+    
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
   private _buildUrlParams(params: Record<string, any>): string {
     const urlParams = new URLSearchParams();
-    
     Object.entries(params).forEach(([key, value]) => {
-      // 過濾掉 null, undefined 或空字串的參數
       if (value !== null && value !== undefined && value !== '') {
         urlParams.append(key, String(value));
       }
     });
-
     return urlParams.toString();
   }
 
-  /**
-   * [私有] 使用正則表達式解析速買配回傳的簡單 XML
-   * @param xmlText - 從 API 收到的 XML 回應字串
-   * @returns {SmilePayResponse} - 格式化後的 JavaScript 物件
-   */
   private _parseXMLResponse(xmlText: string): SmilePayResponse {
     try {
       const getXMLValue = (tag: string): string => {
         const match = xmlText.match(new RegExp(`<${tag}>(.*?)</${tag}>`, 'i'));
         return match ? match[1].trim() : '';
       };
-
       const status = parseInt(getXMLValue('Status'), 10);
       const success = status === 0;
       const desc = getXMLValue('Desc');
-
       return {
-        success,
-        status,
-        desc,
+        success, status, desc,
         data: success ? {
           grvc: getXMLValue('Grvc'),
           orderno: getXMLValue('orderno'),
@@ -221,11 +205,6 @@ export class SmilePayAPIClient {
     }
   }
 
-  /**
-   * [私有] 根據狀態碼回傳人類可讀的錯誤訊息
-   * @param code - 速買配 API 回傳的狀態碼
-   * @returns {string} - 對應的錯誤訊息
-   */
   private _getErrorMessage(code: number): string {
     const errorMessages: Record<number, string> = {
       0: '成功',
