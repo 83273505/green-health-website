@@ -1,8 +1,8 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/export-invoices-csv/index.ts
-// 版本: v47.0 - 批次匯出 CSV (備用方案新建)
+// 版本: v47.1 - 語法修正版
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接使用】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
@@ -10,7 +10,9 @@
  * @description 為後台管理員提供一個備用的發票開立方案。此函式會查詢所有
  *              「已出貨」且「待開立」的發票，並將其轉換為速買配 (SmilePay)
  *              批次檔案上傳格式所要求的 CSV 檔案。
- * @version v47.0
+ * @version v47.1
+ * 
+ * @update v47.1 - 移除非程式碼文字，解決部署時的語法解析錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -66,7 +68,6 @@ Deno.serve(async (req) => {
 
     if (error) throw error;
     if (!invoices || invoices.length === 0) {
-      // 如果沒有待處理發票，回傳一個帶有提示的空檔案
       const emptyCsv = await stringify([CSV_HEADERS, ["沒有待處理的發票"]]);
       return new Response(emptyCsv, { headers: { ...corsHeaders, 'Content-Type': 'text/csv' } });
     }
@@ -76,7 +77,6 @@ Deno.serve(async (req) => {
       const order = invoice.orders;
       const now = new Date(order.created_at);
 
-      // 處理品項、折扣與運費
       const descriptions: string[] = (order.order_items || []).map(item => item.product_variants?.name || '商品');
       const quantities: string[] = (order.order_items || []).map(item => String(item.quantity));
       const unitPrices: string[] = (order.order_items || []).map(item => String(item.price_at_order));
@@ -100,7 +100,6 @@ Deno.serve(async (req) => {
       
       const carrierMapping: Record<string, string> = { 'member': 'EJ0113', 'mobile': '3J0002', 'certificate': 'CQ0001' };
 
-      // 按照 CSV_HEADERS 的順序建立每一列的資料
       return {
         "發票日期": `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`,
         "發票時間": `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
@@ -125,10 +124,10 @@ Deno.serve(async (req) => {
         "買受人統編": invoice.vat_number || '',
         "買受人公司名稱": invoice.company_name || '',
         "買受人姓名": invoice.type !== 'business' ? (invoice.recipient_name || order.customer_name) : '',
-        "電話": '', // 根據指示不提供
+        "電話": '',
         "傳真": '',
         "信箱": invoice.recipient_email || order.customer_email,
-        "地址": '', // 根據指示不提供
+        "地址": '',
         "載具類型": invoice.type === 'cloud' ? (carrierMapping[invoice.carrier_type] || '') : '',
         "載具ID明碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
         "載具ID暗碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
@@ -154,12 +153,4 @@ Deno.serve(async (req) => {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-});```
-
----
-
-**執行總結**
-
-此後端函式已建立完成。在您將其部署至 Supabase 後，我們就可以進行前端的最後修改，加入一個按鈕來呼叫此函式，從而完成整個備用方案的開發。
-
-我已準備就緒，靜候您的下一步指示。
+});
