@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v46.2 - 新增訂單通知副本與正體化
+// 版本: v46.3 - 引導式註冊郵件流程 (完整版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,17 +12,17 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用「權限透傳」模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v46.2
+ * @version v46.3
  * 
- * @update v46.2 - [ADD ORDER NOTIFICATION BCC & LOCALIZATION]
- * 1. [核心功能] 新增了訂單通知副本功能。現在，每一封寄給顧客的訂單確認信，
- *          都會自動密件副本 (BCC) 一封至 'a896214@gmail.com'，以便即時掌握訂單資訊。
- * 2. [架構優化] 新增了 `_getBccRecipients` 私有輔助函式，專門處理密件副本收件者
- *          列表的組合邏輯，使程式碼更清晰且易於維護。
- * 3. [正體化] 根據約定，對檔案內所有註解、日誌及函式內的簡體中文進行了全面的
- *          標準化校訂。
+ * @update v46.3 - [GUIDED REGISTRATION EMAIL FLOW]
+ * 1. [核心流程修正] 重構了 `_createOrderEmailText` 函式，移除了舊的「無感註冊」
+ *          連結，改為產生一個引導式的 HTML 按鈕。
+ * 2. [智慧判斷] 現在只有當訂單來自匿名訪客時，確認信中才會包含「立即加入會員」
+ *          的行動呼籲按鈕，避免對已登入會員造成干擾。
+ * 3. [技術實現] 郵件內容現在以 HTML 格式產生，確保了按鈕樣式在多數郵件客戶端中
+ *          的相容性。`resend.emails.send` 的呼叫也從 `text` 改為 `html`。
  * 
- * @update v46.1 - 「守衛回歸」終局修正
+ * @update v46.2 - 新增訂單通知副本與正體化
  */
 
 import { createClient, Resend } from '../_shared/deps.ts'
@@ -119,91 +119,80 @@ class CreateUnifiedOrderHandler {
     };
   }
 
-  private _createOrderEmailText(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, magicLink?: string | null): string {
+  /**
+   * [v46.3 核心修正] 產生訂單確認信的 HTML 內容。
+   */
+  private _createOrderEmailHtml(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, isAnonymous: boolean, magicLink?: string | null): string {
     const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
-    const itemsList = (orderItems || []).map((item: any) => {
+    const itemsHtml = (orderItems || []).map((item: any) => {
       const priceAtOrder = Number(item.price_at_order);
       const quantity = Number(item.quantity);
       const variantName = item.product_variants?.name || '未知品項';
-      if (Number.isNaN(priceAtOrder) || Number.isNaN(quantity)) { return `• ${variantName} (數量: ${item.quantity}) - 金額計算錯誤`; }
+      if (Number.isNaN(priceAtOrder) || Number.isNaN(quantity)) { return `<li style="padding-bottom: 10px;">${variantName} (數量: ${item.quantity}) - 金額計算錯誤</li>`; }
       const itemTotal = priceAtOrder * quantity;
-      return `• ${variantName}\n  數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}`;
-    }).join('\n\n');
-    const antiFraud = `
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ 防詐騙提醒
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Green Health 綠健 絕對不會以任何名義，透過電話、簡訊或 Email 要求您操作 ATM、提供信用卡資訊或點擊不明連結。我們不會要求您解除分期付款或更改訂單設定。
+      return `<li style="padding-bottom: 10px;">${variantName}<br/><small style="color:#555;">數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}</small></li>`;
+    }).join('');
 
-若您接到任何可疑來電或訊息，請不要理會，並可直接透過官網客服管道與我們聯繫確認，或撥打 165 反詐騙諮詢專線。
-`.trim();
-    
-    const seamlessSignupCTA = (!magicLink && order.user_id) ? `
+    // [v46.3 新增] 只有匿名訪客才顯示註冊引導
+    let signupCtaHtml = '';
+    if (isAnonymous) {
+        const signupUrl = `${Deno.env.get('SITE_URL')}/account-module/index.html?email=${encodeURIComponent(order.customer_email)}`;
+        signupCtaHtml = `
+        <tr><td style="padding: 20px 0; border-top:1px dashed #cccccc;">
+            <h3 style="margin:0 0 10px 0; color:#5E8C61;">✨ 想讓下次購物更快速嗎？</h3>
+            <p style="margin:0 0 15px 0; font-size:14px; color:#555555;">加入會員即可保存您的收件資訊，並隨時查詢訂單狀態！</p>
+            <a href="${signupUrl}" target="_blank" style="background-color: #5E8C61; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">立即加入會員</a>
+        </td></tr>`;
+    }
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✨ 讓下次購物更快速
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-感謝您的訂購！我們已為您保留了本次的收件資訊。
-只需點擊下方連結，設定一組密碼，即可完成註冊，未來購物將能自動帶入資料！
-${Deno.env.get('SITE_URL')}/storefront-module/order-success.html?order_number=${order.order_number}&signup=true&email=${encodeURIComponent(order.customer_email)}
-` : "";
+    const magicLinkHtml = magicLink ? `
+      <tr><td style="padding: 20px 0; border-top:1px dashed #cccccc;">
+          <h3 style="margin:0 0 10px 0; color:#5E8C61;">🔑 快速登入</h3>
+          <p style="margin:0 0 15px 0; font-size:14px; color:#555555;">我們偵測到此 Email 為已註冊之會員。您本次雖未登入，但訂單已自動歸戶。您可以點擊以下安全連結快速登入，查看完整訂單歷史：</p>
+          <a href="${magicLink}" target="_blank" style="background-color: #6c757d; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">安全登入會員中心</a>
+      </td></tr>` : '';
 
-    const maybeMagic = magicLink ? `
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔑 快速登入
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-我們偵測到此 Email 為已註冊之會員。您本次雖未登入，但訂單已自動歸戶。您可以點擊以下安全連結快速登入，查看完整訂單歷史：
-${magicLink}
-` : "";
     return `
-Green Health 綠健 訂單確認
+      <div style="font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; line-height: 1.6; color: #333333; max-width: 600px; margin: 0 auto; border: 1px solid #dddddd; padding: 20px;">
+        <h2 style="color: #5E8C61; text-align: center;">Green Health 綠健 訂單確認</h2>
+        <p>您好，${address.recipient_name}！ 您的訂單已成功建立，以下是訂單詳細資訊：</p>
+        
+        <div style="border-top: 1px solid #eeeeee; margin-top: 20px; padding-top: 20px;">
+          <h3 style="margin-top: 0;">訂單資訊</h3>
+          <p><strong>訂單編號：</strong> ${order.order_number}<br><strong>下單時間：</strong> ${new Date(order.created_at).toLocaleString('zh-TW')}</p>
+        </div>
 
-您好，${address.recipient_name}！
+        <div style="border-top: 1px solid #eeeeee; margin-top: 20px; padding-top: 20px;">
+          <h3 style="margin-top: 0;">訂購商品</h3>
+          <ul style="list-style:none; padding:0;">${itemsHtml}</ul>
+        </div>
+        
+        <div style="border-top: 1px solid #eeeeee; margin-top: 20px; padding-top: 20px;">
+          <h3 style="margin-top: 0;">費用明細</h3>
+          <p>商品小計： ${NumberToTextHelper.formatMoney(order.subtotal_amount)}<br>
+          ${order.coupon_discount > 0 ? `優惠折扣： -${NumberToTextHelper.formatMoney(order.coupon_discount)}<br>` : ''}
+          運送費用： ${NumberToTextHelper.formatMoney(order.shipping_fee)}<br>
+          <strong style="font-size: 1.1em;">總計金額： ${NumberToTextHelper.formatMoney(order.total_amount)}</strong></p>
+        </div>
 
-您的訂單已成功建立，以下是訂單詳細資訊：
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 訂單資訊
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-訂單編號：${order.order_number}
-下單時間：${new Date(order.created_at).toLocaleString('zh-TW')}
-訂單狀態：${order.status}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛒 訂購商品
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${itemsList}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💰 費用明細
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-商品小計：${NumberToTextHelper.formatMoney(order.subtotal_amount)}${order.coupon_discount > 0 ? `\n優惠折扣：-${NumberToTextHelper.formatMoney(order.coupon_discount)}` : ''}
-運送費用：${NumberToTextHelper.formatMoney(order.shipping_fee)}
-─────────────────────────────────
-總計金額：${NumberToTextHelper.formatMoney(order.total_amount)}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚚 配送資訊
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-收件人：${address.recipient_name}
-聯絡電話：${address.phone_number}
-配送地址：${fullAddress}
-配送方式：${shippingMethod?.method_name || '未指定'}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💳 付款資訊
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-付款方式：${paymentMethod?.method_name || '未指定'}
-付款狀態：${order.payment_status}
-${paymentMethod?.instructions ? `付款指示：\n${paymentMethod.instructions}` : ''}
-
-${magicLink ? maybeMagic : seamlessSignupCTA}
-
-${antiFraud}
-
-感謝您選擇 Green Health 綠健
-`.trim();
+        <div style="border-top: 1px solid #eeeeee; margin-top: 20px; padding-top: 20px;">
+          <h3 style="margin-top: 0;">配送與付款資訊</h3>
+          <p><strong>收件人：</strong> ${address.recipient_name}<br><strong>聯絡電話：</strong> ${address.phone_number}<br><strong>配送地址：</strong> ${fullAddress}<br><strong>配送方式：</strong> ${shippingMethod?.method_name || '未指定'}</p>
+          <p><strong>付款方式：</strong> ${paymentMethod?.method_name || '未指定'}<br><strong>付款狀態：</strong> ${order.payment_status}<br>
+          ${paymentMethod?.instructions ? `<strong>付款指示：</strong><br>${paymentMethod.instructions.replace(/\n/g, '<br>')}` : ''}</p>
+        </div>
+        
+        <table width="100%" border="0" cellpadding="0" cellspacing="0">
+          <tbody>
+            ${magicLink ? magicLinkHtml : signupCtaHtml}
+          </tbody>
+        </table>
+        
+        <div style="font-size:12px; color:#999999; border-top:1px solid #eeeeee; padding-top:20px; margin-top: 20px;">
+            <p style="margin:0; text-align:left;"><strong>防詐騙提醒：</strong>Green Health 絕對不會要求您操作 ATM 或提供信用卡資訊。若接到可疑來電，請聯繫我們或撥打 165。</p>
+        </div>
+      </div>
+    `;
   }
   
   private async _handleInvoiceCreation(newOrder: any, invoiceOptions: any) {
@@ -236,7 +225,6 @@ ${antiFraud}
         .upsert({ 
           id: userId, 
           status: 'active',
-          // 刻意不寫入 email, name 等任何會員專屬資料，保持 profiles 表的純淨性
         });
 
       if (upsertError) {
@@ -274,20 +262,13 @@ ${antiFraud}
     } catch (e: any) { console.warn('[generateMagicLink] 未預期錯誤:', e); return null; }
   }
 
-  /**
-   * [v46.2 新增] 組合密件副本 (BCC) 的收件者列表。
-   * @returns {string[]} BCC 收件者的 Email 陣列。
-   */
   private _getBccRecipients(): string[] {
-    const primaryBcc = 'a896214@gmail.com'; // 固定的主要通知對象
-    const additionalBcc = Deno.env.get('ORDER_MAIL_BCC'); // 從環境變數讀取的額外對象
-
+    const primaryBcc = 'a896214@gmail.com';
+    const additionalBcc = Deno.env.get('ORDER_MAIL_BCC');
     const recipients = [primaryBcc];
     if (additionalBcc) {
       recipients.push(additionalBcc);
     }
-    
-    // 使用 Set 去除重複的 Email，以防萬一
     return [...new Set(recipients)];
   }
 
@@ -332,7 +313,10 @@ ${antiFraud}
       if (maybeExistingUserId) {
         userId = maybeExistingUserId;
         wasAutoLinked = true;
+        isAnonymous = false; // 已歸戶，不再視為匿名
         console.log(`[資訊] 訪客 Email 匹配到已存在會員。自動將訂單歸戶至使用者: ${userId}`);
+      } else {
+        isAnonymous = true; // 找不到對應會員，確認為匿名訪客
       }
     }
     
@@ -397,7 +381,6 @@ ${antiFraud}
         magicLinkForMail = await this._generateMagicLink(shippingDetails.email);
     }
     
-    // [v46.2 核心修正] 呼叫輔助函式取得 BCC 列表
     const bccRecipients = this._getBccRecipients();
 
     await this.resend.emails.send({
@@ -406,7 +389,8 @@ ${antiFraud}
       bcc: bccRecipients,
       reply_to: Deno.env.get('ORDER_MAIL_REPLY_TO') ?? 'service@greenhealthtw.com.tw',
       subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
-      text: this._createOrderEmailText(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, (isAnonymous && !wasAutoLinked) ? null : magicLinkForMail),
+      // [v46.3 核心修正] 從 text 改為 html，並傳入 isAnonymous 參數
+      html: this._createOrderEmailHtml(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, isAnonymous, magicLinkForMail),
     }).catch(emailErr => {
         console.error(`[警告] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
     });
