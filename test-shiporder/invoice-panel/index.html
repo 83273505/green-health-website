@@ -2,6 +2,10 @@
 <html lang="zh-Hant">
 <head>
     <meta charset="UTF-8">
+   <!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>發票管理儀表板 - Green Health</title>
     <meta name="robots" content="noindex, nofollow" />
@@ -40,7 +44,11 @@
 
             <!-- Tab 1: 待開發票列表 -->
             <div id="pending-invoices-view" class="tab-content active invoice-list-container">
-                <!-- [v47.0 HTML Re-architecture] 從 div 列表升級為功能完整的表格 -->
+                <!-- [v47.1 新增] 備用方案的操作按鈕 -->
+                <div class="table-actions">
+                    <button id="btn-export-csv" class="btn-secondary">匯出待開立發票 CSV 檔</button>
+                </div>
+                
                 <div class="invoice-table-container">
                     <table class="invoice-table">
                         <thead>
@@ -65,7 +73,6 @@
             <div id="search-invoices-view" class="tab-content hidden">
                 <div class="filters-and-search">
                     <form id="invoice-search-form" class="invoice-search-form">
-                        <!-- [v47.0 HTML Simplification] 根據新版 RPC 簡化搜尋欄位 -->
                         <div class="form-group">
                             <label for="search-term">關鍵字搜尋</label>
                             <input type="text" id="search-term" placeholder="訂單號 / 發票號 / Email / 統編...">
@@ -95,7 +102,6 @@
                     </form>
                 </div>
                 <div id="search-results-container" class="invoice-table-container">
-                    <!-- [v47.0 HTML Re-architecture] 查詢結果也將是完整的表格 -->
                      <table class="invoice-table">
                         <thead>
                             <tr>
@@ -117,7 +123,6 @@
         </div>
     </main>
 
-    <!-- [v47.0 HTML Re-architecture] 徹底重構為「審核與修正」彈窗 -->
     <div id="details-modal" class="modal-overlay hidden">
         <div class="modal-content large">
             <div class="modal-header">
@@ -147,21 +152,18 @@
                             <input type="text" id="edit-invoice-type-display" readonly class="readonly-input">
                         </div>
                     </div>
-                    <!-- 公司戶發票欄位 -->
                     <div id="edit-form-business" class="invoice-form-fields hidden">
                         <div class="form-grid">
                             <div class="form-group"><label for="edit-vat-number">統一編號</label><input type="text" id="edit-vat-number" maxlength="8"></div>
                             <div class="form-group"><label for="edit-company-name">公司抬頭</label><input type="text" id="edit-company-name"></div>
                         </div>
                     </div>
-                    <!-- 雲端發票欄位 -->
                     <div id="edit-form-cloud" class="invoice-form-fields hidden">
                          <div class="form-grid">
                             <div class="form-group"><label for="edit-carrier-type">載具類型</label><input type="text" id="edit-carrier-type"></div>
                             <div class="form-group"><label for="edit-carrier-number">載具號碼</label><input type="text" id="edit-carrier-number"></div>
                         </div>
                     </div>
-                    <!-- 捐贈發票欄位 -->
                     <div id="edit-form-donation" class="invoice-form-fields hidden">
                         <div class="form-group full-width"><label for="edit-donation-code">愛心碼</label><input type="text" id="edit-donation-code"></div>
                     </div>

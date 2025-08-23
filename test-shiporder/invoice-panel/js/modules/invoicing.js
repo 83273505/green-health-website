@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.1 - 功能閉環 (勝利收官版)
+// 版本: v47.2 - 備用方案整合版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,16 +9,14 @@
  * @file Invoicing Module (發票管理模組)
  * @description 處理發票管理後台的完整業務邏輯，實現「待辦發票工作台」及
  *              具備審核、修正、品項校對、開立與作廢功能於一體的作業中心。
- * @version v47.1
+ * @version v47.2
  * 
- * @update v47.1 - [FEATURE COMPLETE & FINALIZATION]
- * 1. [功能閉環] `handleSaveChanges` 函式已完整實作。現在它能夠正確地從
- *          彈窗表單中收集修改後的資料，並呼叫新建的 `update-invoice-details`
- *          後端函式，將變更安全地儲存至資料庫。
- * 2. [體驗優化] 儲存成功後，會更新本地快取 (`invoicesCache`) 並重新渲染
- *          彈窗內的「原始資訊」區塊，讓操作員能立刻看到變更後的結果。
- * 3. [流程整合] 至此，後台改善藍圖中的所有核心功能均已完成並整合，
- *          實現了完整的「審核-修正-儲存-開立」作業流程。
+ * @update v47.2 - [BACKUP PLAN INTEGRATION]
+ * 1. [備用方案] 新增 `handleExportCsv` 函式，並將其綁定至「匯出 CSV」按鈕。
+ * 2. [功能實現] 此函式會呼叫 `export-invoices-csv` 後端函式，並能正確處理
+ *          回傳的 Blob 檔案流，動態產生連結以觸發瀏覽器下載 CSV 檔案。
+ * 3. [流程整合] 至此，為應對 API 直連失敗而設計的「批次匯出」備用方案
+ *          已完全整合至前端介面，功能正式上線。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -31,7 +29,7 @@ let currentUser = null;
 let invoicesCache = new Map();
 let currentTab = 'pending';
 
-// --- v47.0 DOM 元素全面更新 ---
+// --- v47.2 DOM 元素更新 ---
 const mainContent = document.getElementById('main-content');
 const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
@@ -45,6 +43,8 @@ const searchTermInput = document.getElementById('search-term');
 const searchStatusSelect = document.getElementById('search-status');
 const searchDateFromInput = document.getElementById('search-date-from');
 const searchDateToInput = document.getElementById('search-date-to');
+const btnExportCsv = document.getElementById('btn-export-csv'); // [v47.2 新增]
+// 彈窗 (Modal)
 const modalOverlay = document.getElementById('details-modal');
 const modalTitle = document.getElementById('modal-title');
 const modalNotification = document.getElementById('modal-notification');
@@ -127,7 +127,7 @@ async function handleAdvancedSearch(event) {
     }
 }
 
-// --- 渲染邏輯 ---
+// --- 渲染邏輯 (與 v47.1 相同) ---
 function renderInvoiceTable(tbody, invoices, mode) {
     if (!invoices || invoices.length === 0) {
         const colspan = 7;
@@ -145,17 +145,9 @@ function renderInvoiceTable(tbody, invoices, mode) {
         else if (invoice.type === 'cloud') keyInfo = `載具: ${invoice.carrier_type}`;
 
         if (mode === 'pending') {
-            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">
-                    <td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td>
-                    <td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td>
-                    <td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td>
-                    <td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
+            return `<tr data-invoice-id="${invoice.id}" class="invoice-row"><td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td><td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td><td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
         } else {
-            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">
-                    <td><span class="status-tag ${statusInfo.class}">${statusInfo.text}</span></td>
-                    <td>${invoice.invoice_number || '---'}</td><td>${invoice.order_number}</td>
-                    <td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td>
-                    <td>${issuedDate}</td><td><button class="btn-secondary btn-details">詳情</button></td></tr>`;
+            return `<tr data-invoice-id="${invoice.id}" class="invoice-row"><td><span class="status-tag ${statusInfo.class}">${statusInfo.text}</span></td><td>${invoice.invoice_number || '---'}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${issuedDate}</td><td><button class="btn-secondary btn-details">詳情</button></td></tr>`;
         }
     }).join('');
 }
@@ -176,31 +168,17 @@ function showDetailsModal(invoice) {
     editInvoiceTypeDisplay.value = typeMap[invoice.type] || invoice.type;
     [businessFormFields, cloudFormFields, donationFormFields].forEach(f => f.classList.add('hidden'));
     switch(invoice.type) {
-        case 'business':
-            businessFormFields.classList.remove('hidden');
-            editVatNumberInput.value = invoice.vat_number || '';
-            editCompanyNameInput.value = invoice.company_name || '';
-            break;
-        case 'cloud':
-            cloudFormFields.classList.remove('hidden');
-            editCarrierTypeInput.value = invoice.carrier_type || '';
-            editCarrierNumberInput.value = invoice.carrier_number || '';
-            break;
-        case 'donation':
-            donationFormFields.classList.remove('hidden');
-            editDonationCodeInput.value = invoice.donation_code || '';
-            break;
+        case 'business': businessFormFields.classList.remove('hidden'); editVatNumberInput.value = invoice.vat_number || ''; editCompanyNameInput.value = invoice.company_name || ''; break;
+        case 'cloud': cloudFormFields.classList.remove('hidden'); editCarrierTypeInput.value = invoice.carrier_type || ''; editCarrierNumberInput.value = invoice.carrier_number || ''; break;
+        case 'donation': donationFormFields.classList.remove('hidden'); editDonationCodeInput.value = invoice.donation_code || ''; break;
     }
     
-    modalItemsTbody.innerHTML = (invoice.order_items || []).map(item => `<tr><td>${item.variant_name}</td>
-        <td>${item.quantity}</td><td>${formatPrice(item.price_at_order)}</td>
-        <td>${formatPrice(item.quantity * item.price_at_order)}</td></tr>`).join('');
+    modalItemsTbody.innerHTML = (invoice.order_items || []).map(item => `<tr><td>${item.variant_name}</td><td>${item.quantity}</td><td>${formatPrice(item.price_at_order)}</td><td>${formatPrice(item.quantity * item.price_at_order)}</td></tr>`).join('');
     modalTotalAmountEl.textContent = formatPrice(invoice.total_amount);
 
     [btnSaveChanges, btnIssueInvoice, btnVoidInvoice].forEach(btn => btn.classList.add('hidden'));
     if (invoice.status === 'pending' || invoice.status === 'failed') {
-        btnSaveChanges.classList.remove('hidden');
-        btnIssueInvoice.classList.remove('hidden');
+        btnSaveChanges.classList.remove('hidden'); btnIssueInvoice.classList.remove('hidden');
     }
     if (invoice.status === 'issued') {
         btnVoidInvoice.classList.remove('hidden');
@@ -209,9 +187,7 @@ function showDetailsModal(invoice) {
 }
 
 // --- 事件處理 ---
-function closeModal() {
-    modalOverlay.classList.add('hidden');
-}
+function closeModal() { modalOverlay.classList.add('hidden'); }
 
 function handleTabClick(event) {
     const clickedTab = event.target.closest('.tab-link');
@@ -229,37 +205,22 @@ async function handleSaveChanges() {
     const invoiceId = editInvoiceIdInput.value;
     const invoice = invoicesCache.get(invoiceId);
     if (!invoice) return;
-
     const updates = {};
     switch (invoice.type) {
-        case 'business':
-            updates.vat_number = editVatNumberInput.value.trim();
-            updates.company_name = editCompanyNameInput.value.trim();
-            break;
-        case 'cloud':
-            updates.carrier_type = editCarrierTypeInput.value.trim();
-            updates.carrier_number = editCarrierNumberInput.value.trim();
-            break;
-        case 'donation':
-            updates.donation_code = editDonationCodeInput.value.trim();
-            break;
+        case 'business': updates.vat_number = editVatNumberInput.value.trim(); updates.company_name = editCompanyNameInput.value.trim(); break;
+        case 'cloud': updates.carrier_type = editCarrierTypeInput.value.trim(); updates.carrier_number = editCarrierNumberInput.value.trim(); break;
+        case 'donation': updates.donation_code = editDonationCodeInput.value.trim(); break;
     }
-    
     setFormSubmitting(btnSaveChanges, true, '儲存中...');
     try {
         const client = await supabase;
-        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.UPDATE_INVOICE_DETAILS, { 
-            body: { invoiceId, updates } 
-        });
+        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.UPDATE_INVOICE_DETAILS, { body: { invoiceId, updates } });
         if (error) throw error;
         if (data.error) throw new Error(data.error);
-
-        // 更新本地快取並重新渲染彈窗
         const updatedInvoice = { ...invoice, ...updates };
         invoicesCache.set(invoiceId, updatedInvoice);
-        showDetailsModal(updatedInvoice); // 用更新後的資料重新渲染
+        showDetailsModal(updatedInvoice);
         showNotification(data.message || '發票資料已成功更新。', 'success', 'modal-notification');
-
     } catch (err) {
         console.error("儲存修改失敗:", err);
         showNotification(`儲存失敗: ${err.message}`, 'error', 'modal-notification');
@@ -273,7 +234,6 @@ async function handleIssueInvoice() {
     const invoice = invoicesCache.get(invoiceId);
     if (!invoice) return;
     if (!confirm(`即將為訂單 #${invoice.order_number} 正式開立發票，此操作無法復原。是否確認？`)) return;
-
     setFormSubmitting(btnIssueInvoice, true, '開立中...');
     try {
         const client = await supabase;
@@ -295,7 +255,6 @@ async function handleVoidInvoice() {
     const invoiceId = editInvoiceIdInput.value;
     const reason = prompt('請輸入作廢原因 (此原因將提交給財政部，20字以內)：');
     if (!reason || reason.trim() === '') return;
-
     setFormSubmitting(btnVoidInvoice, true, '作廢中...');
     try {
         const client = await supabase;
@@ -312,6 +271,37 @@ async function handleVoidInvoice() {
         setFormSubmitting(btnVoidInvoice, false, '作廢此發票');
     }
 }
+
+// [v47.2 新增] 處理 CSV 匯出
+async function handleExportCsv() {
+    setFormSubmitting(btnExportCsv, true, '正在產生檔案...');
+    try {
+        const client = await supabase;
+        // 注意：invoke 檔案時，需要手動設定回傳類型
+        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.EXPORT_INVOICES_CSV, {
+            responseType: 'blob' 
+        });
+        if (error) throw error;
+
+        const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = `invoices_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+        showNotification('CSV 檔案已成功匯出。', 'success', notificationMessageEl);
+    } catch (err) {
+        console.error("匯出 CSV 失敗:", err);
+        showNotification(`匯出 CSV 失敗: ${err.message}`, 'error', notificationMessageEl);
+    } finally {
+        setFormSubmitting(btnExportCsv, false, '匯出待開立發票 CSV 檔');
+    }
+}
+
 
 function bindEvents() {
     logoutBtn.addEventListener('click', handleInvoiceLogout);
@@ -333,6 +323,7 @@ function bindEvents() {
     btnSaveChanges.addEventListener('click', handleSaveChanges);
     btnIssueInvoice.addEventListener('click', handleIssueInvoice);
     btnVoidInvoice.addEventListener('click', handleVoidInvoice);
+    btnExportCsv.addEventListener('click', handleExportCsv); // [v47.2 新增]
 }
 
 export async function init() {
