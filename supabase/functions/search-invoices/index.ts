@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/search-invoices/index.ts
-// 版本: v46.0 - RPC 架構重構
+// 版本: v46.1 - 獨立欄位查詢對齊
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,17 +8,15 @@
 /**
  * @file Search Invoices Function (搜尋發票函式)
  * @description 發票管理後台的核心後端服務。
- * @version v46.0
+ * @version v46.1
  * 
- * @update v46.0 - [RPC ARCHITECTURE REFACTOR]
- * 1. [核心架構重構] 徹底移除了所有客戶端的動態查詢建構邏輯 (.eq, .or 等)，
- *          改為直接呼叫資料庫中的 `search_invoices_advanced` RPC 函式。
- * 2. [職責轉移] 將所有複雜的篩選、JOIN 和搜尋邏輯完全轉移到資料庫層，
- *          使得此 Edge Function 變得極其輕量、穩定且易於維護。
- * 3. [功能對齊] 為了支援新的 UI (例如獨立欄位查詢)，函式現在能接收並傳遞
- *          一個更結構化的篩選器物件給 RPC 函式。
- * 4. [錯誤根除] 此修改從根本上解決了因 PostgREST .or() 語法限制而導致的
- *          所有 `PGRST100` 解析失敗錯誤。
+ * @update v46.1 - [ALIGN WITH DETAILED SEARCH FIELDS]
+ * 1. [核心對齊] 更新了篩選條件的解析邏輯，以支援前端新的、多欄位的進階
+ *          搜尋表單。現在函式會將多個獨立的搜尋詞（如訂單號、Email 等）
+ *          組合成一個單一的 `_search_term` 參數傳遞給 RPC 函式。
+ * 2. [正體化] 對檔案進行最終的全面正體中文校訂。
+ * 
+ * @update v46.0 - RPC 架構重構
  */
 
 import { createClient } from '../_shared/deps.ts'
@@ -54,11 +52,22 @@ Deno.serve(async (req) => {
     // --- 2. 解析前端傳來的篩選條件 ---
     const filters = await req.json();
 
-    // --- 3. [v46.0 核心修正] 呼叫 RPC 函式執行查詢 ---
+    // [v46.1 核心修正] 將前端的多個獨立搜尋欄位，組合成 RPC 函式所需的單一 searchTerm
+    const searchTerms = [
+        filters.orderNumber,
+        filters.invoiceNumber,
+        filters.email,
+        filters.vatNumber,
+        filters.searchTerm // 保留對舊版通用搜尋詞的兼容
+    ].filter(Boolean); // 過濾掉空值或 undefined
+
+    const combinedSearchTerm = searchTerms.length > 0 ? searchTerms.join(' ') : null;
+
+    // --- 3. 呼叫 RPC 函式執行查詢 ---
     const { data: invoices, error: rpcError } = await supabaseAdmin
       .rpc('search_invoices_advanced', {
         _status: filters.status || null,
-        _search_term: filters.searchTerm || null,
+        _search_term: combinedSearchTerm,
         _date_from: filters.dateFrom || null,
         _date_to: filters.dateTo || null,
         _order_status: filters.orderStatus || null
