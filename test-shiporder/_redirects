@@ -1,0 +1,56 @@
+# ==============================================================================
+# 檔案路徑: test-shiporder/_redirects
+# 版本: v32.0 - 消費者端模組拆分
+# ------------------------------------------------------------------------------
+# 【此為完整檔案，可直接覆蓋】
+# ==============================================================================
+
+# --- 核心 API 路由 (最高優先級) ---
+/.netlify/functions/*             /.netlify/functions/:splat             200
+
+# --- 靜態資源優先處理 (確保 .js, .css 等實體檔案被正確提供) ---
+
+# 共用模組資源
+/_shared/js/*                     /_shared/js/:splat                     200
+
+# 後台模組資源
+/admin/js/*                       /admin/js/:splat                       200
+/admin/css/*                      /admin/css/:splat                      200
+/warehouse-panel/js/*             /warehouse-panel/js/:splat             200
+/warehouse-panel/css/*            /warehouse-panel/css/:splat            200
+/invoice-panel/js/*               /invoice-panel/js/:splat               200
+/invoice-panel/css/*              /invoice-panel/css/:splat              200
+/permission-panel/js/*            /permission-panel/js/:splat            200
+/permission-panel/css/*           /permission-panel/css/:splat           200
+
+# 【核心修正】消費者前端模組拆分後的靜態資源
+# 商店前端 (Storefront)
+/storefront-module/js/*           /storefront-module/js/:splat           200
+/storefront-module/css/*          /storefront-module/css/:splat          200
+/storefront-module/images/*       /storefront-module/images/:splat       200
+# 會員中心 (Account)
+/account-module/js/*              /account-module/js/:splat              200
+/account-module/css/*             /account-module/css/:splat             200
+
+
+# ==============================================================================
+# ⬇️ SPA / MPA 路由回退 ⬇️
+# ==============================================================================
+
+# 後台 SPA 模組回退
+/admin/*                          /admin/index.html                      200
+/warehouse-panel/*                /warehouse-panel/index.html            200
+/invoice-panel/*                  /invoice-panel/index.html              200
+/permission-panel/*               /permission-panel/index.html           200
+
+# 【核心修正】消費者前端 SPA (會員中心) 回退
+# 將所有對 /account/... 的請求，都導向到會員中心的 SPA 入口
+/account/*                        /account-module/index.html             200
+
+# 【核心修正】消費者前端 MPA (商店前端)
+# 這一條規則將優先尋找實體檔案，例如 product-detail.html
+/storefront/*                     /storefront-module/:splat              200
+
+# 最終的「全收」規則
+# 將對根目錄 (/) 或其他未知路徑的訪問，導向到商店的前端首頁
+/*                                /storefront-module/products.html       200

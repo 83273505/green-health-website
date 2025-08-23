@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理後台登入 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+    
+    <link rel="stylesheet" href="/admin/css/admin-style.css">
+</head>
+
+<body id="admin-login">
+
+    <div class="login-container">
+        <div class="login-box">
+            <h1>Green Health</h1>
+            <p>管理後台系統</p>
+
+            <form id="login-form" novalidate>
+                <div class="form-group">
+                    <label for="email">電子郵件</label>
+                    <input type="email" id="email" name="email" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="password">密碼</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                
+                <div id="notification-message"></div>
+
+                <button type="submit" class="btn-submit">登入</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 【核心修正】移除对 config.js 的引用 -->
+    <script type="module" src="/admin/js/core/app.js"></script>
+</body>
+</html>

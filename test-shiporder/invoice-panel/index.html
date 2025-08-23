@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>發票管理儀表板 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+
+    <link rel="stylesheet" href="/invoice-panel/css/invoice-style.css">
+</head>
+
+<body id="invoice-dashboard">
+
+    <header class="main-header">
+        <div class="header-left">
+            <a href="/admin/launcher.html" class="back-to-launcher" title="返回後台首頁">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </a>
+            <h1>發票管理儀表板</h1>
+        </div>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="invoice-container">
+        
+        <div id="auth-check-view">
+            <p class="loading-text">正在驗證您的存取權限...</p>
+        </div>
+        
+        <div id="main-content" class="hidden">
+            <div class="tabs">
+                <button class="tab-link active" data-tab="pending">已出貨待開發票</button>
+                <button class="tab-link" data-tab="search">進階發票查詢</button>
+            </div>
+
+            <div id="notification-message" style="display: none; margin-top: 1rem;"></div>
+
+            <!-- Tab 1: 待開發票列表 -->
+            <div id="pending-invoices-view" class="tab-content active invoice-list-container">
+                <!-- [v47.0 HTML Re-architecture] 從 div 列表升級為功能完整的表格 -->
+                <div class="invoice-table-container">
+                    <table class="invoice-table">
+                        <thead>
+                            <tr>
+                                <th>發票類型</th>
+                                <th>關鍵資訊</th>
+                                <th>訂單編號</th>
+                                <th>顧客</th>
+                                <th>總金額</th>
+                                <th>訂單日期</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pending-invoice-tbody">
+                            <!-- 待開發票的表格列將由 JS 動態載入 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 2: 已開發票查詢 -->
+            <div id="search-invoices-view" class="tab-content hidden">
+                <div class="filters-and-search">
+                    <form id="invoice-search-form" class="invoice-search-form">
+                        <!-- [v47.0 HTML Simplification] 根據新版 RPC 簡化搜尋欄位 -->
+                        <div class="form-group">
+                            <label for="search-term">關鍵字搜尋</label>
+                            <input type="text" id="search-term" placeholder="訂單號 / 發票號 / Email / 統編...">
+                        </div>
+                        <div class="form-group">
+                            <label for="search-status">發票狀態</label>
+                            <select id="search-status">
+                                <option value="">所有狀態</option>
+                                <option value="pending">待開立</option>
+                                <option value="issued">已開立</option>
+                                <option value="voided">已作廢</option>
+                                <option value="failed">開立失敗</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>建立日期區間</label>
+                            <div class="date-range">
+                                <input type="date" id="search-date-from" min="2020-01-01" max="2099-12-31">
+                                <span>至</span>
+                                <input type="date" id="search-date-to" min="2020-01-01" max="2099-12-31">
+                            </div>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" id="search-btn" class="btn-submit">查詢</button>
+                            <button type="reset" id="reset-btn" class="btn-secondary">重設</button>
+                        </div>
+                    </form>
+                </div>
+                <div id="search-results-container" class="invoice-table-container">
+                    <!-- [v47.0 HTML Re-architecture] 查詢結果也將是完整的表格 -->
+                     <table class="invoice-table">
+                        <thead>
+                            <tr>
+                                <th>發票狀態</th>
+                                <th>發票號碼</th>
+                                <th>訂單編號</th>
+                                <th>買受人/公司</th>
+                                <th>總金額</th>
+                                <th>開立日期</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="search-results-tbody">
+                            <!-- 查詢結果的表格列將由 JS 動態載入 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- [v47.0 HTML Re-architecture] 徹底重構為「審核與修正」彈窗 -->
+    <div id="details-modal" class="modal-overlay hidden">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <h2 id="modal-title">發票詳情與開立作業</h2>
+                <button id="modal-close-btn" class="modal-close">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                
+                <div id="modal-notification" class="notification hidden"></div>
+
+                <div class="modal-section">
+                    <h4>顧客原始提交資訊 (唯讀)</h4>
+                    <div class="details-grid">
+                        <p><strong>發票類型:</strong> <span id="original-invoice-type">---</span></p>
+                        <p><strong>顧客 Email:</strong> <span id="original-recipient-email">---</span></p>
+                        <p><strong>關鍵資訊:</strong> <span id="original-key-info">---</span></p>
+                        <p><strong>公司抬頭:</strong> <span id="original-company-name">---</span></p>
+                    </div>
+                </div>
+
+                <form id="invoice-edit-form" class="modal-section">
+                    <h4>開立前審核與修正</h4>
+                    <input type="hidden" id="edit-invoice-id">
+                    <div class="form-grid">
+                        <div class="form-group full-width">
+                            <label for="edit-invoice-type-display">發票類型 (不可修改)</label>
+                            <input type="text" id="edit-invoice-type-display" readonly class="readonly-input">
+                        </div>
+                    </div>
+                    <!-- 公司戶發票欄位 -->
+                    <div id="edit-form-business" class="invoice-form-fields hidden">
+                        <div class="form-grid">
+                            <div class="form-group"><label for="edit-vat-number">統一編號</label><input type="text" id="edit-vat-number" maxlength="8"></div>
+                            <div class="form-group"><label for="edit-company-name">公司抬頭</label><input type="text" id="edit-company-name"></div>
+                        </div>
+                    </div>
+                    <!-- 雲端發票欄位 -->
+                    <div id="edit-form-cloud" class="invoice-form-fields hidden">
+                         <div class="form-grid">
+                            <div class="form-group"><label for="edit-carrier-type">載具類型</label><input type="text" id="edit-carrier-type"></div>
+                            <div class="form-group"><label for="edit-carrier-number">載具號碼</label><input type="text" id="edit-carrier-number"></div>
+                        </div>
+                    </div>
+                    <!-- 捐贈發票欄位 -->
+                    <div id="edit-form-donation" class="invoice-form-fields hidden">
+                        <div class="form-group full-width"><label for="edit-donation-code">愛心碼</label><input type="text" id="edit-donation-code"></div>
+                    </div>
+                </form>
+
+                <div class="modal-section">
+                    <h4>發票品項內容 (來自訂單，不可修改)</h4>
+                    <div class="invoice-table-container modal-table">
+                        <table class="invoice-table">
+                            <thead>
+                                <tr><th>品項名稱</th><th>數量</th><th>成交單價</th><th>小計</th></tr>
+                            </thead>
+                            <tbody id="modal-items-tbody"></tbody>
+                        </table>
+                        <div class="summary-row total">
+                            <span>品項總計</span><span id="modal-total-amount">$0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="modal-footer" class="modal-footer">
+                <button type="button" class="btn-secondary" id="modal-cancel-btn">取消</button>
+                <button type="button" class="btn-primary hidden" id="btn-save-changes">僅儲存修改</button>
+                <button type="button" class="btn-submit hidden" id="btn-issue-invoice">確認並開立發票</button>
+                <button type="button" class="btn-danger hidden" id="btn-void-invoice">作廢此發票</button>
+            </div>
+        </div>
+    </div>
+    
+    <script type="module" src="/invoice-panel/js/core/app.js"></script> 
+</body>
+</html>
