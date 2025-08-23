@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "supabase-js": "https://esm.sh/@supabase/supabase-js@2.44.4",
+    "resend": "https://esm.sh/resend@3.4.0",
+    "std/csv/stringify.ts": "https://deno.land/std@0.224.0/csv/stringify.ts"
+  }
+}
