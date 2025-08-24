@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/export-invoices-xlsx/index.ts
-// 版本: v47.8 - 效能優化勝利收官版
+// 版本: v48.0 - 格式精準勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,38 +8,22 @@
 /**
  * @file Export Invoices to XLSX Function (匯出待開立發票為 XLSX 函式)
  * @description 最終版。為後台提供一個高效能的備用發票開立方案。
- * @version v47.8
+ * @version v48.0
  * 
- * @update v47.8 - [PERFORMANCE OPTIMIZATION & SYNTAX FIX]
- * 1. [核心優化] 徹底重寫 Supabase 查詢的 `select()` 語句，從 `select(*)`
- *          改為只查詢產生 Excel 所需的最小欄位集。
- * 2. [原理] 此修改大幅減少了資料庫 I/O 與網路傳輸負載，顯著降低了函式的
- *          執行時間與記憶體消耗，旨在解決因平台逾時而導致的 `EarlyDrop` 錯誤。
- * 3. [// ==============================================================================
-// 檔案路徑: supabase/functions/export-invoices-xlsx/index.ts
-// 版本: v47.9 - 逐筆明細勝利收官版
-// ------------------------------------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
-// ==============================================================================
-
-/**
- * @file Export Invoices to XLSX Function (匯出待開立發票為 XLSX 函式)
- * @description 最終版。為後台提供一個高效能的備用發票開立方案。
- * @version v47.9
- * 
- * @update v47.9 - [MULTI-ROW & PRECISE MAPPING]
- * 1. [核心重構] 徹底重構資料處理邏輯，實現「逐筆明細」模式。現在每個商品、
- *          折扣、運費都會在 Excel 中產生獨立的一列。
- * 2. [精準對應] 嚴格按照使用者最終需求，重新定義 XLSX 欄位順序與名稱，並
- *          將金額精準地填入「含稅銷售額」、「總金額」等指定欄位。
- * 3. [格式合規] 「買受人姓名」欄位現在固定留空，以符合 B2B/B2C 規範。
+ * @update v48.0 - [FINAL FORMATTING & LOGIC REWRITE]
+ * 1. [核心重構] 完整實現「按比例分攤折扣」演算法，將總折扣依比例攤分至
+ *          各商品項，並處理尾差，確保所有明細金額皆為正數。
+ * 2. [格式重構] 徹底重構資料產生邏輯，實現「僅首列填值」格式，確保總金額、
+ *          信箱等主表資訊只出現在第一筆明細列。
+ * 3. [精準對應] 嚴格按照使用者最終需求，重新定義欄位順序與內容，
+ *          將訂單編號填入「自訂發票編號」並將「自訂號碼」留空。
+ * 4. [錯誤修正] 此重構徹底解決了 `(-10061)` 欄位數量不符的錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import * as xlsx from 'sheetjs';
 
-// [v47.9] 根據 OCR 辨識結果與使用者最終需求，重新定義欄位順序
 const XLSX_HEADERS = [
     "發票號碼", "隨機碼", "發票日期", "發票時間", "稅率類型", "課稅別", "買受人註記",
     "通關方式註記", "彙開註記", "零稅率註記", "捐贈", "愛心碼", "信用卡末四碼",
@@ -107,55 +91,80 @@ async function handler(req: Request): Promise<Response> {
             const couponDiscount = Number(order.coupon_discount) || 0;
             const shippingFee = Number(order.shipping_fee) || 0;
             const totalAmount = Number(order.total_amount) || 0;
-            const carrierMapping: Record<string, string> = { 'member': 'EJ0113', 'mobile': '3J0002', 'certificate': 'CQ0001' };
-
-            // [v47.9] 建立一個基礎資料列物件，所有品項列共用此基礎
-            const baseRow = {
-                "發票號碼": '', "隨機碼": '',
-                "發票日期": `${createdAt.getFullYear()}/${String(createdAt.getMonth() + 1).padStart(2, '0')}/${String(createdAt.getDate()).padStart(2, '0')}`,
-                "發票時間": `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}:${String(createdAt.getSeconds()).padStart(2, '0')}`,
-                "稅率類型": '07', "課稅別": '1', "買受人註記": '', "通關方式註記": '', "彙開註記": '', "零稅率註記": '',
-                "捐贈": invoice.type === 'donation' ? '1' : '0', "愛心碼": invoice.donation_code || '', "信用卡末四碼": '',
-                "自訂發票編號": `INV-${invoice.id}`, "自訂號碼": order.order_number,
-                "總金額": totalAmount,
-                "單價含稅": 'Y', "買受人統編": invoice.vat_number || '', "買受人公司名稱": invoice.company_name || '',
-                "買受人姓名": '', // 根據要求固定留空
-                "電話": '', "傳真": '', "信箱": invoice.recipient_email || order.customer_email, "地址": '',
-                "載具類型": invoice.type === 'cloud' ? (carrierMapping[invoice.carrier_type] || '') : '',
-                "載具ID明碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
-                "載具ID暗碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
-                "發票證明聯備註": '',
-                "免稅銷售額": '', "零稅率銷售額": '',
-            };
-
-            // 逐筆處理商品
-            (order.order_items || []).forEach(item => {
-                const quantity = Number(item.quantity) || 0;
+            const items = order.order_items || [];
+            
+            // --- [v48.0] 按比例分攤折扣演算法 ---
+            const itemsTotal = items.reduce((sum, item) => sum + (Number(item.price_at_order) * Number(item.quantity)), 0);
+            let allocatedDiscount = 0;
+            const discountedItems = items.map((item, index) => {
                 const price = Number(item.price_at_order) || 0;
-                const subtotal = quantity * price;
-                const itemRow = {
-                    ...baseRow,
-                    "商品明細": item.product_variants?.name || '商品',
-                    "數量明細": quantity,
-                    "單價明細": price,
-                    "單位明細": '件',
-                    "各明細總額": subtotal,
-                    "含稅銷售額": subtotal,
+                const quantity = Number(item.quantity) || 0;
+                const subtotal = price * quantity;
+                
+                let itemDiscount = 0;
+                if (itemsTotal > 0) {
+                    if (index === items.length - 1) { // 最後一項處理尾差
+                        itemDiscount = couponDiscount - allocatedDiscount;
+                    } else {
+                        itemDiscount = Math.round((subtotal / itemsTotal) * couponDiscount);
+                        allocatedDiscount += itemDiscount;
+                    }
+                }
+                
+                const newSubtotal = subtotal - itemDiscount;
+                const newPrice = quantity > 0 ? newSubtotal / quantity : 0;
+
+                return {
+                    name: item.product_variants?.name || '商品',
+                    quantity: quantity,
+                    price: newPrice,
+                    subtotal: newSubtotal,
+                    unit: '件'
                 };
-                worksheetData.push(XLSX_HEADERS.map(header => itemRow[header]));
             });
+            // --- 演算法結束 ---
 
-            // 處理優惠折扣
-            if (couponDiscount > 0) {
-                const discountRow = { ...baseRow, "商品明細": '優惠折扣', "數量明細": 1, "單價明細": -couponDiscount, "單位明細": '式', "各明細總額": -couponDiscount, "含稅銷售額": -couponDiscount, };
-                worksheetData.push(XLSX_HEADERS.map(header => discountRow[header]));
-            }
-
-            // 處理運費
+            // 將運費也視為一個品項
             if (shippingFee > 0) {
-                const shippingRow = { ...baseRow, "商品明細": '運費', "數量明細": 1, "單價明細": shippingFee, "單位明細": '式', "各明細總額": shippingFee, "含稅銷售額": shippingFee, };
-                worksheetData.push(XLSX_HEADERS.map(header => shippingRow[header]));
+                discountedItems.push({ name: '運費', quantity: 1, price: shippingFee, subtotal: shippingFee, unit: '式' });
             }
+
+            discountedItems.forEach((item, index) => {
+                const isFirstRow = index === 0;
+                const carrierMapping: Record<string, string> = { 'member': 'EJ0113', 'mobile': '3J0002', 'certificate': 'CQ0001' };
+
+                const rowData = {
+                    "發票號碼": '', "隨機碼": '',
+                    "發票日期": isFirstRow ? `${createdAt.getFullYear()}/${String(createdAt.getMonth() + 1).padStart(2, '0')}/${String(createdAt.getDate()).padStart(2, '0')}` : '',
+                    "發票時間": isFirstRow ? `${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}:${String(createdAt.getSeconds()).padStart(2, '0')}` : '',
+                    "稅率類型": isFirstRow ? '07' : '', "課稅別": isFirstRow ? '1' : '', "買受人註記": '',
+                    "通關方式註記": '', "彙開註記": '', "零稅率註記": '',
+                    "捐贈": isFirstRow ? (invoice.type === 'donation' ? '1' : '0') : '',
+                    "愛心碼": isFirstRow ? (invoice.donation_code || '') : '', "信用卡末四碼": '',
+                    "自訂發票編號": isFirstRow ? order.order_number : '', // [v48.0] 精準對應
+                    "自訂號碼": '', // [v48.0] 固定留空
+                    "商品明細": item.name,
+                    "數量明細": item.quantity,
+                    "單價明細": item.price,
+                    "單位明細": item.unit,
+                    "各明細總額": item.subtotal,
+                    "含稅銷售額": item.subtotal,
+                    "免稅銷售額": '', "零稅率銷售額": '',
+                    "總金額": isFirstRow ? totalAmount : '', // [v48.0] 僅首列填值
+                    "單價含稅": isFirstRow ? 'Y' : '',
+                    "買受人統編": isFirstRow ? (invoice.vat_number || '') : '',
+                    "買受人公司名稱": isFirstRow ? (invoice.company_name || '') : '',
+                    "買受人姓名": '', // [v48.0] 固定留空
+                    "電話": '', "傳真": '',
+                    "信箱": isFirstRow ? (invoice.recipient_email || order.customer_email) : '', // [v48.0] 僅首列填值
+                    "地址": '',
+                    "載具類型": isFirstRow ? (invoice.type === 'cloud' ? (carrierMapping[invoice.carrier_type] || '') : '') : '',
+                    "載具ID明碼": isFirstRow ? (invoice.type === 'cloud' ? (invoice.carrier_number || '') : '') : '',
+                    "載具ID暗碼": isFirstRow ? (invoice.type === 'cloud' ? (invoice.carrier_number || '') : '') : '',
+                    "發票證明聯備註": '',
+                };
+                worksheetData.push(XLSX_HEADERS.map(header => rowData[header] ?? ''));
+            });
         });
     }
 
