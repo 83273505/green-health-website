@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.9 - 最終邏輯收官版
+// 版本: v47.10 - XLSX 損毀修正勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,12 +9,12 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
  *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.9
+ * @version v47.10
  * 
- * @update v47.9 - [FINAL LOGIC POLISHING]
- * 1. [邏輯修正] 將 `fetchPendingInvoices` 的查詢條件從 `['pending', 'failed']`
- *          精確修正為僅查詢 `pending` 狀態，確保「待開發票」頁籤的資料純粹性。
- *          「開立失敗」的發票現在統一由「進階查詢」頁籤處理。
+ * @update v47.10 - [XLSX CORRUPTION FIX]
+ * 1. [核心修正] 修正 `handleExport` 函式中對 Blob 的處理邏輯。`invoke`
+ *          在 `responseType: 'blob'` 時已回傳 Blob，移除不必要的二次封裝
+ *          `new Blob([data])`，徹底解決 XLSX 檔案下載後損毀的問題。
  * 2. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
  */
 
@@ -23,13 +23,11 @@ import { formatPrice, showNotification, setFormSubmitting } from '/_shared/js/ut
 import { requireInvoiceLogin, handleInvoiceLogout } from '/invoice-panel/js/core/invoiceAuth.js';
 import { FUNCTION_NAMES } from '/invoice-panel/js/core/constants.js';
 
-// 全域變數
 let currentUser = null;
 let invoicesCache = new Map();
 let currentTab = 'pending';
 let selectedInvoices = new Set();
 
-// DOM 元素
 const mainContent = document.getElementById('main-content');
 const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
@@ -140,7 +138,6 @@ async function fetchPendingInvoices() {
     pendingInvoiceTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在載入待開發票列表...</td></tr>`;
     
     try {
-        // [v47.9] 修正：此頁籤只查詢 'pending' 狀態
         const pendingInvoices = await fetchInvoices({ status: 'pending', orderStatus: 'shipped' });
         renderInvoiceTable(pendingInvoiceTbody, pendingInvoices, 'pending');
     } catch (err) {
@@ -316,8 +313,9 @@ async function handleExport(format, btn) {
         const functionName = format === 'csv' ? FUNCTION_NAMES.EXPORT_INVOICES_CSV : FUNCTION_NAMES.EXPORT_INVOICES_XLSX;
         const { data, error } = await client.functions.invoke(functionName, { body: { invoiceIds: idsToExport }, responseType: 'blob' });
         if (error) throw error;
-        const mimeType = format === 'csv' ? 'text/csv;charset=utf-8;' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-        const blob = new Blob([data], { type: mimeType });
+        
+        // [v47.10 核心修正] invoke 回傳的 data 已是 Blob，直接使用，不需二次封裝
+        const blob = data; 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.${format}`;
