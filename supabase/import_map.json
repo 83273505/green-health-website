@@ -2,6 +2,7 @@
   "imports": {
     "supabase-js": "https://esm.sh/@supabase/supabase-js@2.44.4",
     "resend": "https://esm.sh/resend@3.4.0",
-    "std/csv": "https://deno.land/std@0.224.0/csv/mod.ts"
+    "std/csv": "https://deno.land/std@0.224.0/csv/mod.ts",
+    "sheetjs": "https://esm.sh/xlsx@0.18.5"
   }
 }
