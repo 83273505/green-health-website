@@ -25,6 +25,31 @@
 import { supabase } from '/_shared/js/supabaseClient.js';
 import { formatPrice, showNotification, setFormSubmitting } from '/_shared/js/utils.js';
 import { requireInvoiceLogin, handleInvoiceLogout } from '/invoice-panel/js/core/invoiceAuth.js';
+import { FU// ==============================================================================
+// 檔案路徑: invoice-panel/js/modules/invoicing.js
+// 版本: v47.8 - 最終修正勝利收官版
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
+
+/**
+ * @file Invoicing Module (發票管理模組)
+ * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
+ *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
+ * @version v47.8
+ * 
+ * @update v47.8 - [FINAL SYNTAX & LOGIC INTEGRATION]
+ * 1. [錯誤修正] 徹底審查並清理檔案結構，解決 `SyntaxError: Unexpected token 'export'` 錯誤。
+ * 2. [功能整合] 完整實現 CSV 與 XLSX 雙格式匯出，並共用一個 `handleExport` 函式。
+ * 3. [智慧檔名] 匯出單筆發票時，檔名會自動以「訂單編號」命名。
+ * 4. [邏輯修正] `handleAdvancedSearch` 函式現在會正確地排除「待開立」狀態。
+ * 5. [UI 一致性] 「進階查詢」頁籤的匯出按鈕現在功能完整。
+ * 6. [錯誤修正] 修正了所有 `showNotification` 函式的呼叫錯誤。專案至此勝利收官。
+ */
+
+import { supabase } from '/_shared/js/supabaseClient.js';
+import { formatPrice, showNotification, setFormSubmitting } from '/_shared/js/utils.js';
+import { requireInvoiceLogin, handleInvoiceLogout } from '/invoice-panel/js/core/invoiceAuth.js';
 import { FUNCTION_NAMES } from '/invoice-panel/js/core/constants.js';
 
 let currentUser = null;
