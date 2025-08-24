@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.10 - XLSX 損毀修正勝利收官版
+// 版本: v47.11 - 類型安全勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,12 +9,12 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
  *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.10
+ * @version v47.11
  * 
- * @update v47.10 - [XLSX CORRUPTION FIX]
- * 1. [核心修正] 修正 `handleExport` 函式中對 Blob 的處理邏輯。`invoke`
- *          在 `responseType: 'blob'` 時已回傳 Blob，移除不必要的二次封裝
- *          `new Blob([data])`，徹底解決 XLSX 檔案下載後損毀的問題。
+ * @update v47.11 - [ROBUST BLOB HANDLING]
+ * 1. [核心修正] 在 `handleExport` 函式中加入了 `instanceof Blob` 類型檢查。
+ *          此修改能防禦性地處理後端回傳非預期格式（如 JSON 錯誤）的情況，
+ *          徹底解決 `createObjectURL` 的 `Overload resolution failed` 錯誤。
  * 2. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
  */
 
@@ -314,7 +314,12 @@ async function handleExport(format, btn) {
         const { data, error } = await client.functions.invoke(functionName, { body: { invoiceIds: idsToExport }, responseType: 'blob' });
         if (error) throw error;
         
-        // [v47.10 核心修正] invoke 回傳的 data 已是 Blob，直接使用，不需二次封裝
+        // [v47.11] 核心修正：防禦性地檢查回傳的 data 是否為 Blob 物件
+        if (!(data instanceof Blob)) {
+            console.error('來自後端函式的非預期回應:', data);
+            throw new Error('後端回傳的檔案格式不正確，請檢查後端函式日誌。');
+        }
+
         const blob = data; 
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
