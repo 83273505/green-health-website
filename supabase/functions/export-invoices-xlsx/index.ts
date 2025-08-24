@@ -1,22 +1,21 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/export-invoices-xlsx/index.ts
-// 版本: v47.7 - 健壯性收官版
+// 版本: v47.8 - 效能優化勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Export Invoices to XLSX Function (匯出待開立發票為 XLSX 函式)
- * @description 為後台管理員提供一個更穩健的備用發票開立方案。此函式能根據
- *              傳入的發票 ID 陣列，精準匯出指定的發票為速買配 (SmilePay)
- *              批次上傳格式所要求的 XLSX (Excel) 檔案。
- * @version v47.7
+ * @description 最終版。為後台提供一個高效能的備用發票開立方案。
+ * @version v47.8
  * 
- * @update v47.7 - [FINAL ROBUSTNESS UPGRADE]
- * 1. [程式碼簡化] 移除了 Deno.serve 外層多餘的 Promise 包裝，使程式碼更簡潔。
- * 2. [安全性加固] 新增了對 `Authorization` 請求標頭的存在性檢查。
- * 3. [類型安全] 對所有來自資料庫的金額欄位，在處理前都使用 `Number()` 進行
- *          強制型別轉換並提供預設值，徹底杜絕 NaN 錯誤。
+ * @update v47.8 - [PERFORMANCE OPTIMIZATION & SYNTAX FIX]
+ * 1. [核心優化] 徹底重寫 Supabase 查詢的 `select()` 語句，從 `select(*)`
+ *          改為只查詢產生 Excel 所需的最小欄位集。
+ * 2. [原理] 此修改大幅減少了資料庫 I/O 與網路傳輸負載，顯著降低了函式的
+ *          執行時間與記憶體消耗，旨在解決因平台逾時而導致的 `EarlyDrop` 錯誤。
+ * 3. [語法修正] 清理並重構了檔案結構，解決了因註解錯位導致的語法解析錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -55,9 +54,22 @@ async function handler(req: Request): Promise<Response> {
     const payload = await req.json().catch(() => ({}));
     const invoiceIds = payload.invoiceIds;
 
+    const selectStatement = `
+      id, type, status, recipient_name, recipient_email, vat_number, company_name,
+      carrier_type, carrier_number, donation_code,
+      orders (
+        order_number, customer_name, customer_email, total_amount, coupon_discount, 
+        shipping_fee, created_at,
+        order_items (
+          quantity, price_at_order,
+          product_variants (name)
+        )
+      )
+    `;
+
     let query = supabaseAdmin
       .from('invoices')
-      .select(`*, orders ( *, order_items ( *, product_variants (name)))`)
+      .select(selectStatement)
       .in('status', ['pending', 'failed'])
       .eq('orders.status', 'shipped');
 
