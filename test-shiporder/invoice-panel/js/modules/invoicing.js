@@ -343,6 +343,7 @@ function closeModal() {
 }
 
 function bindEvents() {
+    console.log('bindEvents function is called.'); //
     logoutBtn.addEventListener('click', handleInvoiceLogout);
     tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
     searchForm.addEventListener('submit', handleAdvancedSearch);
@@ -372,11 +373,12 @@ function bindEvents() {
 }
 
 export async function init() {
+    console.log('invoicing.js init function started.');//
     currentUser = await requireInvoiceLogin();
     if (!currentUser) return;
     currentUserEmailEl.textContent = currentUser.email;
     authCheckView.classList.add('hidden');
     mainContent.classList.remove('hidden');
-    bindEvents();
+    bindEvents();//
     await fetchPendingInvoices();
 }
