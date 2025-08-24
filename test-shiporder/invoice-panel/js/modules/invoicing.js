@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.12 - 健壯下載勝利收官版
+// 版本: v47.13 - 前後端分離勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,13 +9,13 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
  *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.12
+ * @version v47.13
  * 
- * @update v47.12 - [ROBUST FETCH & BLOB HANDLING]
- * 1. [核心修正] 徹底重構 `handleExport` 函式，改用瀏覽器原生的 `fetch` API 
- *          取代 `supabase.functions.invoke` 來呼叫後端函式。
- * 2. [健壯下載] 使用 `await response.blob()` 的標準方法來處理回傳的二進位
- *          資料流，確保能正確處理 XLSX 檔案，徹底解決檔案損毀與類型錯誤。
+ * @update v47.13 - [FRONTEND/BACKEND CONTEXT FIX]
+ * 1. [核心修正] 修正 `handleExport` 函式，使用 supabase 客戶端實例
+ *          (`client.functionsUrl`) 的公開屬性來取得正確的函式 URL，
+ *          取代了錯誤的後端專用 `Deno.env.get` 語法。
+ * 2. [錯誤解決] 此修改徹底解決了 `ReferenceError: Deno is not defined` 錯誤。
  * 3. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
  */
 
@@ -316,7 +316,8 @@ async function handleExport(format, btn) {
         const { data: { session } } = await client.auth.getSession();
         if (!session) throw new Error('無法取得使用者憑證，請重新登入。');
         
-        const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${functionName}`;
+        // [v47.13] 核心修正: 使用 client.functionsUrl 取得正確的 URL
+        const functionUrl = `${client.functionsUrl}/${functionName}`;
         const response = await fetch(functionUrl, {
             method: 'POST',
             headers: {
