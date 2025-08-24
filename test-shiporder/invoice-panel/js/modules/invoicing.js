@@ -1,25 +1,22 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.5 - 最終優化勝利收官版
+// 版本: v47.6 - 最終優化勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Invoicing Module (發票管理模組)
- * @description 最終版。實現了具備勾選式批次匯出、審核修正、手動校正、
- *              品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.5
+ * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
+ *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
+ * @version v47.6
  * 
- * @update v47.5 - [FINAL UI & LOGIC FIX]
- * 1. [批次匯出] 完整實現勾選式批次操作，包含單選、全選邏輯，並將所選
- *          ID 陣列傳遞給後端。現在兩個頁籤的匯出按鈕都能正常運作。
- * 2. [手動校正] 完整實現手動校正功能。彈窗現在能根據發票狀態，智慧切換
- *          為「審核修正」或「手動校正」模式。
- * 3. [UI 修正] 移除了進階查詢中的「待開立」選項，並修正了所有
- *          `showNotification` 函式的呼叫錯誤，確保通知功能正常。
- * 4. [流程閉環] 至此，使用者反饋的所有問題均已解決，所有規劃的優化功能
- *          均已實作，後台改善計畫勝利收官。
+ * @update v47.6 - [FINAL POLISHING & DUAL EXPORT]
+ * 1. [雙匯出功能] 完整實現 CSV 與 XLSX 雙格式匯出，並共用一個 `handleExport` 函式。
+ * 2. [智慧檔名] 匯出單筆發票時，檔名會自動以「訂單編號」命名。
+ * 3. [邏輯修正] `handleAdvancedSearch` 函式現在會正確地排除「待開立」狀態。
+ * 4. [UI 一致性] 「進階查詢」頁籤的匯出按鈕現在功能完整。
+ * 5. [錯誤修正] 修正了所有 `showNotification` 函式的呼叫錯誤。專案至此勝利收官。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -37,7 +34,6 @@ const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const logoutBtn = document.getElementById('logout-btn');
 const tabs = document.querySelectorAll('.tab-link');
-const notificationMessageEl = document.getElementById('notification-message');
 const pendingInvoiceTbody = document.getElementById('pending-invoice-tbody');
 const searchResultsTbody = document.getElementById('search-results-tbody');
 const selectAllPendingCheckbox = document.getElementById('select-all-pending');
@@ -48,7 +44,9 @@ const searchStatusSelect = document.getElementById('search-status');
 const searchDateFromInput = document.getElementById('search-date-from');
 const searchDateToInput = document.getElementById('search-date-to');
 const btnExportCsvPending = document.getElementById('btn-export-csv-pending');
+const btnExportXlsxPending = document.getElementById('btn-export-xlsx-pending');
 const btnExportCsvSearch = document.getElementById('btn-export-csv-search');
+const btnExportXlsxSearch = document.getElementById('btn-export-xlsx-search');
 const modalOverlay = document.getElementById('details-modal');
 const modalTitle = document.getElementById('modal-title');
 const modalNotification = document.getElementById('modal-notification');
@@ -94,10 +92,12 @@ async function fetchInvoices(filters = {}) {
 
 function updateSelectionState() {
     const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
-    const activeExportBtn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
+    const activeExportCsvBtn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
+    const activeExportXlsxBtn = currentTab === 'pending' ? btnExportXlsxPending : btnExportXlsxSearch;
     const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    if (activeExportBtn) activeExportBtn.disabled = checkedCount === 0;
+    if (activeExportCsvBtn) activeExportCsvBtn.disabled = checkedCount === 0;
+    if (activeExportXlsxBtn) activeExportXlsxBtn.disabled = checkedCount === 0;
 }
 
 function renderInvoiceTable(tbody, invoices, mode) {
@@ -128,7 +128,7 @@ function renderInvoiceTable(tbody, invoices, mode) {
 async function fetchPendingInvoices() {
     pendingInvoiceTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在載入待開發票列表...</td></tr>`;
     try {
-        const pendingInvoices = await fetchInvoices({ status: 'pending', orderStatus: 'shipped' });
+        const pendingInvoices = await fetchInvoices({ status: ['pending', 'failed'], orderStatus: 'shipped' });
         renderInvoiceTable(pendingInvoiceTbody, pendingInvoices, 'pending');
     } catch (err) {
         console.error('獲取待開發票時發生錯誤:', err);
@@ -285,37 +285,39 @@ async function handleVoidInvoice() {
     }
 }
 
-async function handleExportCsv() {
+async function handleExport(format, btn) {
     const idsToExport = Array.from(selectedInvoices);
     if (idsToExport.length === 0) {
         showNotification('請先勾選您想匯出的發票。', 'warn', 'notification-message');
         return;
     }
-    const btn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
     setFormSubmitting(btn, true, '正在產生檔案...');
     try {
         const client = await supabase;
-        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.EXPORT_INVOICES_CSV, {
+        const functionName = format === 'csv' ? FUNCTION_NAMES.EXPORT_INVOICES_CSV : FUNCTION_NAMES.EXPORT_INVOICES_XLSX;
+        const { data, error } = await client.functions.invoke(functionName, {
             body: { invoiceIds: idsToExport }, responseType: 'blob'
         });
         if (error) throw error;
-        const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
+        
+        const mimeType = format === 'csv' ? 'text/csv;charset=utf-8;' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const blob = new Blob([data], { type: mimeType });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.${format}`;
         if (idsToExport.length === 1) {
             const singleInvoice = invoicesCache.get(idsToExport[0]);
-            if (singleInvoice) fileName = `${singleInvoice.order_number}_${new Date().toISOString().slice(0, 10)}.csv`;
+            if (singleInvoice) fileName = `${singleInvoice.order_number}_${new Date().toISOString().slice(0, 10)}.${format}`;
         }
         a.href = url; a.download = fileName;
         document.body.appendChild(a); a.click();
         window.URL.revokeObjectURL(url); a.remove();
-        showNotification('CSV 檔案已成功匯出。', 'success', 'notification-message');
+        showNotification(`${format.toUpperCase()} 檔案已成功匯出。`, 'success', 'notification-message');
     } catch (err) {
-        console.error("匯出 CSV 失敗:", err);
-        showNotification(`匯出 CSV 失敗: ${err.message}`, 'error', 'notification-message');
+        console.error(`匯出 ${format.toUpperCase()} 失敗:`, err);
+        showNotification(`匯出 ${format.toUpperCase()} 失敗: ${err.message}`, 'error', 'notification-message');
     } finally {
-        setFormSubmitting(btn, false, '匯出所選項目 CSV');
+        setFormSubmitting(btn, false, `匯出所選項目 (${format.toUpperCase()})`);
     }
 }
 
@@ -362,8 +364,10 @@ function bindEvents() {
     btnSaveChanges.addEventListener('click', handleSaveChanges);
     btnIssueInvoice.addEventListener('click', handleIssueInvoice);
     btnVoidInvoice.addEventListener('click', handleVoidInvoice);
-    btnExportCsvPending.addEventListener('click', handleExportCsv);
-    btnExportCsvSearch.addEventListener('click', handleExportCsv);
+    btnExportCsvPending.addEventListener('click', (e) => handleExport( 'csv', e.target));
+    btnExportXlsxPending.addEventListener('click', (e) => handleExport( 'xlsx', e.target));
+    btnExportCsvSearch.addEventListener('click', (e) => handleExport( 'csv', e.target));
+    btnExportXlsxSearch.addEventListener('click', (e) => handleExport( 'xlsx', e.target));
 }
 
 export async function init() {

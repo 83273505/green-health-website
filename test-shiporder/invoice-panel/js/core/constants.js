@@ -1,20 +1,16 @@
-// ==============================================================================
-// 檔案路徑: invoice-panel/js/core/constants.js
-// 版本: v47.1 - 匯出功能常數補全
-// ------------------------------------------------------------------------------
+---------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Invoice Panel Constants (發票管理後台 - 常數模組)
  * @description 集中管理發票管理後台應用程式的所有常數。
- * @version v47.1
+ * @version v47.2
  * 
- * @update v47.1 - [ADD EXPORT FUNCTION CONSTANT]
- * 1. [新增] 在 FUNCTION_NAMES 中新增了 `EXPORT_INVOICES_CSV`，其值為
- *          `export-invoices-csv`。
- * 2. [目的] 修正因缺少此常數定義而導致的 CORS `undefined` 錯誤，
- *          並啟用 v47.3 版本 `invoicing.js` 中的批次匯出功能。
+ * @update v47.2 - [ADD XLSX EXPORT FUNCTION CONSTANT]
+ * 1. [新增] 在 FUNCTION_NAMES 中新增了 `EXPORT_INVOICES_XLSX`，其值為
+ *          `export-invoices-xlsx`。
+ * 2. [目的] 為 v47.6 版本 `invoicing.js` 中的「雙匯出」功能提供支援。
  */
 
 /**
@@ -26,7 +22,8 @@ export const FUNCTION_NAMES = {
     ISSUE_INVOICE_MANUALLY: 'issue-invoice-manually',
     VOID_INVOICE: 'void-invoice',
     UPDATE_INVOICE_DETAILS: 'update-invoice-details',
-    EXPORT_INVOICES_CSV: 'export-invoices-csv', // [v47.1 新增]
+    EXPORT_INVOICES_CSV: 'export-invoices-csv',
+    EXPORT_INVOICES_XLSX: 'export-invoices-xlsx', // [v47.2 新增]
     RESEND_INVOICE_NOTIFICATION: 'resend-invoice-notification',
     // 可能會共用的函式
     GET_ORDER_DETAILS: 'get-order-details', 
