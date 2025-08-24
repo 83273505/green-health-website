@@ -1,25 +1,29 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/export-invoices-csv/index.ts
-// 版本: v47.2 - 模組引用修正版
+// 版本: v47.3 - 批次匯出支援版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Export Invoices to CSV Function (匯出待開立發票為 CSV 函式)
- * @description 為後台管理員提供一個備用的發票開立方案。此函式會查詢所有
- *              「已出貨」且「待開立」的發票，並將其轉換為速買配 (SmilePay)
- *              批次檔案上傳格式所要求的 CSV 檔案。
- * @version v47.2
+ * @description 為後台管理員提供一個備用的發票開立方案。此函式能根據傳入的
+ *              發票 ID 陣列，精準匯出指定的發票；若無指定 ID，則匯出所有
+ *              「已出貨」且「待開立」的發票。
+ * @version v47.3
  * 
- * @update v47.2 - 修正 import 語句以對齊 import_map.json 的解析規則。
+ * @update v47.3 - [BATCH EXPORT SUPPORT]
+ * 1. [功能升級] 函式現在能接收一個可選的 `invoiceIds` 陣列作為請求主體。
+ * 2. [邏輯修改] 如果 `invoiceIds` 陣列存在且不為空，Supabase 查詢將使用
+ *          `.in('id', invoiceIds)` 篩選器，只匯出被勾選的項目。
+ * 3. [向下相容] 如果未提供 `invoiceIds` 陣列，函式將維持原有行為，
+ *          匯出所有符合條件的待開立發票。
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
-import { stringify } from 'std/csv'; // [v47.2 核心修正] 更改引用路徑
+import { stringify } from 'std/csv';
 
-// 速買配 CSV 檔案的欄位標頭 (順序至關重要)
 const CSV_HEADERS = [
   "發票日期", "發票時間", "稅率類型", "課稅別", "買受人註記",
   "通關方式註記", "彙開註記", "零稅率註記", "捐贈", "愛心碼",
@@ -50,33 +54,34 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: '權限不足。' }), { status: 403, headers: corsHeaders });
     }
 
-    // --- 2. 深度資料查詢 ---
-    const { data: invoices, error } = await supabaseAdmin
+    // --- 2. [v47.3] 解析請求主體，獲取可選的 invoiceIds ---
+    const payload = await req.json().catch(() => ({}));
+    const invoiceIds = payload.invoiceIds;
+
+    // --- 3. 深度資料查詢 ---
+    let query = supabaseAdmin
       .from('invoices')
-      .select(`
-        *,
-        orders (
-          *,
-          order_items (
-            *,
-            product_variants (name)
-          )
-        )
-      `)
+      .select(`*, orders ( *, order_items ( *, product_variants (name)))`)
       .eq('status', 'pending')
       .eq('orders.status', 'shipped');
 
+    // [v47.3] 如果提供了 ID 陣列，則增加篩選條件
+    if (Array.isArray(invoiceIds) && invoiceIds.length > 0) {
+      query = query.in('id', invoiceIds);
+    }
+      
+    const { data: invoices, error } = await query;
+
     if (error) throw error;
     if (!invoices || invoices.length === 0) {
-      const emptyCsv = await stringify([CSV_HEADERS, ["沒有待處理的發票"]]);
+      const emptyCsv = await stringify([CSV_HEADERS, ["沒有找到符合條件的待處理發票"]]);
       return new Response(emptyCsv, { headers: { ...corsHeaders, 'Content-Type': 'text/csv' } });
     }
 
-    // --- 3. CSV 格式轉換核心邏輯 ---
+    // --- 4. CSV 格式轉換核心邏輯 ---
     const csvData = invoices.map(invoice => {
       const order = invoice.orders;
       const now = new Date(order.created_at);
-
       const descriptions: string[] = (order.order_items || []).map(item => item.product_variants?.name || '商品');
       const quantities: string[] = (order.order_items || []).map(item => String(item.quantity));
       const unitPrices: string[] = (order.order_items || []).map(item => String(item.price_at_order));
@@ -84,18 +89,10 @@ Deno.serve(async (req) => {
       const amounts: string[] = (order.order_items || []).map(item => String(item.price_at_order * item.quantity));
 
       if (Number(order.coupon_discount) > 0) {
-        descriptions.push('優惠折扣');
-        quantities.push('1');
-        unitPrices.push(String(-Number(order.coupon_discount)));
-        units.push('式');
-        amounts.push(String(-Number(order.coupon_discount)));
+        descriptions.push('優惠折扣'); quantities.push('1'); unitPrices.push(String(-Number(order.coupon_discount))); units.push('式'); amounts.push(String(-Number(order.coupon_discount)));
       }
       if (Number(order.shipping_fee) > 0) {
-        descriptions.push('運費');
-        quantities.push('1');
-        unitPrices.push(String(order.shipping_fee));
-        units.push('式');
-        amounts.push(String(order.shipping_fee));
+        descriptions.push('運費'); quantities.push('1'); unitPrices.push(String(order.shipping_fee)); units.push('式'); amounts.push(String(order.shipping_fee));
       }
       
       const carrierMapping: Record<string, string> = { 'member': 'EJ0113', 'mobile': '3J0002', 'certificate': 'CQ0001' };
@@ -103,31 +100,15 @@ Deno.serve(async (req) => {
       return {
         "發票日期": `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`,
         "發票時間": `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`,
-        "稅率類型": '07',
-        "課稅別": '1',
-        "買受人註記": '',
-        "通關方式註記": '',
-        "彙開註記": '',
-        "零稅率註記": '',
+        "稅率類型": '07', "課稅別": '1', "買受人註記": '', "通關方式註記": '', "彙開註記": '', "零稅率註記": '',
         "捐贈": invoice.type === 'donation' ? '1' : '0',
         "愛心碼": invoice.donation_code || '',
-        "信用卡末四碼": '',
-        "自訂發票編號": `INV-${invoice.id}`,
-        "自訂號碼": order.order_number,
-        "商品明細": descriptions.join('|'),
-        "數量明細": quantities.join('|'),
-        "單價明細": unitPrices.join('|'),
-        "單位明細": units.join('|'),
-        "各明細總額": amounts.join('|'),
-        "總金額(含稅)": String(order.total_amount),
-        "單價含稅": 'Y',
-        "買受人統編": invoice.vat_number || '',
-        "買受人公司名稱": invoice.company_name || '',
+        "信用卡末四碼": '', "自訂發票編號": `INV-${invoice.id}`, "自訂號碼": order.order_number,
+        "商品明細": descriptions.join('|'), "數量明細": quantities.join('|'), "單價明細": unitPrices.join('|'),
+        "單位明細": units.join('|'), "各明細總額": amounts.join('|'), "總金額(含稅)": String(order.total_amount),
+        "單價含稅": 'Y', "買受人統編": invoice.vat_number || '', "買受人公司名稱": invoice.company_name || '',
         "買受人姓名": invoice.type !== 'business' ? (invoice.recipient_name || order.customer_name) : '',
-        "電話": '',
-        "傳真": '',
-        "信箱": invoice.recipient_email || order.customer_email,
-        "地址": '',
+        "電話": '', "傳真": '', "信箱": invoice.recipient_email || order.customer_email, "地址": '',
         "載具類型": invoice.type === 'cloud' ? (carrierMapping[invoice.carrier_type] || '') : '',
         "載具ID明碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
         "載具ID暗碼": invoice.type === 'cloud' ? (invoice.carrier_number || '') : '',
@@ -135,7 +116,7 @@ Deno.serve(async (req) => {
       };
     });
 
-    // --- 4. 產生 CSV 字串並回傳 ---
+    // --- 5. 產生 CSV 字串並回傳 ---
     const csvString = await stringify(csvData, { columns: CSV_HEADERS, headers: true });
     
     const fileName = `invoices_export_${new Date().toISOString().slice(0, 10)}.csv`;
