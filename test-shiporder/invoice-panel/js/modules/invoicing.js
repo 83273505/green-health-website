@@ -34,6 +34,7 @@ const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const logoutBtn = document.getElementById('logout-btn');
 const tabs = document.querySelectorAll('.tab-link');
+const notificationMessageEl = document.getElementById('notification-message');
 const pendingInvoiceTbody = document.getElementById('pending-invoice-tbody');
 const searchResultsTbody = document.getElementById('search-results-tbody');
 const selectAllPendingCheckbox = document.getElementById('select-all-pending');
