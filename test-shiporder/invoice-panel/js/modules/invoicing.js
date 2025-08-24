@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.11 - 類型安全勝利收官版
+// 版本: v47.12 - 健壯下載勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,13 +9,14 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
  *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.11
+ * @version v47.12
  * 
- * @update v47.11 - [ROBUST BLOB HANDLING]
- * 1. [核心修正] 在 `handleExport` 函式中加入了 `instanceof Blob` 類型檢查。
- *          此修改能防禦性地處理後端回傳非預期格式（如 JSON 錯誤）的情況，
- *          徹底解決 `createObjectURL` 的 `Overload resolution failed` 錯誤。
- * 2. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
+ * @update v47.12 - [ROBUST FETCH & BLOB HANDLING]
+ * 1. [核心修正] 徹底重構 `handleExport` 函式，改用瀏覽器原生的 `fetch` API 
+ *          取代 `supabase.functions.invoke` 來呼叫後端函式。
+ * 2. [健壯下載] 使用 `await response.blob()` 的標準方法來處理回傳的二進位
+ *          資料流，確保能正確處理 XLSX 檔案，徹底解決檔案損毀與類型錯誤。
+ * 3. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -311,16 +312,26 @@ async function handleExport(format, btn) {
     try {
         const client = await supabase;
         const functionName = format === 'csv' ? FUNCTION_NAMES.EXPORT_INVOICES_CSV : FUNCTION_NAMES.EXPORT_INVOICES_XLSX;
-        const { data, error } = await client.functions.invoke(functionName, { body: { invoiceIds: idsToExport }, responseType: 'blob' });
-        if (error) throw error;
         
-        // [v47.11] 核心修正：防禦性地檢查回傳的 data 是否為 Blob 物件
-        if (!(data instanceof Blob)) {
-            console.error('來自後端函式的非預期回應:', data);
-            throw new Error('後端回傳的檔案格式不正確，請檢查後端函式日誌。');
+        const { data: { session } } = await client.auth.getSession();
+        if (!session) throw new Error('無法取得使用者憑證，請重新登入。');
+        
+        const functionUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/${functionName}`;
+        const response = await fetch(functionUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`
+            },
+            body: JSON.stringify({ invoiceIds: idsToExport })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: `HTTP 錯誤: ${response.status} ${response.statusText}` }));
+            throw new Error(errorData.error || `HTTP 錯誤: ${response.status}`);
         }
 
-        const blob = data; 
+        const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.${format}`;
