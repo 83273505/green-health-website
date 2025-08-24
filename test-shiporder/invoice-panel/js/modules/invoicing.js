@@ -382,4 +382,3 @@ export async function init() {
     bindEvents();
     await fetchPendingInvoices();
 }
-83.7s
