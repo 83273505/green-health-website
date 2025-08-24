@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.3 - 最終優化勝利收官版
+// 版本: v47.4 - 最終修正勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,18 +9,17 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出、審核修正、手動校正、
  *              品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.3
+ * @version v47.4
  * 
- * @update v47.3 - [FINAL OPTIMIZATION & FEATURE COMPLETION]
- * 1. [批次匯出] 完整實現勾選式批次操作，包含單選、全選邏輯，並將所選
+ * @update v47.4 - [FINAL FIX & COMPLETION]
+ * 1. [錯誤修正] 調整函式定義順序，徹底解決 `ReferenceError`。
+ * 2. [功能補全] 完整實現勾選式批次操作，包含單選、全選邏輯，並將所選
  *          ID 陣列傳遞給後端，實現精準匯出。
- * 2. [手動校正] 完整實現手動校正功能。彈窗現在能根據發票狀態，智慧切換
+ * 3. [功能補全] 完整實現手動校正功能。彈窗現在能根據發票狀態，智慧切換
  *          為「審核修正」或「手動校正」模式，並能將校正後的發票號碼與日期
  *          安全地回寫至資料庫。
- * 3. [UI 修正] 移除了進階查詢中的「待開立」選項，並修正了所有
+ * 4. [UI 修正] 移除了進階查詢中的「待開立」選項，並修正了所有
  *          `showNotification` 函式的呼叫錯誤，確保通知功能正常。
- * 4. [流程閉環] 至此，使用者反饋的所有問題均已解決，所有規劃的優化功能
- *          均已實作，後台改善計畫勝利收官。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -33,7 +32,6 @@ let invoicesCache = new Map();
 let currentTab = 'pending';
 let selectedInvoices = new Set();
 
-// DOM 元素獲取 (v47.3 最終版)
 const mainContent = document.getElementById('main-content');
 const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
@@ -93,6 +91,39 @@ async function fetchInvoices(filters = {}) {
     return data;
 }
 
+function updateSelectionState() {
+    const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
+    const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
+    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+    btnExportCsv.disabled = checkedCount === 0;
+}
+
+function renderInvoiceTable(tbody, invoices, mode) {
+    if (!invoices || invoices.length === 0) {
+        const colspan = 8;
+        tbody.innerHTML = `<tr><td colspan="${colspan}" class="initial-message">${mode === 'pending' ? '目前沒有已出貨且待開立的發票。' : '找不到符合條件的發票記錄。'}</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = invoices.map(invoice => {
+        const statusInfo = statusMap[invoice.status] || { text: invoice.status, class: '' };
+        const createdDate = new Date(invoice.created_at).toLocaleDateString();
+        const issuedDate = invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString() : '---';
+        const recipient = invoice.company_name || invoice.recipient_name || 'N/A';
+        let keyInfo = '---';
+        if (invoice.type === 'business') keyInfo = invoice.vat_number;
+        else if (invoice.type === 'donation') keyInfo = `愛心碼: ${invoice.donation_code}`;
+        else if (invoice.type === 'cloud') keyInfo = `載具: ${invoice.carrier_type}`;
+
+        const checkboxCell = `<td class="checkbox-cell"><input type="checkbox" class="row-checkbox" data-invoice-id="${invoice.id}"></td>`;
+        if (mode === 'pending') {
+            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td><td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td><td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
+        } else {
+            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="status-tag ${statusInfo.class}">${statusInfo.text}</span></td><td>${invoice.invoice_number || '---'}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${issuedDate}</td><td><button class="btn-secondary btn-details">詳情</button></td></tr>`;
+        }
+    }).join('');
+    updateSelectionState();
+}
+
 async function fetchPendingInvoices() {
     pendingInvoiceTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在載入待開發票列表...</td></tr>`;
     try {
@@ -123,32 +154,6 @@ async function handleAdvancedSearch(event) {
     } finally {
         setFormSubmitting(searchBtn, false, '查詢');
     }
-}
-
-function renderInvoiceTable(tbody, invoices, mode) {
-    if (!invoices || invoices.length === 0) {
-        const colspan = 8;
-        tbody.innerHTML = `<tr><td colspan="${colspan}" class="initial-message">${mode === 'pending' ? '目前沒有已出貨且待開立的發票。' : '找不到符合條件的發票記錄。'}</td></tr>`;
-        return;
-    }
-    tbody.innerHTML = invoices.map(invoice => {
-        const statusInfo = statusMap[invoice.status] || { text: invoice.status, class: '' };
-        const createdDate = new Date(invoice.created_at).toLocaleDateString();
-        const issuedDate = invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString() : '---';
-        const recipient = invoice.company_name || invoice.recipient_name || 'N/A';
-        let keyInfo = '---';
-        if (invoice.type === 'business') keyInfo = invoice.vat_number;
-        else if (invoice.type === 'donation') keyInfo = `愛心碼: ${invoice.donation_code}`;
-        else if (invoice.type === 'cloud') keyInfo = `載具: ${invoice.carrier_type}`;
-
-        const checkboxCell = `<td class="checkbox-cell"><input type="checkbox" class="row-checkbox" data-invoice-id="${invoice.id}"></td>`;
-        if (mode === 'pending') {
-            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td><td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td><td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
-        } else {
-            return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="status-tag ${statusInfo.class}">${statusInfo.text}</span></td><td>${invoice.invoice_number || '---'}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${issuedDate}</td><td><button class="btn-secondary btn-details">詳情</button></td></tr>`;
-        }
-    }).join('');
-    updateSelectionState();
 }
 
 function showDetailsModal(invoice) {
@@ -191,13 +196,6 @@ function showDetailsModal(invoice) {
     modalItemsTbody.innerHTML = (invoice.order_items || []).map(item => `<tr><td>${item.variant_name}</td><td>${item.quantity}</td><td>${formatPrice(item.price_at_order)}</td><td>${formatPrice(item.quantity * item.price_at_order)}</td></tr>`).join('');
     modalTotalAmountEl.textContent = formatPrice(invoice.total_amount);
     modalOverlay.classList.remove('hidden');
-}
-
-function updateSelectionState() {
-    const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
-    const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
-    const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    btnExportCsv.disabled = checkedCount === 0;
 }
 
 function handleSelectionChange(event) {
@@ -313,6 +311,26 @@ async function handleExportCsv() {
     }
 }
 
+function handleTabClick(event) {
+    const clickedTab = event.target.closest('.tab-link');
+    if (!clickedTab || clickedTab.classList.contains('active')) return;
+    currentTab = clickedTab.dataset.tab;
+    tabs.forEach(tab => tab.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+    clickedTab.classList.add('active');
+    document.getElementById(`${currentTab}-invoices-view`).classList.remove('hidden');
+    if (currentTab === 'pending') {
+        fetchPendingInvoices();
+    } else {
+        searchResultsTbody.innerHTML = `<tr><td colspan="8" class="initial-message">請輸入條件以開始查詢。</td></tr>`;
+    }
+    updateSelectionState();
+}
+
+function closeModal() { 
+    modalOverlay.classList.add('hidden'); 
+}
+
 function bindEvents() {
     logoutBtn.addEventListener('click', handleInvoiceLogout);
     tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
@@ -330,9 +348,9 @@ function bindEvents() {
             handleSelectionChange(event);
         }
     });
-    modalCloseBtn.addEventListener('click', () => modalOverlay.classList.add('hidden'));
-    modalCancelBtn.addEventListener('click', () => modalOverlay.classList.add('hidden'));
-    modalOverlay.addEventListener('click', (event) => { if (event.target === modalOverlay) modalOverlay.classList.add('hidden'); });
+    modalCloseBtn.addEventListener('click', closeModal);
+    modalCancelBtn.addEventListener('click', closeModal);
+    modalOverlay.addEventListener('click', (event) => { if (event.target === modalOverlay) closeModal(); });
     btnSaveChanges.addEventListener('click', handleSaveChanges);
     btnIssueInvoice.addEventListener('click', handleIssueInvoice);
     btnVoidInvoice.addEventListener('click', handleVoidInvoice);
