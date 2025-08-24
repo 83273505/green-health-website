@@ -34,7 +34,6 @@ const authCheckView = document.getElementById('auth-check-view');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const logoutBtn = document.getElementById('logout-btn');
 const tabs = document.querySelectorAll('.tab-link');
-const notificationMessageEl = document.getElementById('notification-message');
 const pendingInvoiceTbody = document.getElementById('pending-invoice-tbody');
 const searchResultsTbody = document.getElementById('search-results-tbody');
 const selectAllPendingCheckbox = document.getElementById('select-all-pending');
@@ -164,6 +163,7 @@ function showDetailsModal(invoice) {
     [originalInfoSection, invoiceEditForm, manualCorrectionSection].forEach(el => el.classList.add('hidden'));
     [btnSaveChanges, btnIssueInvoice, btnVoidInvoice].forEach(btn => btn.classList.add('hidden'));
 
+    originalInfoSection.classList.remove('hidden');
     originalInvoiceTypeEl.textContent = typeMap[invoice.type] || invoice.type;
     originalRecipientEmailEl.textContent = invoice.recipient_email || '無';
     originalCompanyNameEl.textContent = invoice.company_name || '無';
@@ -343,7 +343,6 @@ function closeModal() {
 }
 
 function bindEvents() {
-    console.log('bindEvents function is called.'); //
     logoutBtn.addEventListener('click', handleInvoiceLogout);
     tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
     searchForm.addEventListener('submit', handleAdvancedSearch);
@@ -351,10 +350,12 @@ function bindEvents() {
         setTimeout(() => searchResultsTbody.innerHTML = `<tr><td colspan="8" class="initial-message">請輸入條件以開始查詢。</td></tr>`, 0);
     });
     mainContent.addEventListener('click', (event) => {
-        const row = event.target.closest('.invoice-row');
-        if (row && row.dataset.invoiceId) {
-            const invoice = invoicesCache.get(row.dataset.invoiceId);
-            if (invoice) showDetailsModal(invoice);
+        if (event.target.closest('.btn-details')) {
+            const row = event.target.closest('.invoice-row');
+            if (row && row.dataset.invoiceId) {
+                const invoice = invoicesCache.get(row.dataset.invoiceId);
+                if (invoice) showDetailsModal(invoice);
+            }
         }
         if (event.target.matches('.row-checkbox, #select-all-pending, #select-all-search')) {
             handleSelectionChange(event);
@@ -373,12 +374,12 @@ function bindEvents() {
 }
 
 export async function init() {
-    console.log('invoicing.js init function started.');//
     currentUser = await requireInvoiceLogin();
     if (!currentUser) return;
     currentUserEmailEl.textContent = currentUser.email;
     authCheckView.classList.add('hidden');
     mainContent.classList.remove('hidden');
-    bindEvents();//
+    bindEvents();
     await fetchPendingInvoices();
 }
+83.7s
