@@ -13,7 +13,7 @@
     <header class="main-header">
         <div class="header-left">
             <a href="/admin/launcher.html" class="back-to-launcher" title="返回後台首頁">
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </a>
             <h1>發票管理儀表板</h1>
         </div>
@@ -39,20 +39,15 @@
 
             <div id="pending-invoices-view" class="tab-content active invoice-list-container">
                 <div class="table-actions">
-                    <button id="btn-export-csv" class="btn-secondary" disabled>匯出所選項目 CSV</button>
+                    <button id="btn-export-csv-pending" class="btn-secondary" disabled>匯出所選項目 CSV</button>
                 </div>
                 <div class="invoice-table-container">
                     <table class="invoice-table">
                         <thead>
                             <tr>
                                 <th class="checkbox-cell"><input type="checkbox" id="select-all-pending" title="全選"></th>
-                                <th>發票類型</th>
-                                <th>關鍵資訊</th>
-                                <th>訂單編號</th>
-                                <th>顧客</th>
-                                <th>總金額</th>
-                                <th>訂單日期</th>
-                                <th>操作</th>
+                                <th>發票類型</th><th>關鍵資訊</th><th>訂單編號</th><th>顧客</th>
+                                <th>總金額</th><th>訂單日期</th><th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="pending-invoice-tbody"></tbody>
@@ -64,32 +59,22 @@
                 <div class="filters-and-search">
                      <form id="invoice-search-form" class="invoice-search-form">
                         <div class="form-group"><label for="search-term">關鍵字搜尋</label><input type="text" id="search-term" placeholder="訂單號 / 發票號 / Email / 統編..."></div>
-                        <div class="form-group">
-                            <label for="search-status">發票狀態</label>
-                            <select id="search-status">
-                                <!-- [v47.2] 移除「待開立」，因為此 Tab 用於查詢已處理發票 -->
-                                <option value="">所有已處理狀態</option>
-                                <option value="issued">已開立</option>
-                                <option value="voided">已作廢</option>
-                                <option value="failed">開立失敗</option>
-                            </select>
-                        </div>
+                        <div class="form-group"><label for="search-status">發票狀態</label><select id="search-status"><option value="">所有已處理狀態</option><option value="issued">已開立</option><option value="voided">已作廢</option><option value="failed">開立失敗</option></select></div>
                         <div class="form-group"><label>建立日期區間</label><div class="date-range"><input type="date" id="search-date-from"><input type="date" id="search-date-to"></div></div>
                         <div class="form-actions"><button type="submit" id="search-btn" class="btn-submit">查詢</button><button type="reset" id="reset-btn" class="btn-secondary">重設</button></div>
                     </form>
+                </div>
+                <!-- [v47.3] 為進階查詢頁籤新增匯出按鈕 -->
+                <div class="table-actions">
+                    <button id="btn-export-csv-search" class="btn-secondary" disabled>匯出所選項目 CSV</button>
                 </div>
                 <div id="search-results-container" class="invoice-table-container">
                      <table class="invoice-table">
                         <thead>
                             <tr>
                                 <th class="checkbox-cell"><input type="checkbox" id="select-all-search" title="全選"></th>
-                                <th>發票狀態</th>
-                                <th>發票號碼</th>
-                                <th>訂單編號</th>
-                                <th>買受人/公司</th>
-                                <th>總金額</th>
-                                <th>開立日期</th>
-                                <th>操作</th>
+                                <th>發票狀態</th><th>發票號碼</th><th>訂單編號</th><th>買受人/公司</th>
+                                <th>總金額</th><th>開立日期</th><th>操作</th>
                             </tr>
                         </thead>
                         <tbody id="search-results-tbody"></tbody>

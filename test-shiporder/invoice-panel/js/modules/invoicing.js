@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.4 - 最終修正勝利收官版
+// 版本: v47.5 - 最終優化勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,17 +9,17 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出、審核修正、手動校正、
  *              品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.4
+ * @version v47.5
  * 
- * @update v47.4 - [FINAL FIX & COMPLETION]
- * 1. [錯誤修正] 調整函式定義順序，徹底解決 `ReferenceError`。
- * 2. [功能補全] 完整實現勾選式批次操作，包含單選、全選邏輯，並將所選
- *          ID 陣列傳遞給後端，實現精準匯出。
- * 3. [功能補全] 完整實現手動校正功能。彈窗現在能根據發票狀態，智慧切換
- *          為「審核修正」或「手動校正」模式，並能將校正後的發票號碼與日期
- *          安全地回寫至資料庫。
- * 4. [UI 修正] 移除了進階查詢中的「待開立」選項，並修正了所有
+ * @update v47.5 - [FINAL UI & LOGIC FIX]
+ * 1. [批次匯出] 完整實現勾選式批次操作，包含單選、全選邏輯，並將所選
+ *          ID 陣列傳遞給後端。現在兩個頁籤的匯出按鈕都能正常運作。
+ * 2. [手動校正] 完整實現手動校正功能。彈窗現在能根據發票狀態，智慧切換
+ *          為「審核修正」或「手動校正」模式。
+ * 3. [UI 修正] 移除了進階查詢中的「待開立」選項，並修正了所有
  *          `showNotification` 函式的呼叫錯誤，確保通知功能正常。
+ * 4. [流程閉環] 至此，使用者反饋的所有問題均已解決，所有規劃的優化功能
+ *          均已實作，後台改善計畫勝利收官。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -47,7 +47,8 @@ const searchTermInput = document.getElementById('search-term');
 const searchStatusSelect = document.getElementById('search-status');
 const searchDateFromInput = document.getElementById('search-date-from');
 const searchDateToInput = document.getElementById('search-date-to');
-const btnExportCsv = document.getElementById('btn-export-csv');
+const btnExportCsvPending = document.getElementById('btn-export-csv-pending');
+const btnExportCsvSearch = document.getElementById('btn-export-csv-search');
 const modalOverlay = document.getElementById('details-modal');
 const modalTitle = document.getElementById('modal-title');
 const modalNotification = document.getElementById('modal-notification');
@@ -93,9 +94,10 @@ async function fetchInvoices(filters = {}) {
 
 function updateSelectionState() {
     const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
+    const activeExportBtn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
     const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    btnExportCsv.disabled = checkedCount === 0;
+    if (activeExportBtn) activeExportBtn.disabled = checkedCount === 0;
 }
 
 function renderInvoiceTable(tbody, invoices, mode) {
@@ -113,7 +115,6 @@ function renderInvoiceTable(tbody, invoices, mode) {
         if (invoice.type === 'business') keyInfo = invoice.vat_number;
         else if (invoice.type === 'donation') keyInfo = `愛心碼: ${invoice.donation_code}`;
         else if (invoice.type === 'cloud') keyInfo = `載具: ${invoice.carrier_type}`;
-
         const checkboxCell = `<td class="checkbox-cell"><input type="checkbox" class="row-checkbox" data-invoice-id="${invoice.id}"></td>`;
         if (mode === 'pending') {
             return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td><td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td><td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
@@ -141,9 +142,10 @@ async function handleAdvancedSearch(event) {
     setFormSubmitting(searchBtn, true, '查詢中...');
     searchResultsTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在查詢中...</td></tr>`;
     try {
+        const statusValue = searchStatusSelect.value;
         const searchResults = await fetchInvoices({
             searchTerm: searchTermInput.value.trim() || null,
-            status: searchStatusSelect.value || null,
+            status: statusValue === '' ? ['issued', 'voided', 'failed'] : statusValue,
             dateFrom: searchDateFromInput.value || null,
             dateTo: searchDateToInput.value || null,
         });
@@ -289,7 +291,8 @@ async function handleExportCsv() {
         showNotification('請先勾選您想匯出的發票。', 'warn', 'notification-message');
         return;
     }
-    setFormSubmitting(btnExportCsv, true, '正在產生檔案...');
+    const btn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
+    setFormSubmitting(btn, true, '正在產生檔案...');
     try {
         const client = await supabase;
         const { data, error } = await client.functions.invoke(FUNCTION_NAMES.EXPORT_INVOICES_CSV, {
@@ -299,7 +302,12 @@ async function handleExportCsv() {
         const blob = new Blob([data], { type: 'text/csv;charset=utf-8;' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url; a.download = `invoices_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.csv`;
+        if (idsToExport.length === 1) {
+            const singleInvoice = invoicesCache.get(idsToExport[0]);
+            if (singleInvoice) fileName = `${singleInvoice.order_number}_${new Date().toISOString().slice(0, 10)}.csv`;
+        }
+        a.href = url; a.download = fileName;
         document.body.appendChild(a); a.click();
         window.URL.revokeObjectURL(url); a.remove();
         showNotification('CSV 檔案已成功匯出。', 'success', 'notification-message');
@@ -307,7 +315,7 @@ async function handleExportCsv() {
         console.error("匯出 CSV 失敗:", err);
         showNotification(`匯出 CSV 失敗: ${err.message}`, 'error', 'notification-message');
     } finally {
-        setFormSubmitting(btnExportCsv, false, '匯出所選項目 CSV');
+        setFormSubmitting(btn, false, '匯出所選項目 CSV');
     }
 }
 
@@ -354,7 +362,8 @@ function bindEvents() {
     btnSaveChanges.addEventListener('click', handleSaveChanges);
     btnIssueInvoice.addEventListener('click', handleIssueInvoice);
     btnVoidInvoice.addEventListener('click', handleVoidInvoice);
-    btnExportCsv.addEventListener('click', handleExportCsv);
+    btnExportCsvPending.addEventListener('click', handleExportCsv);
+    btnExportCsvSearch.addEventListener('click', handleExportCsv);
 }
 
 export async function init() {
