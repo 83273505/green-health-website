@@ -13,7 +13,6 @@
     <header class="main-header">
         <div class="header-left">
             <a href="/admin/launcher.html" class="back-to-launcher" title="返回後台首頁">
-                <!-- [v47.5] 修正 viewBox 屬性 -->
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </a>
             <h1>發票管理儀表板</h1>
@@ -41,7 +40,7 @@
             <div id="pending-invoices-view" class="tab-content active invoice-list-container">
                 <div class="table-actions">
                     <button id="btn-export-csv-pending" class="btn-secondary" disabled>匯出所選項目 (CSV)</button>
-                    <button id="btn-export-xlsx-pending" class="btn-primary" disabled>匯出所選項目 (XLSX)</button>
+                    <button id="btn-export-xlsx-pending" class="btn-secondary" disabled>匯出所選項目 (XLSX)</button>
                 </div>
                 <div class="invoice-table-container">
                     <table class="invoice-table">
@@ -68,7 +67,7 @@
                 </div>
                 <div class="table-actions">
                     <button id="btn-export-csv-search" class="btn-secondary" disabled>匯出所選項目 (CSV)</button>
-                    <button id="btn-export-xlsx-search" class="btn-primary" disabled>匯出所選項目 (XLSX)</button>
+                    <button id="btn-export-xlsx-search" class="btn-secondary" disabled>匯出所選項目 (XLSX)</button>
                 </div>
                 <div id="search-results-container" class="invoice-table-container">
                      <table class="invoice-table">
