@@ -29,6 +29,8 @@
             <p class="loading-text">正在驗證您的存取權限...</p>
         </div>
         
+        <div id="fatal-error-view" class="hidden" style="padding: 2rem; text-align: center;"></div>
+
         <div id="main-content" class="hidden">
             <div class="tabs">
                 <button class="tab-link active" data-tab="pending">已出貨待開發票</button>
@@ -112,6 +114,22 @@
                     <div id="edit-form-business" class="invoice-form-fields hidden"><div class="form-grid"><div class="form-group"><label for="edit-vat-number">統一編號</label><input type="text" id="edit-vat-number" maxlength="8"></div><div class="form-group"><label for="edit-company-name">公司抬頭</label><input type="text" id="edit-company-name"></div></div></div>
                     <div id="edit-form-cloud" class="invoice-form-fields hidden"><div class="form-grid"><div class="form-group"><label for="edit-carrier-type">載具類型</label><input type="text" id="edit-carrier-type"></div><div class="form-group"><label for="edit-carrier-number">載具號碼</label><input type="text" id="edit-carrier-number"></div></div></div>
                     <div id="edit-form-donation" class="invoice-form-fields hidden"><div class="form-group full-width"><label for="edit-donation-code">愛心碼</label><input type="text" id="edit-donation-code"></div></div>
+
+                    <!-- [v47.7] 新增「手動回填」區塊 -->
+                    <div id="manual-entry-section" class="hidden">
+                        <hr class="form-divider">
+                        <p class="form-section-subtitle">或選擇手動開立並回填：</p>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="manual-invoice-number">手動輸入發票號碼</label>
+                                <input type="text" id="manual-invoice-number" placeholder="HG12345678">
+                            </div>
+                            <div class="form-group">
+                                 <label for="manual-random-number">手動輸入隨機碼</label>
+                                 <input type="text" id="manual-random-number" placeholder="1234" maxlength="4">
+                            </div>
+                        </div>
+                    </div>
                 </form>
 
                 <div id="manual-correction-section" class="modal-section hidden">
@@ -142,6 +160,32 @@
         </div>
     </div>
     
-    <script type="module" src="/invoice-panel/js/core/app.js"></script> 
+    <script type="module">
+        async function initializeApp() {
+            const authCheckView = document.getElementById('auth-check-view');
+            const mainContent = document.getElementById('main-content');
+            const fatalErrorView = document.getElementById('fatal-error-view');
+
+            try {
+                const app = await import('/invoice-panel/js/core/app.js');
+                await app.init();
+            } catch (error) {
+                console.error('[invoice-panel/index.html] 應用程式初始化時發生致命錯誤:', error);
+                authCheckView.classList.add('hidden');
+                mainContent.classList.add('hidden');
+                fatalErrorView.classList.remove('hidden');
+                fatalErrorView.innerHTML = `
+                    <div class="error-message large">
+                        <h4>應用程式載入失敗</h4>
+                        <p>很抱歉，儀表板無法正常啟動。這通常是程式碼更新後發生了語法錯誤。</p>
+                        <p><strong>錯誤詳情：</strong> ${error.message}</p>
+                        <pre style="text-align: left; background-color: #f0f0f0; padding: 1rem; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word;">${error.stack}</pre>
+                        <button onclick="window.location.reload()">重新載入頁面</button>
+                    </div>
+                `;
+            }
+        }
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
 </body>
 </html>

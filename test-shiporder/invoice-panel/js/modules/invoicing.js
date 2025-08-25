@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.13 - 前後端分離勝利收官版
+// 版本: v47.14 - 流程完整性最終收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,13 +9,13 @@
  * @file Invoicing Module (發票管理模組)
  * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
  *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.13
+ * @version v47.14
  * 
- * @update v47.13 - [FRONTEND/BACKEND CONTEXT FIX]
- * 1. [核心修正] 修正 `handleExport` 函式，使用 supabase 客戶端實例
- *          (`client.functionsUrl`) 的公開屬性來取得正確的函式 URL，
- *          取代了錯誤的後端專用 `Deno.env.get` 語法。
- * 2. [錯誤解決] 此修改徹底解決了 `ReferenceError: Deno is not defined` 錯誤。
+ * @update v47.14 - [MANUAL ENTRY WORKFLOW]
+ * 1. [功能擴充] 在「待開立」發票的彈窗中，新增了「手動開立並回填」區塊。
+ * 2. [邏輯升級] `handleSaveChanges` 函式現在能夠智慧判斷使用者是否填寫了
+ *          手動發票號碼，並在儲存時一併將發票狀態更新為 `issued`，
+ *          完整地閉環了手動作業流程。
  * 3. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
  */
 
@@ -68,6 +68,9 @@ const editCompanyNameInput = document.getElementById('edit-company-name');
 const editCarrierTypeInput = document.getElementById('edit-carrier-type');
 const editCarrierNumberInput = document.getElementById('edit-carrier-number');
 const editDonationCodeInput = document.getElementById('edit-donation-code');
+const manualEntrySection = document.getElementById('manual-entry-section');
+const manualInvoiceNumberInput = document.getElementById('manual-invoice-number');
+const manualRandomNumberInput = document.getElementById('manual-random-number');
 const manualCorrectionSection = document.getElementById('manual-correction-section');
 const correctInvoiceNumberInput = document.getElementById('correct-invoice-number');
 const correctIssuedAtInput = document.getElementById('correct-issued-at');
@@ -85,7 +88,6 @@ async function fetchInvoices(filters = {}) {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.SEARCH_INVOICES, { body: filters });
     if (error) throw error;
-    
     invoicesCache.clear();
     (data || []).forEach(invoice => invoicesCache.set(invoice.id, invoice));
     return data;
@@ -95,10 +97,8 @@ function updateSelectionState() {
     const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
     const activeExportCsvBtn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
     const activeExportXlsxBtn = currentTab === 'pending' ? btnExportXlsxPending : btnExportXlsxSearch;
-    
     const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    
     if (activeExportCsvBtn) activeExportCsvBtn.disabled = checkedCount === 0;
     if (activeExportXlsxBtn) activeExportXlsxBtn.disabled = checkedCount === 0;
 }
@@ -106,38 +106,30 @@ function updateSelectionState() {
 function renderInvoiceTable(tbody, invoices, mode) {
     if (!invoices || invoices.length === 0) {
         const colspan = 8;
-        tbody.innerHTML = `<tr><td colspan="${colspan}" class="initial-message">${
-            mode === 'pending' ? '目前沒有已出貨且待開立的發票。' : '找不到符合條件的發票記錄。'
-        }</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${colspan}" class="initial-message">${mode === 'pending' ? '目前沒有已出貨且待開立的發票。' : '找不到符合條件的發票記錄。'}</td></tr>`;
         return;
     }
-    
     tbody.innerHTML = invoices.map(invoice => {
         const statusInfo = statusMap[invoice.status] || { text: invoice.status, class: '' };
         const createdDate = new Date(invoice.created_at).toLocaleDateString();
         const issuedDate = invoice.issued_at ? new Date(invoice.issued_at).toLocaleDateString() : '---';
         const recipient = invoice.company_name || invoice.recipient_name || 'N/A';
-        
         let keyInfo = '---';
         if (invoice.type === 'business') keyInfo = invoice.vat_number;
         else if (invoice.type === 'donation') keyInfo = `愛心碼: ${invoice.donation_code}`;
         else if (invoice.type === 'cloud') keyInfo = `載具: ${invoice.carrier_type}`;
-        
         const checkboxCell = `<td class="checkbox-cell"><input type="checkbox" class="row-checkbox" data-invoice-id="${invoice.id}"></td>`;
-        
         if (mode === 'pending') {
             return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="tag-${invoice.type}">${typeMap[invoice.type] || invoice.type}</span></td><td>${keyInfo}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${createdDate}</td><td><button class="btn-primary btn-details">檢視與開立</button></td></tr>`;
         } else {
             return `<tr data-invoice-id="${invoice.id}" class="invoice-row">${checkboxCell}<td><span class="status-tag ${statusInfo.class}">${statusInfo.text}</span></td><td>${invoice.invoice_number || '---'}</td><td>${invoice.order_number}</td><td>${recipient}</td><td>${formatPrice(invoice.total_amount)}</td><td>${issuedDate}</td><td><button class="btn-secondary btn-details">詳情</button></td></tr>`;
         }
     }).join('');
-    
     updateSelectionState();
 }
 
 async function fetchPendingInvoices() {
     pendingInvoiceTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在載入待開發票列表...</td></tr>`;
-    
     try {
         const pendingInvoices = await fetchInvoices({ status: 'pending', orderStatus: 'shipped' });
         renderInvoiceTable(pendingInvoiceTbody, pendingInvoices, 'pending');
@@ -149,12 +141,9 @@ async function fetchPendingInvoices() {
 
 async function handleAdvancedSearch(event) {
     if (event) event.preventDefault();
-    
     const searchBtn = searchForm.querySelector('button[type="submit"]');
     setFormSubmitting(searchBtn, true, '查詢中...');
-    
     searchResultsTbody.innerHTML = `<tr><td colspan="8" class="loading-text">正在查詢中...</td></tr>`;
-    
     try {
         const statusValue = searchStatusSelect.value;
         const searchResults = await fetchInvoices({
@@ -163,7 +152,6 @@ async function handleAdvancedSearch(event) {
             dateFrom: searchDateFromInput.value || null,
             dateTo: searchDateToInput.value || null,
         });
-        
         renderInvoiceTable(searchResultsTbody, searchResults, 'search');
     } catch (err) {
         console.error('查詢發票時發生錯誤:', err);
@@ -175,15 +163,13 @@ async function handleAdvancedSearch(event) {
 
 function showDetailsModal(invoice) {
     modalTitle.textContent = `發票作業中心 (訂單 #${invoice.order_number})`;
-    
-    [originalInfoSection, invoiceEditForm, manualCorrectionSection].forEach(el => el.classList.add('hidden'));
+    [originalInfoSection, invoiceEditForm, manualCorrectionSection, manualEntrySection].forEach(el => el.classList.add('hidden'));
     [btnSaveChanges, btnIssueInvoice, btnVoidInvoice].forEach(btn => btn.classList.add('hidden'));
 
     originalInfoSection.classList.remove('hidden');
     originalInvoiceTypeEl.textContent = typeMap[invoice.type] || invoice.type;
     originalRecipientEmailEl.textContent = invoice.recipient_email || '無';
     originalCompanyNameEl.textContent = invoice.company_name || '無';
-    
     let originalKey = '---';
     if (invoice.type === 'business') originalKey = `統編: ${invoice.vat_number}`;
     else if (invoice.type === 'donation') originalKey = `愛心碼: ${invoice.donation_code}`;
@@ -191,9 +177,12 @@ function showDetailsModal(invoice) {
     originalKeyInfoEl.textContent = originalKey;
 
     editInvoiceIdInput.value = invoice.id;
+    manualInvoiceNumberInput.value = '';
+    manualRandomNumberInput.value = '';
 
     if (invoice.status === 'pending' || invoice.status === 'failed') {
         invoiceEditForm.classList.remove('hidden');
+        manualEntrySection.classList.remove('hidden');
         editInvoiceTypeDisplay.value = typeMap[invoice.type] || invoice.type;
         [businessFormFields, cloudFormFields, donationFormFields].forEach(f => f.classList.add('hidden'));
         switch(invoice.type) {
@@ -201,7 +190,7 @@ function showDetailsModal(invoice) {
             case 'cloud': cloudFormFields.classList.remove('hidden'); editCarrierTypeInput.value = invoice.carrier_type || ''; editCarrierNumberInput.value = invoice.carrier_number || ''; break;
             case 'donation': donationFormFields.classList.remove('hidden'); editDonationCodeInput.value = invoice.donation_code || ''; break;
         }
-        btnSaveChanges.textContent = '儲存修改';
+        btnSaveChanges.textContent = '儲存修改 / 回填';
         btnSaveChanges.classList.remove('hidden');
         btnIssueInvoice.classList.remove('hidden');
     } else {
@@ -240,6 +229,13 @@ async function handleSaveChanges() {
             case 'cloud': updates.carrier_type = editCarrierTypeInput.value.trim(); updates.carrier_number = editCarrierNumberInput.value.trim(); break;
             case 'donation': updates.donation_code = editDonationCodeInput.value.trim(); break;
         }
+        const manualNumber = manualInvoiceNumberInput.value.trim();
+        if (manualNumber) {
+            updates.invoice_number = manualNumber;
+            updates.random_number = manualRandomNumberInput.value.trim();
+            updates.status = 'issued';
+            updates.issued_at = new Date().toISOString();
+        }
     } else {
         updates.invoice_number = correctInvoiceNumberInput.value.trim();
         updates.issued_at = correctIssuedAtInput.value ? new Date(correctIssuedAtInput.value).toISOString() : null;
@@ -251,14 +247,14 @@ async function handleSaveChanges() {
         if (error) throw error; if (data.error) throw new Error(data.error);
         const updatedInvoice = { ...invoice, ...updates };
         invoicesCache.set(invoiceId, updatedInvoice);
-        showDetailsModal(updatedInvoice);
-        showNotification(data.message || '資料已成功更新。', 'success', 'modal-notification');
+        showNotification(data.message || '資料已成功更新。', 'success', 'notification-message');
+        closeModal();
         setTimeout(() => { currentTab === 'pending' ? fetchPendingInvoices() : handleAdvancedSearch(); }, 1500);
     } catch (err) {
         console.error("儲存修改失敗:", err);
         showNotification(`儲存失敗: ${err.message}`, 'error', 'modal-notification');
     } finally {
-        setFormSubmitting(btnSaveChanges, false, '儲存修改');
+        setFormSubmitting(btnSaveChanges, false, '儲存修改 / 回填');
     }
 }
 
@@ -316,7 +312,6 @@ async function handleExport(format, btn) {
         const { data: { session } } = await client.auth.getSession();
         if (!session) throw new Error('無法取得使用者憑證，請重新登入。');
         
-        // [v47.13] 核心修正: 使用 client.functionsUrl 取得正確的 URL
         const functionUrl = `${client.functionsUrl}/${functionName}`;
         const response = await fetch(functionUrl, {
             method: 'POST',
