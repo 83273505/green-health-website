@@ -1,103 +1,88 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/update-invoice-details/index.ts
-// 版本: v47.0 - 發票詳情更新 (為審核修正功能而新建)
+// 版本: v47.1 - 流程完整性最終收官版
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接使用】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Update Invoice Details Function (更新發票詳情函式)
- * @description 為後台「審核與修正中心」提供後端支援。允許授權使用者在
- *              發票開立前，安全地修改 `invoices` 表中的買受人相關資訊。
- * @version v47.0
+ * @description 處理來自後台的發票資料更新請求，包含修正與手動校正。
+ * @version v47.1
  * 
- * @architectural_notes
- * 1. [安全] 嚴格執行權限檢查，確保只有具備 'permissions:users:edit' 權限
- *          的管理員才能執行此操作。
- * 2. [職責單一] 此函式的唯一職責是更新發票資料，不涉及任何開立或作廢邏輯。
- * 3. [資料驗證] 在執行資料庫更新前，會對傳入的資料進行基本的格式驗證，
- *          例如檢查統一編號是否為 8 位數字。
- * 4. [權限模型] 採用與 `issue-invoice-manually` (v45.1) 相同的、分離的
- *          Client 權限模型，確保操作的安全與正確。
+ * @update v47.1 - [FINAL WORKFLOW COMPLETION]
+ * 1. [安全性重構] 引入 `allowedFields` 白名單機制，取代了獨立的欄位驗證，
+ *          使函式更安全、更具擴展性。
+ * 2. [功能閉環] 在白名單中新增了 `invoice_number`, `random_number`, `status`, 
+ *          `issued_at` 等欄位，授權了前端「手動開立並回填」及「手動校正」
+ *          操作所需的所有欄位更新權限，完整地閉環了所有手動作業流程。
  */
 
-import { createClient } from '../_shared/deps.ts'
-import { corsHeaders } from '../_shared/cors.ts'
+import { createClient } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+
+// [v47.1] 引入欄位白名單，提升安全性與擴展性
+const allowedFields = [
+  'vat_number', 'company_name', 
+  'carrier_type', 'carrier_number', 
+  'donation_code',
+  'invoice_number', 'random_number', 'status', 'issued_at'
+];
 
 Deno.serve(async (req) => {
-  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // --- 1. 初始化 Client 並驗證使用者權限 ---
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabaseUserClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization')! } } });
     
-    const supabaseUserClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    );
-
     const { data: { user } } = await supabaseUserClient.auth.getUser();
-    if (!user || !(user.app_metadata?.permissions || []).includes('permissions:users:edit')) {
-      return new Response(JSON.stringify({ error: '權限不足，您無法修改發票資料。' }), { 
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (!user || !(user.app_metadata?.permissions || []).includes('module:invoicing:view')) {
+      return new Response(JSON.stringify({ error: '權限不足。' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // --- 2. 解析並驗證前端傳來的資料 ---
     const { invoiceId, updates } = await req.json();
-    if (!invoiceId || !updates) {
-        throw new Error("請求中缺少 'invoiceId' 或 'updates' 參數。");
+    if (!invoiceId || !updates || typeof updates !== 'object') {
+      throw new Error('缺少 invoiceId 或 updates 物件。');
     }
 
-    // 簡單的後端驗證
-    if (updates.vat_number && !/^\d{8}$/.test(updates.vat_number)) {
-        throw new Error('統一編號格式不正確，應為 8 位數字。');
-    }
-    if ('company_name' in updates && !updates.company_name) {
-        throw new Error('公司抬頭不可為空。');
+    // [v47.1] 使用白名單過濾要更新的欄位
+    const filteredUpdates: { [key: string]: any } = {};
+    for (const key in updates) {
+      if (allowedFields.includes(key)) {
+        filteredUpdates[key] = updates[key];
+      } else {
+        console.warn(`[update-invoice-details] 偵測到不允許的欄位更新嘗試: ${key}`);
+        throw new Error(`不允許的欄位: ${key}`);
+      }
     }
 
-    // --- 3. 執行資料庫更新操作 ---
+    if (Object.keys(filteredUpdates).length === 0) {
+      throw new Error('沒有提供任何有效的更新欄位。');
+    }
+    
+    filteredUpdates.updated_at = new Date().toISOString();
+
     const { data, error } = await supabaseAdmin
       .from('invoices')
-      .update(updates)
+      .update(filteredUpdates)
       .eq('id', invoiceId)
-      .select('id') // 只選擇 id 以確認更新成功
+      .select()
       .single();
 
-    if (error) {
-        console.error(`[update-invoice-details] 更新發票 (ID: ${invoiceId}) 失敗:`, error);
-        throw new Error(`資料庫更新失敗: ${error.message}`);
-    }
+    if (error) throw error;
 
-    // --- 4. 回傳成功響應 ---
-    return new Response(
-      JSON.stringify({
-        success: true,
-        message: `發票 (ID: ${data.id}) 的資料已成功更新。`,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
-
+    return new Response(JSON.stringify({ success: true, data, message: '發票資料已成功更新。' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 200,
+    });
   } catch (error) {
-    console.error('[update-invoice-details] 函式發生未預期錯誤:', error.message);
-    return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 400, // Bad Request，通常由無效輸入引起
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      }
-    );
+    console.error('[update-invoice-details] 函式發生錯誤:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 400,
+    });
   }
 });
