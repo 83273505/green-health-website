@@ -115,7 +115,6 @@
                     <div id="edit-form-cloud" class="invoice-form-fields hidden"><div class="form-grid"><div class="form-group"><label for="edit-carrier-type">載具類型</label><input type="text" id="edit-carrier-type"></div><div class="form-group"><label for="edit-carrier-number">載具號碼</label><input type="text" id="edit-carrier-number"></div></div></div>
                     <div id="edit-form-donation" class="invoice-form-fields hidden"><div class="form-group full-width"><label for="edit-donation-code">愛心碼</label><input type="text" id="edit-donation-code"></div></div>
 
-                    <!-- [v47.7] 新增「手動回填」區塊 -->
                     <div id="manual-entry-section" class="hidden">
                         <hr class="form-divider">
                         <p class="form-section-subtitle">或選擇手動開立並回填：</p>
@@ -167,8 +166,9 @@
             const fatalErrorView = document.getElementById('fatal-error-view');
 
             try {
-                const app = await import('/invoice-panel/js/core/app.js');
-                await app.init();
+                // [v47.8] 核心修正：直接載入擁有 init 函式的功能模組
+                const appModule = await import('/invoice-panel/js/modules/invoicing.js');
+                await appModule.init();
             } catch (error) {
                 console.error('[invoice-panel/index.html] 應用程式初始化時發生致命錯誤:', error);
                 authCheckView.classList.add('hidden');
