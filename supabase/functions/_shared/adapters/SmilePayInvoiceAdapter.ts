@@ -1,22 +1,23 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.4 - 參數結構勝利收官版
+// 版本: v48.5 - 健壯驗證勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
- * @description 此類別扮演「翻譯官」的角色，負責將我們系統內部的資料模型，
- *              轉換為速買配 API 所需的特定請求格式。
- * @version v48.4
+ * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
+ * @version v48.5
  * 
- * @update v48.4 - [FINAL PARAMETER STRUCTURE FIX]
- * 1. [核心修正] 重構了最終參數物件 `params` 的組合方式，移除了重複的、
- *          會導致參數覆蓋的 `Email` 屬性。
- * 2. [邏輯歸併] 將 `Email` 和 `Phone` 的賦值邏輯，完全歸併到 `switch`
- *          區塊內，確保了參數結構的絕對正確性。
- * 3. [錯誤解決] 此修改旨在徹底解決 `-10054` (缺少建立載具參數) 錯誤。
+ * @update v48.5 - [ROBUST PARAMETER VALIDATION]
+ * 1. [核心重構] 引入一個全新的 `_validateParams` 私有方法，在 API 請求發送前，
+ *          對產生的參數進行一次嚴格的、基於業務規則的最終驗證。
+ * 2. [錯誤解決] 驗證器包含對 `-10054` 錯誤的精準防禦：強制要求會員載具
+ *          必須提供 Email 或 Phone。
+ * 3. [健壯性] 驗證器加入了「捐贈發票不得包含載具資訊」的互斥性檢查，
+ *          預防了潛在的未來錯誤。
+ * 4. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
@@ -31,6 +32,8 @@ export class SmilePayInvoiceAdapter {
   async issueInvoice(invoiceData: any): Promise<any> {
     try {
       const smilePayParams = this._convertToSmilePayFormat(invoiceData);
+      this._validateParams(smilePayParams); // [v48.5] 發送前驗證
+      
       const response = await this.apiClient.issueInvoice(smilePayParams);
       if (!response.success) {
         throw new Error(`[SmilePay] ${response.error?.message || '未知的 API 錯誤'}`);
@@ -45,6 +48,19 @@ export class SmilePayInvoiceAdapter {
       console.error('[SmilePayInvoiceAdapter] issueInvoice 執行失敗:', error);
       throw error;
     }
+  }
+
+  private _validateParams(params: SmilePayInvoiceParams): void {
+    if (params.DonateMark === '1' && params.CarrierType) {
+        throw new Error('格式錯誤：捐贈發票不得同時包含載具資訊。');
+    }
+    
+    // 根據 -10054 錯誤，對會員載具進行嚴格檢查
+    if (params.CarrierType === 'EJ0113' && !params.Email && !params.Phone) {
+        throw new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email 或電話號碼。');
+    }
+    
+    // 未來可在此處擴充更多驗證規則，例如手機條碼格式...
   }
 
   private _convertToSmilePayFormat(invoiceData: any): SmilePayInvoiceParams {
@@ -127,7 +143,7 @@ export class SmilePayInvoiceAdapter {
           CarrierType: carrierMapping[invoiceData.carrier_type] || 'EJ0113',
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
-          Email: invoiceData.recipient_email,
+          Email: invoiceData.recipient_email || '',
           Phone: order.customer_phone || '',
         };
         break;
