@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.3 - 會員載具最終修正版
+// 版本: v48.4 - 參數結構勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,13 +9,14 @@
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 此類別扮演「翻譯官」的角色，負責將我們系統內部的資料模型，
  *              轉換為速買配 API 所需的特定請求格式。
- * @version v48.3
+ * @version v48.4
  * 
- * @update v48.3 - [MEMBER CARRIER PARAMETER FIX]
- * 1. [核心修正] 在處理「雲端發票」的邏輯中，明確地加入了 `Email` 和 `Phone`
- *          參數，以符合速買配建立會員載具時的要求。
- * 2. [錯誤解決] 此修改旨在徹底解決 `-10054` (缺少建立載具參數) 錯誤，
- *          打通 API 直連的最後一哩路。
+ * @update v48.4 - [FINAL PARAMETER STRUCTURE FIX]
+ * 1. [核心修正] 重構了最終參數物件 `params` 的組合方式，移除了重複的、
+ *          會導致參數覆蓋的 `Email` 屬性。
+ * 2. [邏輯歸併] 將 `Email` 和 `Phone` 的賦值邏輯，完全歸併到 `switch`
+ *          區塊內，確保了參數結構的絕對正確性。
+ * 3. [錯誤解決] 此修改旨在徹底解決 `-10054` (缺少建立載具參數) 錯誤。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
@@ -102,6 +103,7 @@ export class SmilePayInvoiceAdapter {
         specificParams = {
           Buyer_id: invoiceData.vat_number,
           CompanyName: invoiceData.company_name,
+          Email: invoiceData.recipient_email,
           DonateMark: '0',
           UnitTAX: 'Y',
         };
@@ -109,6 +111,7 @@ export class SmilePayInvoiceAdapter {
       case 'donation':
         specificParams = {
           Name: invoiceData.recipient_name,
+          Email: invoiceData.recipient_email,
           DonateMark: '1',
           LoveKey: invoiceData.donation_code,
         };
@@ -124,9 +127,8 @@ export class SmilePayInvoiceAdapter {
           CarrierType: carrierMapping[invoiceData.carrier_type] || 'EJ0113',
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
-          // [v48.3] 核心修正: 根據 -10054 錯誤，補上會員載具所需的 Email/Phone 參數
           Email: invoiceData.recipient_email,
-          Phone: order.customer_phone || '', // 使用訂單電話作為備援
+          Phone: order.customer_phone || '',
         };
         break;
     }
@@ -143,8 +145,6 @@ export class SmilePayInvoiceAdapter {
       Amount: amounts.join('|'),
       AllAmount: Number(order.total_amount),
       ...specificParams,
-      // Email 參數現在由 specificParams 處理，但保留此處以應對 B2B/捐贈等情況
-      Email: invoiceData.recipient_email,
       data_id: `INV-${invoiceData.id}`,
       orderid: order.order_number,
     };
