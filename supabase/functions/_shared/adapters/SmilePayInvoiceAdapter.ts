@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v46.2 - 發票品項完整性修正 (關鍵錯誤修復版)
+// 版本: v48.2 - 職責簡化勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,18 +9,13 @@
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 此類別扮演「翻譯官」的角色，負責將我們系統內部的資料模型，
  *              轉換為速買配 API 所需的特定請求格式。
- *              所有與速買配 API 格式相關的邏輯都封裝在此處。
- * @version v46.2
+ * @version v48.2
  * 
- * @update v46.2 - [INVOICE LINE ITEM COMPLETENESS FIX]
- * 1. [核心修正] 重構 `_convertToSmilePayFormat` 函式，現在會檢查訂單中的
- *          `coupon_discount` 和 `shipping_fee` 欄位。
- * 2. [功能實現] 如果折扣或運費存在且大於 0，會將其作為獨立的品項
- *          （例如 "優惠折扣", "運費"）附加到發票明細中。折扣金額會以
- *          負數形式呈現。
- * 3. [原理] 此修改確保了發票上所有品項金額的總和，將精確等於訂單的
- *          `total_amount`，修正了先前版本中發票總額不符的嚴重錯誤，
- *          確保了交易憑證的法律與會計準確性。
+ * @update v48.2 - [RESPONSIBILITY SIMPLIFICATION]
+ * 1. [職責簡化] 根據最終決策，移除了 `voidInvoice` (作廢發票) 的相關邏輯，
+ *          讓此檔案的職責更專一，只處理「開立發票」。
+ * 2. [邏輯確認] 保留了 v48.1 中最關鍵的「按比例分攤折扣」演算法，確保
+ *          API 直連的資料格式與已驗證成功的批次上傳格式完全一致。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams, SmilePayResponse } from '../clients/SmilePayAPIClient.ts';
@@ -51,52 +46,52 @@ export class SmilePayInvoiceAdapter {
       throw error;
     }
   }
-  
-  async voidInvoice(invoiceNumber: string, invoiceDate: string, reason: string): Promise<any> {
-    try {
-      const response = await this.apiClient.voidInvoice(invoiceNumber, invoiceDate, reason);
-      if (!response.success) {
-        throw new Error(`[SmilePay] 作廢失敗: ${response.error?.message || '未知的 API 錯誤'}`);
-      }
-      return { success: true, apiResponse: response };
-    } catch (error) {
-      console.error('[SmilePayInvoiceAdapter] voidInvoice 執行失敗:', error);
-      throw error;
-    }
-  }
 
   private _convertToSmilePayFormat(invoiceData: any): SmilePayInvoiceParams {
     const order = invoiceData.orders;
     const items = order.order_items || [];
+    const couponDiscount = Number(order.coupon_discount) || 0;
+    const shippingFee = Number(order.shipping_fee) || 0;
 
-    // [v46.2 核心修正] 先將所有品項資訊存入暫存陣列
-    const descriptions: string[] = items.map((item: any) => item.product_variants?.name || '商品');
-    const quantities: string[] = items.map((item: any) => String(item.quantity));
-    const unitPrices: string[] = items.map((item: any) => String(item.price_at_order));
-    const units: string[] = items.map(() => '件'); // 預設單位為「件」
-    const amounts: string[] = items.map((item: any) => 
-      String(parseFloat(item.price_at_order) * parseInt(item.quantity, 10))
-    );
+    const itemsTotal = items.reduce((sum, item) => sum + (Number(item.price_at_order) * Number(item.quantity)), 0);
+    let allocatedDiscount = 0;
+    
+    const discountedItems = items.map((item, index) => {
+        const price = Number(item.price_at_order) || 0;
+        const quantity = Number(item.quantity) || 0;
+        const subtotal = price * quantity;
+        
+        let itemDiscount = 0;
+        if (itemsTotal > 0 && couponDiscount > 0) {
+            if (index === items.length - 1) {
+                itemDiscount = couponDiscount - allocatedDiscount;
+            } else {
+                itemDiscount = Math.round((subtotal / itemsTotal) * couponDiscount);
+                allocatedDiscount += itemDiscount;
+            }
+        }
+        
+        const newSubtotal = subtotal - itemDiscount;
+        const newPrice = quantity > 0 ? newSubtotal / quantity : 0;
 
-    // [v46.2 新增] 檢查並加入「優惠折扣」作為一個獨立品項
-    const couponDiscount = Number(order.coupon_discount);
-    if (couponDiscount > 0) {
-        descriptions.push('優惠折扣');
-        quantities.push('1');
-        unitPrices.push(String(-couponDiscount)); // 單價為負數
-        units.push('式');
-        amounts.push(String(-couponDiscount)); // 小計為負數
-    }
-
-    // [v46.2 新增] 檢查並加入「運費」作為一個獨立品項
-    const shippingFee = Number(order.shipping_fee);
+        return {
+            name: (item.product_variants?.name || '商品').replace(/\n/g, ' '),
+            quantity: quantity,
+            price: newPrice,
+            subtotal: newSubtotal,
+            unit: '件'
+        };
+    });
+    
     if (shippingFee > 0) {
-        descriptions.push('運費');
-        quantities.push('1');
-        unitPrices.push(String(shippingFee));
-        units.push('式');
-        amounts.push(String(shippingFee));
+        discountedItems.push({ name: '運費', quantity: 1, price: shippingFee, subtotal: shippingFee, unit: '式' });
     }
+
+    const descriptions = discountedItems.map(item => item.name);
+    const quantities = discountedItems.map(item => String(item.quantity));
+    const unitPrices = discountedItems.map(item => String(item.price));
+    const units = discountedItems.map(item => item.unit);
+    const amounts = discountedItems.map(item => String(item.subtotal));
 
     const now = new Date();
     const invoiceDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
@@ -139,7 +134,6 @@ export class SmilePayInvoiceAdapter {
       InvoiceTime: invoiceTime,
       Intype: '07',
       TaxType: '1',
-      // [v46.2 核心修正] 使用拼接後包含折扣與運費的完整品項字串
       Description: descriptions.join('|'),
       Quantity: quantities.join('|'),
       UnitPrice: unitPrices.join('|'),
