@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.5 - 健壯驗證勝利收官版
+// 版本: v48.6 - 資料路徑勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,16 +8,14 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v48.5
+ * @version v48.6
  * 
- * @update v48.5 - [ROBUST PARAMETER VALIDATION]
- * 1. [核心重構] 引入一個全新的 `_validateParams` 私有方法，在 API 請求發送前，
- *          對產生的參數進行一次嚴格的、基於業務規則的最終驗證。
- * 2. [錯誤解決] 驗證器包含對 `-10054` 錯誤的精準防禦：強制要求會員載具
- *          必須提供 Email 或 Phone。
- * 3. [健壯性] 驗證器加入了「捐贈發票不得包含載具資訊」的互斥性檢查，
- *          預防了潛在的未來錯誤。
- * 4. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
+ * @update v48.6 - [FINAL DATA PATH FIX]
+ * 1. [核心修正] 修正了讀取電話號碼的資料來源，從錯誤的 `order.customer_phone`
+ *          改為正確的 `order.shipping_address_snapshot?.phone_number`。
+ * 2. [錯誤解決] 此修改旨在徹底解決因無法正確獲取電話號碼，而導致持續觸發
+ *          的 `-10054` (缺少建立載具參數) 錯誤。
+ * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
@@ -32,7 +30,7 @@ export class SmilePayInvoiceAdapter {
   async issueInvoice(invoiceData: any): Promise<any> {
     try {
       const smilePayParams = this._convertToSmilePayFormat(invoiceData);
-      this._validateParams(smilePayParams); // [v48.5] 發送前驗證
+      this._validateParams(smilePayParams);
       
       const response = await this.apiClient.issueInvoice(smilePayParams);
       if (!response.success) {
@@ -55,12 +53,9 @@ export class SmilePayInvoiceAdapter {
         throw new Error('格式錯誤：捐贈發票不得同時包含載具資訊。');
     }
     
-    // 根據 -10054 錯誤，對會員載具進行嚴格檢查
     if (params.CarrierType === 'EJ0113' && !params.Email && !params.Phone) {
         throw new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email 或電話號碼。');
     }
-    
-    // 未來可在此處擴充更多驗證規則，例如手機條碼格式...
   }
 
   private _convertToSmilePayFormat(invoiceData: any): SmilePayInvoiceParams {
@@ -144,7 +139,8 @@ export class SmilePayInvoiceAdapter {
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
           Email: invoiceData.recipient_email || '',
-          Phone: order.customer_phone || '',
+          // [v48.6] 核心修正: 從正確的 JSONB 欄位讀取電話號碼
+          Phone: order.shipping_address_snapshot?.phone_number || '',
         };
         break;
     }
