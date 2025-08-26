@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.7 - API 參數勝利收官版
+// 版本: v48.8 - 追蹤欄位勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,13 +8,12 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v48.7
+ * @version v48.8
  * 
- * @update v48.7 - [FINAL PARAMETER CALIBRATION]
- * 1. [核心修正] 修正了 `data_id` (自訂發票編號) 的賦值邏輯，現在將使用
- *          更具可讀性的 `order_number` 進行對應，以利追蹤。
- * 2. [錯誤解決] 移除了會導致 `Email` 參數在特定情況下被覆蓋的多餘程式碼，
- *          確保 API 開立時，速買配能收到 Email 並成功寄送通知信。
+ * @update v48.8 - [FINAL TRACKING ID FIX]
+ * 1. [核心修正] 根據 API 文件與成功範本，重新校準 `data_id` 與 `orderid` 的對應。
+ * 2. [錯誤解決] `data_id` 現在正確地使用 `order_number`，而 `orderid` 則
+ *          留空，以符合速買配的格式要求並解決 `-10084` (orderid 格式錯誤)。
  * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
  */
 
@@ -156,9 +155,9 @@ export class SmilePayInvoiceAdapter {
       Amount: amounts.join('|'),
       AllAmount: Number(order.total_amount),
       ...specificParams,
-      // [v48.7] 核心修正: 將 data_id 對應到 order_number 以利追蹤
+      // [v48.8] 核心修正: 根據成功經驗，將 order_number 放入 data_id，並將 orderid 留空
       data_id: order.order_number, 
-      orderid: `INV-${invoiceData.id}`, // 將內部 ID 放在 orderid 作為備援
+      orderid: '',
     };
 
     return params;
