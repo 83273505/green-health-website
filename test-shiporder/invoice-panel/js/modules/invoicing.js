@@ -1,22 +1,22 @@
 // ==============================================================================
 // 檔案路徑: invoice-panel/js/modules/invoicing.js
-// 版本: v47.14 - 流程完整性最終收官版
+// 版本: v47.15 - 全流程最終收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Invoicing Module (發票管理模組)
- * @description 最終版。實現了具備勾選式批次匯出 (CSV & XLSX)、審核修正、
- *              手動校正、品項校對、開立與作廢功能於一體的完整發票作業中心。
- * @version v47.14
+ * @description 最終版。實現了具備勾選式批次匯出、審核修正、手動校正
+ *              (開立與作廢)、品項校對、API開立的全功能發票作業中心。
+ * @version v47.15
  * 
- * @update v47.14 - [MANUAL ENTRY WORKFLOW]
- * 1. [功能擴充] 在「待開立」發票的彈窗中，新增了「手動開立並回填」區塊。
- * 2. [邏輯升級] `handleSaveChanges` 函式現在能夠智慧判斷使用者是否填寫了
- *          手動發票號碼，並在儲存時一併將發票狀態更新為 `issued`，
- *          完整地閉環了手動作業流程。
- * 3. [專案完成] 至此，所有已知問題均已修正，所有功能均已實現，專案勝利收官。
+ * @update v47.15 - [MANUAL VOID WORKFLOW]
+ * 1. [功能閉環] 完整實現「手動標示為作廢」功能。點擊按鈕後會提示輸入
+ *          作廢原因，並將狀態、原因、時間一併回寫至資料庫。
+ * 2. [邏輯升級] `showDetailsModal` 和 `handleSaveChanges` 函式同步升級，
+ *          現在能夠完整地展示與儲存作廢發票的校正資訊。
+ * 3. [專案完成] 至此，所有已知問題均已修正，所有功能與操作流程均已實現閉環。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
@@ -74,12 +74,15 @@ const manualRandomNumberInput = document.getElementById('manual-random-number');
 const manualCorrectionSection = document.getElementById('manual-correction-section');
 const correctInvoiceNumberInput = document.getElementById('correct-invoice-number');
 const correctIssuedAtInput = document.getElementById('correct-issued-at');
+const voidCorrectionFields = document.getElementById('void-correction-fields');
+const correctVoidReasonInput = document.getElementById('correct-void-reason');
+const correctVoidedAtInput = document.getElementById('correct-voided-at');
 const modalItemsTbody = document.getElementById('modal-items-tbody');
 const modalTotalAmountEl = document.getElementById('modal-total-amount');
 const modalFooter = document.getElementById('modal-footer');
 const btnSaveChanges = document.getElementById('btn-save-changes');
 const btnIssueInvoice = document.getElementById('btn-issue-invoice');
-const btnVoidInvoice = document.getElementById('btn-void-invoice');
+const btnManualVoid = document.getElementById('btn-manual-void');
 
 const statusMap = { pending: { text: '待開立', class: 'status-pending' }, issued: { text: '已開立', class: 'status-issued' }, failed: { text: '開立失敗', class: 'status-failed' }, voided: { text: '已作廢', class: 'status-voided' } };
 const typeMap = { business: '公司戶發票', cloud: '雲端發票', donation: '捐贈發票' };
@@ -95,12 +98,13 @@ async function fetchInvoices(filters = {}) {
 
 function updateSelectionState() {
     const activeTbody = currentTab === 'pending' ? pendingInvoiceTbody : searchResultsTbody;
-    const activeExportCsvBtn = currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch;
-    const activeExportXlsxBtn = currentTab === 'pending' ? btnExportXlsxPending : btnExportXlsxSearch;
+    const btns = [
+        currentTab === 'pending' ? btnExportCsvPending : btnExportCsvSearch,
+        currentTab === 'pending' ? btnExportXlsxPending : btnExportXlsxSearch
+    ];
     const checkboxes = activeTbody.querySelectorAll('.row-checkbox');
     const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
-    if (activeExportCsvBtn) activeExportCsvBtn.disabled = checkedCount === 0;
-    if (activeExportXlsxBtn) activeExportXlsxBtn.disabled = checkedCount === 0;
+    btns.forEach(btn => { if (btn) btn.disabled = checkedCount === 0; });
 }
 
 function renderInvoiceTable(tbody, invoices, mode) {
@@ -163,8 +167,8 @@ async function handleAdvancedSearch(event) {
 
 function showDetailsModal(invoice) {
     modalTitle.textContent = `發票作業中心 (訂單 #${invoice.order_number})`;
-    [originalInfoSection, invoiceEditForm, manualCorrectionSection, manualEntrySection].forEach(el => el.classList.add('hidden'));
-    [btnSaveChanges, btnIssueInvoice, btnVoidInvoice].forEach(btn => btn.classList.add('hidden'));
+    [originalInfoSection, invoiceEditForm, manualCorrectionSection, manualEntrySection, voidCorrectionFields].forEach(el => el.classList.add('hidden'));
+    [btnSaveChanges, btnIssueInvoice, btnManualVoid].forEach(btn => btn.classList.add('hidden'));
 
     originalInfoSection.classList.remove('hidden');
     originalInvoiceTypeEl.textContent = typeMap[invoice.type] || invoice.type;
@@ -197,9 +201,14 @@ function showDetailsModal(invoice) {
         manualCorrectionSection.classList.remove('hidden');
         correctInvoiceNumberInput.value = invoice.invoice_number || '';
         correctIssuedAtInput.value = invoice.issued_at ? new Date(new Date(invoice.issued_at).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : '';
+        if (invoice.status === 'voided') {
+            voidCorrectionFields.classList.remove('hidden');
+            correctVoidReasonInput.value = invoice.void_reason || '';
+            correctVoidedAtInput.value = invoice.voided_at ? new Date(new Date(invoice.voided_at).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16) : '';
+        }
         btnSaveChanges.textContent = '儲存校正結果';
         btnSaveChanges.classList.remove('hidden');
-        if (invoice.status === 'issued') btnVoidInvoice.classList.remove('hidden');
+        if (invoice.status === 'issued') btnManualVoid.classList.remove('hidden');
     }
     
     modalItemsTbody.innerHTML = (invoice.order_items || []).map(item => `<tr><td>${item.variant_name}</td><td>${item.quantity}</td><td>${formatPrice(item.price_at_order)}</td><td>${formatPrice(item.quantity * item.price_at_order)}</td></tr>`).join('');
@@ -239,6 +248,10 @@ async function handleSaveChanges() {
     } else {
         updates.invoice_number = correctInvoiceNumberInput.value.trim();
         updates.issued_at = correctIssuedAtInput.value ? new Date(correctIssuedAtInput.value).toISOString() : null;
+        if (invoice.status === 'voided') {
+            updates.void_reason = correctVoidReasonInput.value.trim();
+            updates.voided_at = correctVoidedAtInput.value ? new Date(correctVoidedAtInput.value).toISOString() : null;
+        }
     }
     setFormSubmitting(btnSaveChanges, true, '儲存中...');
     try {
@@ -278,23 +291,29 @@ async function handleIssueInvoice() {
     }
 }
 
-async function handleVoidInvoice() {
+async function handleManualVoid() {
     const invoiceId = editInvoiceIdInput.value;
-    const reason = prompt('請輸入作廢原因 (此原因將提交給財政部，20字以內)：');
+    const reason = prompt('請輸入您在速買配後台填寫的「作廢原因」(20字以內)：');
     if (!reason || reason.trim() === '') return;
-    setFormSubmitting(btnVoidInvoice, true, '作廢中...');
+
+    setFormSubmitting(btnManualVoid, true, '更新中...');
     try {
+        const updates = {
+            status: 'voided',
+            void_reason: reason.trim(),
+            voided_at: new Date().toISOString()
+        };
         const client = await supabase;
-        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.VOID_INVOICE, { body: { invoiceId, reason: reason.trim() } });
+        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.UPDATE_INVOICE_DETAILS, { body: { invoiceId, updates } });
         if (error) throw error; if (data.error) throw new Error(data.error);
-        showNotification(data.message || '作廢請求已成功送出。', 'success', 'notification-message');
+        showNotification(data.message || '發票狀態已成功更新為「已作廢」。', 'success', 'notification-message');
         closeModal();
         setTimeout(() => handleAdvancedSearch(), 1000);
     } catch (err) {
-        console.error("作廢失敗:", err);
-        showNotification(`作廢失敗: ${err.message}`, 'error', 'modal-notification');
+        console.error("手動標示作廢失敗:", err);
+        showNotification(`更新失敗: ${err.message}`, 'error', 'modal-notification');
     } finally {
-        setFormSubmitting(btnVoidInvoice, false, '作廢此發票');
+        setFormSubmitting(btnManualVoid, false, '手動標示為作廢');
     }
 }
 
@@ -308,27 +327,10 @@ async function handleExport(format, btn) {
     try {
         const client = await supabase;
         const functionName = format === 'csv' ? FUNCTION_NAMES.EXPORT_INVOICES_CSV : FUNCTION_NAMES.EXPORT_INVOICES_XLSX;
-        
-        const { data: { session } } = await client.auth.getSession();
-        if (!session) throw new Error('無法取得使用者憑證，請重新登入。');
-        
-        const functionUrl = `${client.functionsUrl}/${functionName}`;
-        const response = await fetch(functionUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`
-            },
-            body: JSON.stringify({ invoiceIds: idsToExport })
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json().catch(() => ({ error: `HTTP 錯誤: ${response.status} ${response.statusText}` }));
-            throw new Error(errorData.error || `HTTP 錯誤: ${response.status}`);
-        }
-
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        const { data, error } = await client.functions.invoke(functionName, { body: { invoiceIds: idsToExport }, responseType: 'blob' });
+        if (error) throw error;
+        if (!(data instanceof Blob)) { throw new Error('後端回傳的檔案格式不正確，請檢查後端函式日誌。'); }
+        const url = window.URL.createObjectURL(data);
         const a = document.createElement('a');
         let fileName = `invoices_batch_export_${new Date().toISOString().slice(0, 10)}.${format}`;
         if (idsToExport.length === 1) {
@@ -391,7 +393,7 @@ function bindEvents() {
     modalOverlay.addEventListener('click', (event) => { if (event.target === modalOverlay) closeModal(); });
     btnSaveChanges.addEventListener('click', handleSaveChanges);
     btnIssueInvoice.addEventListener('click', handleIssueInvoice);
-    btnVoidInvoice.addEventListener('click', handleVoidInvoice);
+    btnManualVoid.addEventListener('click', handleManualVoid);
     btnExportCsvPending.addEventListener('click', (e) => handleExport('csv', e.target));
     btnExportXlsxPending.addEventListener('click', (e) => handleExport('xlsx', e.target));
     btnExportCsvSearch.addEventListener('click', (e) => handleExport('csv', e.target));
