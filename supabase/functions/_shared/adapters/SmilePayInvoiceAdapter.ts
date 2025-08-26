@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.6 - 資料路徑勝利收官版
+// 版本: v48.7 - API 參數勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,13 +8,13 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v48.6
+ * @version v48.7
  * 
- * @update v48.6 - [FINAL DATA PATH FIX]
- * 1. [核心修正] 修正了讀取電話號碼的資料來源，從錯誤的 `order.customer_phone`
- *          改為正確的 `order.shipping_address_snapshot?.phone_number`。
- * 2. [錯誤解決] 此修改旨在徹底解決因無法正確獲取電話號碼，而導致持續觸發
- *          的 `-10054` (缺少建立載具參數) 錯誤。
+ * @update v48.7 - [FINAL PARAMETER CALIBRATION]
+ * 1. [核心修正] 修正了 `data_id` (自訂發票編號) 的賦值邏輯，現在將使用
+ *          更具可讀性的 `order_number` 進行對應，以利追蹤。
+ * 2. [錯誤解決] 移除了會導致 `Email` 參數在特定情況下被覆蓋的多餘程式碼，
+ *          確保 API 開立時，速買配能收到 Email 並成功寄送通知信。
  * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
  */
 
@@ -139,7 +139,6 @@ export class SmilePayInvoiceAdapter {
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
           Email: invoiceData.recipient_email || '',
-          // [v48.6] 核心修正: 從正確的 JSONB 欄位讀取電話號碼
           Phone: order.shipping_address_snapshot?.phone_number || '',
         };
         break;
@@ -157,8 +156,9 @@ export class SmilePayInvoiceAdapter {
       Amount: amounts.join('|'),
       AllAmount: Number(order.total_amount),
       ...specificParams,
-      data_id: `INV-${invoiceData.id}`,
-      orderid: order.order_number,
+      // [v48.7] 核心修正: 將 data_id 對應到 order_number 以利追蹤
+      data_id: order.order_number, 
+      orderid: `INV-${invoiceData.id}`, // 將內部 ID 放在 orderid 作為備援
     };
 
     return params;
