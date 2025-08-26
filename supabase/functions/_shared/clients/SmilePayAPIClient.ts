@@ -1,6 +1,10 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/clients/SmilePayAPIClient.ts
+<<<<<<< Updated upstream
 // 版本: v46.3 - 網路逾時加固 (穩定性提升版)
+=======
+// 版本: v48.3 - 代理通道勝利收官版
+>>>>>>> Stashed changes
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,6 +12,7 @@
 /**
  * @file SmilePay API Client (速買配 API 客戶端)
  * @description 封裝與速買配 API 溝通的細節。
+<<<<<<< Updated upstream
  * @version v46.3
  * 
  * @update v46.3 - [NETWORK TIMEOUT HARDENING]
@@ -18,6 +23,15 @@
  * 3. [原理] 此修改能有效防止因第三方 API 無回應而導致 Edge Function 執行超時
  *          的問題，顯著提升了系統在不穩定網路環境下的健壯性。
  * 4. [型別修正] 將 `UnitTAX` 參數加入 `SmilePayInvoiceParams` 介面，維持型別一致性。
+=======
+ * @version v48.3
+ * 
+ * @update v48.3 - [PROXY ROUTING FINAL FIX]
+ * 1. [核心修正] 將 baseUrl 永久、明確地指向在 Cloudflare 中設定的代理
+ *          子域名，確保所有請求都通過已被加入白名單的 Cloudflare 出口 IP。
+ * 2. [職責簡化] 根據最終決策，移除了 `voidInvoice` (作廢發票) 的相關邏輯。
+ * 3. [正體化] 將檔案內所有殘留的簡體字詞修正為正體中文。
+>>>>>>> Stashed changes
  */
 
 export interface SmilePayInvoiceParams {
@@ -79,8 +93,13 @@ export class SmilePayAPIError extends Error {
 export class SmilePayAPIClient {
   private grvc: string;
   private verifyKey: string;
+<<<<<<< Updated upstream
   private baseUrl: string;
   private readonly TIMEOUT = 15000; // 15 秒
+=======
+  private readonly baseUrl: string = 'https://api-proxy.greenhealthtw.com.tw'; // [v48.3] 鎖定 Cloudflare 代理
+  private readonly TIMEOUT = 15000;
+>>>>>>> Stashed changes
 
   constructor() {
     this.grvc = Deno.env.get('SMILEPAY_GRVC') || '';
@@ -90,12 +109,17 @@ export class SmilePayAPIClient {
       console.error("[SmilePayAPIClient] 致命錯誤: 缺少 SMILEPAY_GRVC 或 SMILEPAY_VERIFY_KEY 環境變數(Secrets)。");
       throw new Error("SmilePay API 憑證未設定。");
     }
+<<<<<<< Updated upstream
 
     const isProduction = Deno.env.get('ENVIRONMENT') === 'production';
     this.baseUrl = isProduction 
       ? 'https://ssl.smse.com.tw/api'
       : 'https://ssl.smse.com.tw/api_test';
     console.log(`[SmilePayAPIClient] 已初始化，目標環境: ${isProduction ? 'Production' : 'Test'}`);
+=======
+    
+    console.log(`[SmilePayAPIClient] 已初始化，目標代理 URL: ${this.baseUrl}`);
+>>>>>>> Stashed changes
   }
 
   async issueInvoice(params: SmilePayInvoiceParams): Promise<SmilePayResponse> {
@@ -104,7 +128,12 @@ export class SmilePayAPIClient {
       Verify_key: this.verifyKey,
       ...params
     });
+<<<<<<< Updated upstream
     const url = `${this.baseUrl}/SPEinvoice_Storage.asp`;
+=======
+    const url = `${this.baseUrl}/api/SPEinvoice_Storage.asp`; // [v48.3] 請求代理後的相對路徑
+    
+>>>>>>> Stashed changes
     try {
       const response = await this._fetchWithTimeout(url, {
         method: 'POST',
@@ -208,6 +237,7 @@ export class SmilePayAPIClient {
   private _getErrorMessage(code: number): string {
     const errorMessages: Record<number, string> = {
       0: '成功',
+<<<<<<< Updated upstream
       '-1001': '商家帳號缺少參數',
       '-10011': '查無商家帳號',
       '-10021': '統一編號(Buyer_id)格式錯誤',
@@ -218,6 +248,12 @@ export class SmilePayAPIClient {
       '-10066': '商品總金額(AllAmount)驗算錯誤',
       '-10071': '無可用字軌',
       '-10072': '自訂發票編號 (data_id)重複',
+=======
+      '-1001': '商家帳號缺少參數', '-10011': '查無商家帳號', '-10021': '統一編號(Buyer_id)格式錯誤',
+      '-10033': 'B2C開立需在48hr內', '-10034': 'B2B開立需在168hr內', '-10047': '查無此愛心碼',
+      '-10052': '載具號碼(CarrierID)錯誤', '-10066': '商品總金額(AllAmount)驗算錯誤',
+      '-10071': '無可用字軌', '-10072': '自訂發票編號 (data_id)重複',
+>>>>>>> Stashed changes
     };
     return errorMessages[code] || `未知的錯誤代碼: ${code}`;
   }
