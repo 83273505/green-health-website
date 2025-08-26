@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.2 - 職責簡化勝利收官版
+// 版本: v48.3 - 會員載具最終修正版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,17 +9,16 @@
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 此類別扮演「翻譯官」的角色，負責將我們系統內部的資料模型，
  *              轉換為速買配 API 所需的特定請求格式。
- * @version v48.2
+ * @version v48.3
  * 
- * @update v48.2 - [RESPONSIBILITY SIMPLIFICATION]
- * 1. [職責簡化] 根據最終決策，移除了 `voidInvoice` (作廢發票) 的相關邏輯，
- *          讓此檔案的職責更專一，只處理「開立發票」。
- * 2. [邏輯確認] 保留了 v48.1 中最關鍵的「按比例分攤折扣」演算法，確保
- *          API 直連的資料格式與已驗證成功的批次上傳格式完全一致。
+ * @update v48.3 - [MEMBER CARRIER PARAMETER FIX]
+ * 1. [核心修正] 在處理「雲端發票」的邏輯中，明確地加入了 `Email` 和 `Phone`
+ *          參數，以符合速買配建立會員載具時的要求。
+ * 2. [錯誤解決] 此修改旨在徹底解決 `-10054` (缺少建立載具參數) 錯誤，
+ *          打通 API 直連的最後一哩路。
  */
 
-import { SmilePayAPIClient, SmilePayInvoiceParams, SmilePayResponse } from '../clients/SmilePayAPIClient.ts';
-import { NumberToTextHelper } from '../utils/NumberToTextHelper.ts';
+import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
 
 export class SmilePayInvoiceAdapter {
   private apiClient: SmilePayAPIClient;
@@ -125,6 +124,9 @@ export class SmilePayInvoiceAdapter {
           CarrierType: carrierMapping[invoiceData.carrier_type] || 'EJ0113',
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
+          // [v48.3] 核心修正: 根據 -10054 錯誤，補上會員載具所需的 Email/Phone 參數
+          Email: invoiceData.recipient_email,
+          Phone: order.customer_phone || '', // 使用訂單電話作為備援
         };
         break;
     }
@@ -141,6 +143,7 @@ export class SmilePayInvoiceAdapter {
       Amount: amounts.join('|'),
       AllAmount: Number(order.total_amount),
       ...specificParams,
+      // Email 參數現在由 specificParams 處理，但保留此處以應對 B2B/捐贈等情況
       Email: invoiceData.recipient_email,
       data_id: `INV-${invoiceData.id}`,
       orderid: order.order_number,
