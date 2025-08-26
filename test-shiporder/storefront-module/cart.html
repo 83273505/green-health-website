@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>您的購物車 - Green Health 綠健</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow" />
+    <script type="module" src="/storefront-module/js/core/app.js"></script>
+    <style>
+        :root { 
+            --primary-color: #5E8C61; 
+            --cta-color: #B12704;
+            --text-color: #333;
+            --light-text-color: #666;
+            --border-color: #f0f0f0;
+            --background-color: #f4f7f6;
+            --sale-color: #D9534F;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 1rem;
+        }
+        .cart-container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+        @media (min-width: 992px) {
+            .cart-container {
+                grid-template-columns: 2fr 1fr;
+            }
+        }
+        .cart-items-section, .cart-summary {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        h1, h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 0.75rem;
+        }
+        .cart-item { display: flex; gap: 1rem; border-bottom: 1px solid var(--border-color); padding: 1.25rem 0; }
+        .item-image { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+        .item-details { flex-grow: 1; }
+        .item-name { font-weight: 600; margin: 0 0 0.25rem; }
+        .item-unit-price { font-size: 0.9rem; color: var(--light-text-color); margin: 0; }
+        .item-quantity-controls { display: flex; align-items: center; margin-top: 0.5rem; }
+        .quantity-btn { width: 32px; height: 32px; border: 1px solid #ccc; background-color: #fff; cursor: pointer; }
+        .quantity-display { padding: 0 1rem; }
+        .item-price-section { text-align: right; }
+        .item-price { font-weight: bold; font-size: 1.1rem; }
+        .remove-item-btn { background: none; border: none; color: var(--light-text-color); text-decoration: underline; cursor: pointer; font-size: 0.85rem; }
+        .empty-cart-container { text-align: center; padding: 4rem 1rem; }
+        .continue-shopping-btn { margin-top: 1.5rem; padding: 0.8rem 1.5rem; background-color: var(--primary-color); color: white; text-decoration: none; border-radius: 6px; }
+
+        .cart-summary .summary-row { display: flex; justify-content: space-between; padding: 0.75rem 0; }
+        .cart-summary .summary-row.total { font-size: 1.2rem; font-weight: bold; border-top: 1px solid #eee; margin-top: 0.5rem; }
+        .cart-summary .summary-row.discount { color: var(--sale-color); }
+        .checkout-btn { display: block; width: 100%; box-sizing: border-box; background-color: var(--cta-color); color: white; border: none; padding: 1rem; font-size: 1.1rem; font-weight: bold; border-radius: 6px; cursor: pointer; text-align: center; text-decoration: none; margin-top: 1rem; }
+        .checkout-btn.disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .promo-section .input-group { display: flex; }
+        .promo-section input { flex-grow: 1; border: 1px solid #ccc; padding: 0.6rem; border-radius: 6px 0 0 6px; }
+        .promo-section button { border: 1px solid #ccc; border-left: none; background-color: #f5f5f5; padding: 0.6rem 1rem; cursor: pointer; border-radius: 0 6px 6px 0; }
+
+        .shipping-section { margin-top: 1.5rem; }
+        .shipping-section label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        .shipping-section select { width: 100%; padding: 0.75rem; border: 1px solid #ccc; border-radius: 6px; }
+        .shipping-note { font-size: 0.75rem; color: var(--light-text-color); text-align: right; margin-top: 0.5rem; }
+        #shipping-promo-banner { padding: 0.75rem; background-color: #e8f5e9; color: #388e3c; text-align: center; font-size: 0.9rem; border-radius: 6px; margin-bottom: 1.5rem; display: none; }
+        #shipping-promo-banner p { margin: 0; }
+    </style>
+</head>
+<body id="cart-page">
+
+    <div class="cart-container">
+        <div class="cart-items-section">
+            <h1>您的購物車</h1>
+            <div id="notification-message"></div>
+            <div id="shipping-promo-banner"></div>
+            <div id="cart-item-list">
+                <p>正在載入您的購物車...</p>
+            </div>
+        </div>
+
+        <aside class="cart-summary">
+            <h2>訂單摘要</h2>
+            <div class="promo-section">
+                <div class="input-group">
+                    <input type="text" id="coupon-code-input" placeholder="輸入折扣碼">
+                    <button id="apply-coupon-btn">套用</button>
+                </div>
+            </div>
+            <div class="shipping-section">
+                <label for="shipping-method-select">選擇運送方式</label>
+                <div id="shipping-selector-container">
+                    <select id="shipping-method-select" disabled>
+                        <option>請先將商品加入購物車</option>
+                    </select>
+                </div>
+                <p class="shipping-note">運費僅限台灣本島地區。</p>
+            </div>
+            <div class="summary-details">
+                <div class="summary-row">
+                    <span>商品小計</span>
+                    <span id="summary-subtotal">$0</span>
+                </div>
+                <div class="summary-row discount" style="display: none;">
+                    <span>折扣優惠</span>
+                    <span id="summary-coupon-discount">-$0</span>
+                </div>
+                <div class="summary-row">
+                    <span>運費</span>
+                    <span id="summary-shipping-fee">$0</span>
+                </div>
+                <div class="summary-row total">
+                    <span>總計</span>
+                    <span id="summary-total-price">$0</span>
+                </div>
+            </div>
+            <a href="/storefront-module/checkout.html" id="checkout-btn" class="checkout-btn disabled">前往結帳</a>
+        </aside>
+    </div>
+
+</body>
+</html>

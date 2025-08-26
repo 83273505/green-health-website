@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>出貨儀表板 - Green Health</title>
+    <link rel="stylesheet" href="/warehouse-panel/css/warehouse-style.css">
+</head>
+<body id="shipping-dashboard">
+<header class="main-header">
+    <div class="header-left">
+        <a href="/admin/launcher.html" class="back-to-launcher" title="返回應用程式啟動台">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </a>
+        <h1>出貨管理儀表板</h1>
+    </div>
+    <div class="header-actions">
+        <a href="/warehouse-panel/user-management.html" id="user-management-link" class="btn-secondary hidden">使用者管理</a>
+        <span id="current-user-email"></span>
+        <button id="logout-btn">登出</button>
+    </div>
+</header>
+<main class="dashboard-container">
+    <aside class="order-queue-panel">
+        <div class="tabs">
+            <button class="tab-link active" data-status-tab="pending_payment">待備貨</button>
+            <button class="tab-link" data-status-tab="paid">待出貨</button>
+            <button class="tab-link" data-status-tab="search">已出貨查詢</button>
+        </div>
+        <div id="order-list-container">
+            <div class="loading-spinner">載入中...</div>
+        </div>
+        <div id="search-form-container" class="hidden">
+            <form id="shipped-order-search-form">
+                <div class="form-group"><label for="search-order-number">訂單單號</label><input type="text" id="search-order-number"></div>
+                <div class="form-group"><label for="search-recipient-name">收件人姓名</label><input type="text" id="search-recipient-name"></div>
+                <div class="form-group"><label for="search-email">顧客 Email</label><input type="email" id="search-email"></div>
+                <div class="form-group"><label for="search-phone">顧客手機</label><input type="tel" id="search-phone"></div>
+                <div class="form-group"><label for="search-start-date">出貨日期區間</label><input type="date" id="search-start-date" class="date-input"><span>到</span><input type="date" id="search-end-date" class="date-input"></div>
+                <button type="submit" class="btn-submit">查詢</button>
+            </form>
+        </div>
+    </aside>
+    <section class="order-detail-panel">
+        <div id="order-detail-view" class="hidden">
+            <h2 id="order-number-title">訂單 #</h2>
+            <div id="printable-area">
+                <div class="detail-section"><h3>備貨清單 <button id="print-btn" class="btn-secondary">列印備貨單</button></h3><div id="picking-list"></div></div>
+                <div class="detail-section"><h3>收件資訊</h3><div id="shipping-address"></div></div>
+                <div class="detail-section"><h3>配送資訊</h3><div id="shipping-method-details"></div></div>
+                <div class="detail-section"><h3>付款狀態</h3><div id="payment-details"></div></div>
+            </div>
+            <div id="payment-confirmation-section" class="detail-section action-section hidden">
+                <h3>付款確認作業</h3>
+                <form id="payment-confirmation-form">
+                    <div class="form-group">
+                        <label for="payment-method-selector">最終收款方式</label>
+                        <!-- [v1.2 核心修正] 同步前端與資料庫的付款方式選項 -->
+                        <select id="payment-method-selector" required>
+                            <option value="銀行轉帳 / ATM">銀行轉帳 / ATM</option>
+                            <option value="貨到付款">貨到付款</option>
+                            <option value="信用卡付款">信用卡付款</option>
+                            <option value="現金">現金</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="payment-reference-input">付款參考 (後五碼或其他說明)</label>
+                        <input type="text" id="payment-reference-input">
+                    </div>
+                    <button type="submit" class="btn-submit">確認收款</button>
+                </form>
+            </div>
+            <div id="shipping-action-section" class="detail-section action-section hidden">
+                <h3>出貨作業</h3>
+                <form id="shipping-form">
+                    <div class="form-group"><label for="carrier-selector">配送服務</label><select id="carrier-selector" required></select></div>
+                    <div class="form-group"><label for="tracking-code-input">物流追蹤單號</label><input type="text" id="tracking-code-input" required></div>
+                    <div id="notification-message" style="display: none;"></div>
+                    <button type="submit" id="mark-as-shipped-btn" class="btn-submit">確認出貨並通知顧客</button>
+                </form>
+            </div>
+        </div>
+        <div id="search-results-container" class="hidden"><h3>查詢結果</h3><div id="search-results-list"></div></div>
+        <div id="empty-view"><p>請從左側選擇一筆訂單或開始查詢。</p></div>
+    </section>
+</main>
+<script type="module" src="/warehouse-panel/js/core/app.js"></script>
+</body>
+</html>

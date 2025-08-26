@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>使用者權限管理 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+    
+    <link rel="stylesheet" href="/warehouse-panel/css/warehouse-style.css">
+</head>
+<body id="user-management">
+
+    <header class="main-header">
+        <div class="header-left">
+            <a href="/admin/launcher.html" class="back-to-launcher" title="返回應用程式啟動台">
+                <svg xmlns="http://www.w.org/2000/svg" width="24" height="24" viewBox="0 0 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </a>
+            <h1>使用者權限管理</h1>
+        </div>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="user-management-container">
+        <div id="admin-check-view">
+            <p>正在驗證管理員權限...</p>
+        </div>
+
+        <div id="main-content" class="hidden">
+            <div class="search-bar">
+                <input type="search" id="user-search-input" placeholder="依 Email 搜尋使用者 (可輸入 * 搜尋全部)...">
+            </div>
+            
+            <div id="notification-message" style="display: none;"></div>
+            
+            <div id="user-list-container">
+                <p class="initial-message">請輸入 Email 以搜尋使用者。</p>
+                <!-- 使用者列表將由 JS 動態載入 -->
+            </div>
+        </div>
+    </main>
+
+    <!-- 【核心修正】移除对 config.js 的引用 -->
+    <script type="module" src="/warehouse-panel/js/core/app.js"></script>
+</body>
+</html>
