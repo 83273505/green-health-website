@@ -1,17 +1,28 @@
 // ==============================================================================
 // 檔案路徑: storefront-module/js/modules/product/product-detail.js
-// 版本: v32.0 - 消費者端模組拆分
+// 版本: v32.1 - 狀態同步勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
-// 【核心修正】將 import 路徑指向新的 storefront-module 內部
+/**
+ * @file Product Detail Module (商品詳情模組)
+ * @description 處理商品詳情頁的資料獲取、渲染與加入購物車等互動邏輯。
+ * @version v32.1
+ * 
+ * @update v32.1 - [STATE SYNCHRONIZATION FIX]
+ * 1. [核心修正] `handleAddToCart` 函式現在呼叫的是統一的、中央的
+ *          `CartService.addItem` 方法，取代了已被棄用的 `addToCart`。
+ * 2. [錯誤解決] 此修改確保了在商品頁加入購物車的行為，能夠被中央的
+ *          `CartService` 正確捕獲並觸發狀態更新通知，從而解決了行動端
+ *          購物車圖示數量無法即時更新的問題。
+ */
+
 import { supabase } from '../../core/supabaseClient.js';
 import { TABLE_NAMES } from '../../core/constants.js';
 import { CartService } from '../../services/CartService.js';
 import { formatPrice } from '../../core/utils.js';
 
-// --- DOM 元素獲取 ---
 const loadingView = document.getElementById('loading-view');
 const detailContainer = document.getElementById('product-detail-container');
 const productNameEl = document.getElementById('product-name');
@@ -22,9 +33,6 @@ const priceEl = document.getElementById('price');
 const addToCartForm = document.getElementById('add-to-cart-form');
 const quantityInput = document.getElementById('quantity');
 
-/**
- * 根據 URL 中的 handle 參數，從 Supabase 獲取單一商品的完整資料。
- */
 async function fetchProductByHandle(handle) {
     try {
         const client = await supabase;
@@ -33,7 +41,6 @@ async function fetchProductByHandle(handle) {
             .select(`*, product_variants(*)`)
             .eq('handle', handle)
             .single();
-
         if (error) {
             console.error('讀取商品詳細資料時發生錯誤:', error);
             return null;
@@ -45,12 +52,8 @@ async function fetchProductByHandle(handle) {
     }
 }
 
-/**
- * 將獲取到的商品資料渲染到頁面上。
- */
 function renderProductDetails(product) {
     if (!product) {
-        // 【核心修正】將 URL 指向新的 storefront-module
         if (loadingView) loadingView.innerHTML = `<h1>找不到商品</h1><p>您尋找的商品可能已下架或不存在。</p><a href="/storefront-module/products.html">返回商品列表</a>`;
         return;
     }
@@ -89,7 +92,6 @@ function renderProductDetails(product) {
                     priceEl.innerHTML = `<span>${formatPrice(selectedVariant.price)}</span>`;
                 }
             }
-            
             if (productImageEl) {
                 productImageEl.style.backgroundImage = `url('${product.image_url || 'https://placehold.co/600x600/eeeeee/cccccc?text=無圖片'}')`;
             }
@@ -105,9 +107,6 @@ function renderProductDetails(product) {
     if (detailContainer) detailContainer.classList.remove('hidden');
 }
 
-/**
- * 處理「加入購物車」表單的提交事件
- */
 async function handleAddToCart(event) {
     event.preventDefault();
     if (!variantSelectorEl || !quantityInput) return;
@@ -118,18 +117,16 @@ async function handleAddToCart(event) {
         alert('請選擇有效的規格與數量。');
         return;
     }
-    await CartService.addToCart(selectedVariantId, quantity);
+    
+    // [v32.1] 核心修正: 呼叫統一的 addItem 方法
+    await CartService.addItem({ variantId: selectedVariantId, quantity });
 }
 
-/**
- * 由 app.js 呼叫的主初始化函式
- */
 export async function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const handle = urlParams.get('handle');
 
     if (!handle) {
-        // 【核心修正】將 URL 指向新的 storefront-module
         if (loadingView) loadingView.innerHTML = `<h1>無效的商品連結</h1><p>缺少商品識別碼，無法載入頁面。</p><a href="/storefront-module/products.html">返回商品列表</a>`;
         return;
     }
