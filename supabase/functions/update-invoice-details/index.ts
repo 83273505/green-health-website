@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/update-invoice-details/index.ts
-// 版本: v47.1 - 流程完整性最終收官版
+// 版本: v47.2 - 手動作廢授權勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,25 +8,26 @@
 /**
  * @file Update Invoice Details Function (更新發票詳情函式)
  * @description 處理來自後台的發票資料更新請求，包含修正與手動校正。
- * @version v47.1
+ * @version v47.2
  * 
- * @update v47.1 - [FINAL WORKFLOW COMPLETION]
- * 1. [安全性重構] 引入 `allowedFields` 白名單機制，取代了獨立的欄位驗證，
- *          使函式更安全、更具擴展性。
- * 2. [功能閉環] 在白名單中新增了 `invoice_number`, `random_number`, `status`, 
- *          `issued_at` 等欄位，授權了前端「手動開立並回填」及「手動校正」
- *          操作所需的所有欄位更新權限，完整地閉環了所有手動作業流程。
+ * @update v47.2 - [AUTHORIZE MANUAL VOID]
+ * 1. [功能閉環] 在 `allowedFields` 安全白名單中，新增了 `void_reason` 和
+ *          `voided_at` 兩個欄位。
+ * 2. [錯誤解決] 此修改授權了前端「手動標示為作廢」及「校正作廢資訊」的
+ *          操作權限，徹底解決了因欄位不允許而導致的更新失敗問題。
+ * 3. [專案完成] 至此，所有已知問題均已修正，所有功能與操作流程均已實現閉環。
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
-// [v47.1] 引入欄位白名單，提升安全性與擴展性
+// [v47.2] 在白名單中加入作廢相關欄位
 const allowedFields = [
   'vat_number', 'company_name', 
   'carrier_type', 'carrier_number', 
   'donation_code',
-  'invoice_number', 'random_number', 'status', 'issued_at'
+  'invoice_number', 'random_number', 'status', 'issued_at',
+  'void_reason', 'voided_at'
 ];
 
 Deno.serve(async (req) => {
@@ -48,7 +49,6 @@ Deno.serve(async (req) => {
       throw new Error('缺少 invoiceId 或 updates 物件。');
     }
 
-    // [v47.1] 使用白名單過濾要更新的欄位
     const filteredUpdates: { [key: string]: any } = {};
     for (const key in updates) {
       if (allowedFields.includes(key)) {
