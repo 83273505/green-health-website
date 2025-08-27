@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v49.0 - 通用郵件邏輯勝利收官版
+// 版本: v49.1 - 隱私保護勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,14 +8,13 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v49.0
+ * @version v49.1
  * 
- * @update v49.0 - [UNIVERSAL EMAIL/PHONE FALLBACK]
- * 1. [核心重構] 將健壯的 Email/Phone 多來源備援邏輯，統一應用至所有需要
- *          傳遞顧客聯絡資訊的發票類型 (公司戶、雲端、捐贈)。
- * 2. [流程閉環] 此修改確保了在任何發票類型下，系統都能最大限度地嘗試獲取
- *          顧客 Email，以確保速買配能成功寄送開立通知信。
- * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式與邏輯問題均已解決。
+ * @update v49.1 - [PRIVACY ENHANCEMENT]
+ * 1. [隱私保護] 根據最終決策，移除了所有向速買配 API 傳遞 `Phone` (電話號碼)
+ *          的相關邏輯，因為此欄位為非必填。
+ * 2. [流程閉環] 確保 `Email` 欄位能被正確傳遞以利通知，同時保護了非必要的
+ *          顧客個人敏感資訊。專案至此勝利收官。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
@@ -53,8 +52,9 @@ export class SmilePayInvoiceAdapter {
         throw new Error('格式錯誤：捐贈發票不得同時包含載具資訊。');
     }
     
-    if (params.CarrierType === 'EJ0113' && !params.Email && !params.Phone) {
-        throw new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email 或電話號碼。');
+    // [v49.1] 移除對 Phone 的檢查，因為我們不再傳遞它
+    if (params.CarrierType === 'EJ0113' && !params.Email) {
+        throw new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email。');
     }
   }
 
@@ -108,9 +108,7 @@ export class SmilePayInvoiceAdapter {
     const invoiceDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
     const invoiceTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
-    // [v49.0] 統一定義備援邏輯
     const robustEmail = invoiceData.recipient_email || order.customer_email || order.shipping_address_snapshot?.email || '';
-    const robustPhone = order.shipping_address_snapshot?.phone_number || '';
 
     let specificParams: Partial<SmilePayInvoiceParams> = {};
     switch (invoiceData.type) {
@@ -119,7 +117,6 @@ export class SmilePayInvoiceAdapter {
           Buyer_id: invoiceData.vat_number,
           CompanyName: invoiceData.company_name,
           Email: robustEmail,
-          Phone: robustPhone,
           DonateMark: '0',
           UnitTAX: 'Y',
         };
@@ -127,8 +124,7 @@ export class SmilePayInvoiceAdapter {
       case 'donation':
         specificParams = {
           Name: invoiceData.recipient_name,
-          Email: robustEmail, // [v49.0] 核心修正
-          Phone: robustPhone,
+          Email: robustEmail,
           DonateMark: '1',
           LoveKey: invoiceData.donation_code,
         };
@@ -145,7 +141,6 @@ export class SmilePayInvoiceAdapter {
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
           Email: robustEmail,
-          Phone: robustPhone,
         };
         break;
     }
