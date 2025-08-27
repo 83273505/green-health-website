@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/clients/SmilePayAPIClient.ts
-// 版本: v48.3 - 代理通道勝利收官版
+// 版本: v48.4 - 語法修正勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,13 +8,13 @@
 /**
  * @file SmilePay API Client (速買配 API 客戶端)
  * @description 封裝與速買配 API 溝通的細節。
- * @version v48.3
+ * @version v48.4
  * 
- * @update v48.3 - [PROXY ROUTING FINAL FIX]
- * 1. [核心修正] 將 baseUrl 永久、明確地指向在 Cloudflare 中設定的代理
- *          子域名，確保所有請求都通過已被加入白名單的 Cloudflare 出口 IP。
- * 2. [職責簡化] 根據最終決策，移除了 `voidInvoice` (作廢發票) 的相關邏輯。
- * 3. [正體化] 將檔案內所有殘留的簡體字詞修正為正體中文。
+ * @update v48.4 - [FINAL SYNTAX FIX]
+ * 1. [核心修正] 審查並移除了 `issueInvoice` 函式中潛在的、重複的變數宣告，
+ *          徹底解決了 `Identifier 'url' has already been declared` 語法錯誤。
+ * 2. [錯誤解決] 此修改確保了所有依賴此檔案的後端函式 (如 create-order-from-cart)
+ *          都能成功啟動 (`Boot`)，不再發生 `BootFailure`。
  */
 
 export interface SmilePayInvoiceParams {
@@ -76,7 +76,7 @@ export class SmilePayAPIError extends Error {
 export class SmilePayAPIClient {
   private grvc: string;
   private verifyKey: string;
-  private readonly baseUrl: string = 'https://api-proxy.greenhealthtw.com.tw'; // [v48.3] 鎖定 Cloudflare 代理
+  private readonly baseUrl: string = 'https://api-proxy.greenhealthtw.com.tw';
   private readonly TIMEOUT = 15000;
 
   constructor() {
@@ -97,10 +97,12 @@ export class SmilePayAPIClient {
       Verify_key: this.verifyKey,
       ...params
     });
-    const url = `${this.baseUrl}/api/SPEinvoice_Storage.asp`; // [v48.3] 請求代理後的相對路徑
+    
+    // [v48.4] 確保 url 變數只被宣告一次
+    const requestUrl = `${this.baseUrl}/api/SPEinvoice_Storage.asp`;
     
     try {
-      const response = await this._fetchWithTimeout(url, {
+      const response = await this._fetchWithTimeout(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: urlParams
