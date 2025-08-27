@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v48.8 - 追蹤欄位勝利收官版
+// 版本: v49.0 - 通用郵件邏輯勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,13 +8,14 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v48.8
+ * @version v49.0
  * 
- * @update v48.8 - [FINAL TRACKING ID FIX]
- * 1. [核心修正] 根據 API 文件與成功範本，重新校準 `data_id` 與 `orderid` 的對應。
- * 2. [錯誤解決] `data_id` 現在正確地使用 `order_number`，而 `orderid` 則
- *          留空，以符合速買配的格式要求並解決 `-10084` (orderid 格式錯誤)。
- * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式問題均已解決。
+ * @update v49.0 - [UNIVERSAL EMAIL/PHONE FALLBACK]
+ * 1. [核心重構] 將健壯的 Email/Phone 多來源備援邏輯，統一應用至所有需要
+ *          傳遞顧客聯絡資訊的發票類型 (公司戶、雲端、捐贈)。
+ * 2. [流程閉環] 此修改確保了在任何發票類型下，系統都能最大限度地嘗試獲取
+ *          顧客 Email，以確保速買配能成功寄送開立通知信。
+ * 3. [專案完成] 至此，API 直連的所有已知及潛在的格式與邏輯問題均已解決。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
@@ -107,13 +108,18 @@ export class SmilePayInvoiceAdapter {
     const invoiceDate = `${now.getFullYear()}/${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')}`;
     const invoiceTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
 
+    // [v49.0] 統一定義備援邏輯
+    const robustEmail = invoiceData.recipient_email || order.customer_email || order.shipping_address_snapshot?.email || '';
+    const robustPhone = order.shipping_address_snapshot?.phone_number || '';
+
     let specificParams: Partial<SmilePayInvoiceParams> = {};
     switch (invoiceData.type) {
       case 'business':
         specificParams = {
           Buyer_id: invoiceData.vat_number,
           CompanyName: invoiceData.company_name,
-          Email: invoiceData.recipient_email,
+          Email: robustEmail,
+          Phone: robustPhone,
           DonateMark: '0',
           UnitTAX: 'Y',
         };
@@ -121,7 +127,8 @@ export class SmilePayInvoiceAdapter {
       case 'donation':
         specificParams = {
           Name: invoiceData.recipient_name,
-          Email: invoiceData.recipient_email,
+          Email: robustEmail, // [v49.0] 核心修正
+          Phone: robustPhone,
           DonateMark: '1',
           LoveKey: invoiceData.donation_code,
         };
@@ -137,8 +144,8 @@ export class SmilePayInvoiceAdapter {
           CarrierType: carrierMapping[invoiceData.carrier_type] || 'EJ0113',
           CarrierID: invoiceData.carrier_number,
           CarrierID2: invoiceData.carrier_number,
-          Email: invoiceData.recipient_email || '',
-          Phone: order.shipping_address_snapshot?.phone_number || '',
+          Email: robustEmail,
+          Phone: robustPhone,
         };
         break;
     }
@@ -155,7 +162,6 @@ export class SmilePayInvoiceAdapter {
       Amount: amounts.join('|'),
       AllAmount: Number(order.total_amount),
       ...specificParams,
-      // [v48.8] 核心修正: 根據成功經驗，將 order_number 放入 data_id，並將 orderid 留空
       data_id: order.order_number, 
       orderid: '',
     };
