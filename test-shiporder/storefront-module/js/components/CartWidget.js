@@ -1,16 +1,25 @@
 // ==============================================================================
 // 檔案路徑: storefront-module/js/components/CartWidget.js
-// 版本: v38.1 - 现代化模组重构
+// 版本: v38.2 - 主動狀態同步勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
+/**
+ * @file 購物車小工具 (Cart Widget)
+ * @description 負責渲染並管理頁面右上角的購物車圖示及其數量角標。
+ * @version v38.2
+ * 
+ * @update v38.2 - [PROACTIVE STATE SYNC]
+ * 1. [核心修正] 在 `init` 函式的結尾，增加了主動從 `CartService` 獲取
+ *          初始狀態並立即進行一次渲染的邏輯。
+ * 2. [錯誤解決] 此修改徹底解決了因模組初始化順序而導致 `CartWidget`
+ *          錯過 `CartService` 首次狀態通知，從而無法正確顯示初始購物車
+ *          數量的問題，確保了 UI 狀態的絕對同步。
+ */
+
 import { CartService } from '../services/CartService.js';
 
-/**
- * [私有函式] 根據購物車的最新狀態，重新渲染小工具的 UI。
- * @param {object} state - 來自 CartService 的最新狀態。
- */
 function render(state) {
     const widgetElement = document.getElementById('cart-widget');
     const countElement = document.getElementById('cart-item-count');
@@ -35,10 +44,6 @@ function render(state) {
 }
 
 export const CartWidget = {
-    /**
-     * 初始化購物車小工具，將其掛載到頁面上並訂閱狀態。
-     * @param {string} containerId - 掛載小工具的容器元素 ID。
-     */
     init(containerId = 'cart-widget-container') {
         const container = document.getElementById(containerId);
         if (!container || document.getElementById('cart-widget')) {
@@ -68,7 +73,10 @@ export const CartWidget = {
             });
         }
 
-        // [v38.1 修正] CartWidget 依然依赖 CartService，但 CartService 现在是自给自足的
         CartService.subscribe(render);
+        
+        // [v38.2] 核心修正: 主動獲取一次初始狀態並渲染
+        const initialState = CartService.getState();
+        render(initialState);
     }
 };
