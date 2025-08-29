@@ -14,7 +14,7 @@
             xmlns="http://www.w3.org/2000/svg"
             width="24"
             height="24"
-            viewBox="0 0 24 24"
+            viewBox="0 0 24"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -41,14 +41,12 @@
           <button class="tab-link active" data-status-tab="pending_payment">待備貨</button>
           <button class="tab-link" data-status-tab="paid">待出貨</button>
           <button class="tab-link" data-status-tab="cancelled">已取消</button>
-          <!-- v4.0 改造：更名為統一的訂單查詢 -->
           <button class="tab-link" data-status-tab="search">訂單查詢</button>
         </div>
         <div id="order-list-container">
           <div class="loading-spinner">載入中...</div>
         </div>
 
-        <!-- v4.0 改造：全新的多條件進階查詢表單 -->
         <div id="search-form-container" class="hidden">
           <form id="advanced-order-search-form" class="advanced-search-form">
             <div class="form-group">
@@ -94,10 +92,19 @@
               </h3>
               <div id="picking-list"></div>
             </div>
-            <div class="detail-section">
-              <h3>收件資訊</h3>
-              <div id="shipping-address"></div>
+            
+            <!-- v3.0 新增: 將收件資訊與顧客輪廓並列 -->
+            <div class="detail-columns">
+                <div class="detail-section" id="shipping-address-section">
+                  <h3>收件資訊</h3>
+                  <div id="shipping-address"></div>
+                </div>
+                <div class="detail-section" id="customer-profile-section">
+                  <h3>顧客輪廓</h3>
+                  <div id="customer-profile-content"><p class="loading-text">載入中...</p></div>
+                </div>
             </div>
+
             <div class="detail-section">
               <h3>配送資訊</h3>
               <div id="shipping-method-details"></div>
@@ -106,36 +113,36 @@
               <h3>付款狀態</h3>
               <div id="payment-details"></div>
             </div>
-            <!-- v4.0 新增：顯示取消原因 -->
             <div id="cancellation-details-section" class="detail-section hidden">
-                <h3>取消資訊</h3>
-                <div id="cancellation-details"></div>
+              <h3>取消資訊</h3>
+              <div id="cancellation-details"></div>
             </div>
           </div>
 
           <div id="payment-confirmation-section" class="detail-section action-section hidden">
-            <h3>付款確認作業</h3>
-            <form id="payment-confirmation-form">
-                <!-- 表單內容省略 -->
-            </form>
+            <!-- 付款確認作業內容省略 -->
           </div>
-
           <div id="shipping-action-section" class="detail-section action-section hidden">
-            <h3>出貨作業</h3>
-            <form id="shipping-form">
-                <!-- 表單內容省略 -->
-            </form>
+            <!-- 出貨作業內容省略 -->
+          </div>
+          <div id="cancellation-action-section" class="detail-section action-section hidden">
+            <!-- 訂單取消作業內容省略 -->
+          </div>
+          
+          <!-- v3.0 新增: 訂單操作歷史紀錄 -->
+          <div id="order-history-section" class="detail-section">
+            <details>
+                <summary>顯示訂單操作歷史</summary>
+                <div id="order-history-content"><p class="loading-text">載入中...</p></div>
+            </details>
           </div>
 
-          <div id="cancellation-action-section" class="detail-section action-section hidden">
-            <h3>訂單取消作業</h3>
-            <p class="warning-text">注意：取消訂單將會自動回補商品庫存。此操作無法復原。</p>
-            <button id="btn-cancel-order" class="btn-danger">取消此訂單</button>
-          </div>
         </div>
 
         <div id="search-results-container" class="hidden">
           <h3>查詢結果</h3>
+          <!-- v3.0 新增: 查詢彙總資訊容器 -->
+          <div id="search-summary-container"></div>
           <div id="search-results-list"></div>
         </div>
 

@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/core/constants.js
-// 版本: v23.5 - 儀表板路徑最終確認版
+// 版本: v24.0 - 整合顧客輪廓與訂單彙總函式
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,11 +8,11 @@
 /**
  * @file Warehouse Panel Constants (倉庫後台常數模組)
  * @description 集中管理倉庫後台應用程式的所有常數。
- * @version v23.5
+ * @version v24.0
  * 
- * @update v23.5
- * 1. [路徑最終確認] 根據使用者提供的最終檔案結構，將 DASHBOARD 路徑確認為 'index.html'。
- * 2. [功能整合] 保留先前版本新增的 CANCEL_ORDER 與 SEARCH_ORDERS 函式常數。
+ * @update v24.0
+ * 1. [功能新增] 新增 GET_CUSTOMER_SUMMARY 函式，用於獲取單一顧客的歷史輪廓。
+ * 2. [功能新增] 新增 GET_ORDERS_SUMMARY 函式，用於獲取訂單查詢結果的彙總數據。
  */
 
 export const WAREHOUSE_ROUTES = {
@@ -50,7 +50,10 @@ export const FUNCTION_NAMES = {
   SEARCH_USERS: 'search-users',
   MANAGE_USER_ROLE: 'manage-user-role',
   CANCEL_ORDER: 'cancel-order',
-  SEARCH_ORDERS: 'search-orders', // 統一訂單查詢函式
+  SEARCH_ORDERS: 'search-orders',
+  // v24.0 新增
+  GET_CUSTOMER_SUMMARY: 'get-customer-summary',
+  GET_ORDERS_SUMMARY: 'get-orders-summary',
 };
 
 /**
