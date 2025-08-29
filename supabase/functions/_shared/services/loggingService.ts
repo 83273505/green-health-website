@@ -1,23 +1,28 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/services/loggingService.ts
-// 版本： 2.1 - 依賴本地化 (穩定性提升版)
+// 版本： 2.2 - 穩定性修正 (CORS 依賴注入)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Logging Service (平台統一日誌服務)
- * @version v2.1
+ * @version v2.2
+ *
+ * @update v2.2 - [STABILITY FIX - CORS DEPENDENCY]
+ * 1. [核心修正] 在檔案頂部新增了 `import { corsHeaders } from '../cors.ts';`。
+ * 2. [原理] 解決了當 `withErrorLogging` 中介軟體捕捉到異常並嘗試回傳
+ *          標準 500 錯誤時，因找不到 `corsHeaders` 變數而引發的
+ *          `ReferenceError`。此修正確保了全域錯誤處理機制的健壯性。
  *
  * @update v2.1 - [DEPENDENCY LOCALIZATION]
- * 1. [核心修正] 將 UUID 的生成依賴從遠端的 'https://deno.land/...' 
- *          改為引用專案內部的 '_shared/utils/uuid.ts'。
- * 2. [原理] 此修改徹底移除了可能導致函式啟動失敗的網路依賴，極大地
- *          提升了所有後端函式在部署和冷啟動時的穩定性與可靠性。
+ * 1. [核心修正] 將 UUID 的生成依賴從遠端改為引用本地模組，提升了
+ *          所有後端函式在部署和冷啟動時的穩定性與可靠性。
  */
 
-// [v2.1 核心修正] 從遠端依賴改為本地依賴
 import { v4 as uuidv4 } from '../utils/uuid.ts';
+// [v2.2 核心修正] 補上 withErrorLogging 中間件所需要的 CORS 標頭依賴
+import { corsHeaders } from '../cors.ts';
 
 // 定義日誌嚴重性級別 (數字越小，越不重要)
 export enum LogSeverity {
@@ -175,6 +180,7 @@ export const withErrorLogging = (
         }),
         {
           status: 500,
+          // [v2.2] 確保此處能正確引用 corsHeaders
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
