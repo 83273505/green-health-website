@@ -1,9 +1,23 @@
-// supabase/functions/_shared/services/loggingService.ts
-// 版本： 2.0
-// 說明： 平台統一的結構化日誌服務。此版本整合了環境感知、動態日誌級別、
-//       稽核日誌分層、Schema 版本控制、警示 Webhook 以及可擴充的輸出通道設計。
+// ==============================================================================
+// 檔案路徑: supabase/functions/_shared/services/loggingService.ts
+// 版本： 2.1 - 依賴本地化 (穩定性提升版)
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
 
-import { v4 as uuidv4 } from 'https://deno.land/std@0.177.0/uuid/mod.ts';
+/**
+ * @file Logging Service (平台統一日誌服務)
+ * @version v2.1
+ *
+ * @update v2.1 - [DEPENDENCY LOCALIZATION]
+ * 1. [核心修正] 將 UUID 的生成依賴從遠端的 'https://deno.land/...' 
+ *          改為引用專案內部的 '_shared/utils/uuid.ts'。
+ * 2. [原理] 此修改徹底移除了可能導致函式啟動失敗的網路依賴，極大地
+ *          提升了所有後端函式在部署和冷啟動時的穩定性與可靠性。
+ */
+
+// [v2.1 核心修正] 從遠端依賴改為本地依賴
+import { v4 as uuidv4 } from '../utils/uuid.ts';
 
 // 定義日誌嚴重性級別 (數字越小，越不重要)
 export enum LogSeverity {
@@ -52,7 +66,6 @@ class LoggingService {
   // 集中式輸出通道 (Sink)
   private async _sink(logEntry: LogEntry): Promise<void> {
     // 策略一：標準控制台輸出 (預設)
-    // 輸出為 JSON 字串，便於後續的日誌收集與分析平台進行解析
     console.log(JSON.stringify(logEntry));
 
     // 策略二：嚴重錯誤警示
@@ -61,7 +74,6 @@ class LoggingService {
         await fetch(this.alertWebhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          // 根據不同的 webhook (Slack, Teams) 客製化 body 格式
           body: JSON.stringify({
             text: `🚨 CRITICAL Alert in ${this.functionName} (v${this.functionVersion}) 🚨`,
             attachments: [{
@@ -76,7 +88,6 @@ class LoggingService {
         console.error('Failed to send webhook alert:', e.message);
       }
     }
-    // 未來可在此處擴充其他輸出目標，例如發送到 Datadog, Sentry 等
   }
 
   // 核心日誌記錄方法
@@ -86,7 +97,6 @@ class LoggingService {
     correlationId: string,
     context?: Record<string, any>
   ): void {
-    // 根據動態日誌級別決定是否記錄
     if (severity < CURRENT_LOG_LEVEL) {
       return;
     }
@@ -108,7 +118,6 @@ class LoggingService {
     this._sink(logEntry);
   }
 
-  // --- 公開的日誌記錄方法 ---
   public debug(message: string, correlationId: string, context?: Record<string, any>): void {
     this.log(LogSeverity.DEBUG, message, correlationId, context);
   }
@@ -131,22 +140,14 @@ class LoggingService {
     });
   }
   public audit(message: string, correlationId: string, context: Record<string, any>): void {
-    // 稽核日誌強制記錄，不受 LOG_LEVEL 影響
     this.log(LogSeverity.AUDIT, message, correlationId, context);
   }
 
-  // 產生一個新的 correlationId，通常在請求的最開始呼叫
   public generateCorrelationId(): string {
     return uuidv4();
   }
 }
 
-/**
- * 建立一個全域錯誤攔截器中介軟體 (Middleware)
- * @param handler - 原始的 Edge Function 請求處理器
- * @param logger - LoggingService 的實例
- * @returns 一個新的、被包裹的請求處理器
- */
 export const withErrorLogging = (
   handler: (req: Request, logger: LoggingService, correlationId: string) => Promise<Response>,
   logger: LoggingService
@@ -170,16 +171,15 @@ export const withErrorLogging = (
       return new Response(
         JSON.stringify({
           error: 'An internal server error occurred.',
-          correlationId: correlationId, // 回傳 ID 給前端，便於追蹤
+          correlationId: correlationId,
         }),
         {
           status: 500,
-          headers: { 'Content-Type': 'application/json' },
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         }
       );
     }
   };
 };
-
 
 export default LoggingService;
