@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v47.0 - 整合顧客輪廓、稽核日誌與訂單彙總
+// 版本: v47.1 - 錯誤修復與功能整合最終版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,7 +17,7 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
-// --- v47.0 DOM 元素獲取 (完整版) ---
+// --- v47.1 DOM 元素獲取 (完整版) ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
@@ -168,7 +168,7 @@ async function fetchOrderHistory(orderId) {
     const client = await supabase;
     const { data, error } = await client
         .from('order_history_logs')
-        .select('*')
+        .select('*, profiles(email)')
         .eq('order_id', orderId)
         .order('changed_at', { ascending: false });
     
@@ -176,7 +176,11 @@ async function fetchOrderHistory(orderId) {
         console.error('讀取訂單歷史失敗:', error);
         orderHistoryContentEl.innerHTML = '<p class="error-message">讀取訂單歷史失敗。</p>';
     } else {
-        renderOrderHistory(data);
+        const formattedLogs = data.map(log => ({
+            ...log,
+            changed_by_user_id: log.profiles ? log.profiles.email : (log.changed_by_user_id || 'System')
+        }));
+        renderOrderHistory(formattedLogs);
     }
 }
 
@@ -599,14 +603,20 @@ async function handleResendNotification(orderId, orderNumber) {
 }
 
 function bindEvents() {
-  logoutBtn.addEventListener('click', handleWarehouseLogout);
-
-  orderListContainer.addEventListener('click', (e) => {
+  const safeAddEventListener = (element, event, handler) => {
+    if (element) {
+      element.addEventListener(event, handler);
+    } else {
+      console.warn(`[bindEvents] 警告：試圖綁定事件的元素不存在。`);
+    }
+  };
+  
+  safeAddEventListener(logoutBtn, 'click', handleWarehouseLogout);
+  safeAddEventListener(orderListContainer, 'click', (e) => {
     const t = e.target.closest('.order-list-item');
     if (t) handleOrderSelection(t.dataset.orderId);
   });
-
-  searchResultsList.addEventListener('click', (e) => {
+  safeAddEventListener(searchResultsList, 'click', (e) => {
     const resendBtn = e.target.closest('.btn-resend');
     if (resendBtn) {
       e.stopPropagation();
@@ -618,21 +628,18 @@ function bindEvents() {
       handleOrderSelection(resultItem.dataset.orderId);
     }
   });
-
-  paymentConfirmationForm.addEventListener('submit', handlePaymentConfirmation);
-  shippingForm.addEventListener('submit', handleShippingFormSubmit);
-  printBtn.addEventListener('click', () => window.print());
-  tabs.forEach((tab) => tab.addEventListener('click', handleTabClick));
-
-  advancedOrderSearchForm.addEventListener('submit', handleAdvancedOrderSearch);
-  advancedOrderSearchForm.addEventListener('reset', () => {
+  safeAddEventListener(paymentConfirmationForm, 'submit', handlePaymentConfirmation);
+  safeAddEventListener(shippingForm, 'submit', handleShippingFormSubmit);
+  safeAddEventListener(printBtn, 'click', () => window.print());
+  tabs.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
+  safeAddEventListener(advancedOrderSearchForm, 'submit', handleAdvancedOrderSearch);
+  safeAddEventListener(advancedOrderSearchForm, 'reset', () => {
     searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
     searchSummaryContainerEl.innerHTML = '';
     orderDetailView.classList.add('hidden');
     emptyView.classList.remove('hidden');
   });
-
-  btnCancelOrder.addEventListener('click', handleCancelOrder);
+  safeAddEventListener(btnCancelOrder, 'click', handleCancelOrder);
 }
 
 function handleTabClick(e) {
