@@ -14,7 +14,7 @@
             xmlns="http://www.w3.org/2000/svg"
             width="24"
             height="24"
-            viewBox="0 0 24"
+            viewBox="0 0 24 24" /* 【v3.1 核心修正】補上 viewBox 缺少的第四個參數 */
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -92,17 +92,16 @@
               </h3>
               <div id="picking-list"></div>
             </div>
-            
-            <!-- v3.0 新增: 將收件資訊與顧客輪廓並列 -->
+
             <div class="detail-columns">
-                <div class="detail-section" id="shipping-address-section">
-                  <h3>收件資訊</h3>
-                  <div id="shipping-address"></div>
-                </div>
-                <div class="detail-section" id="customer-profile-section">
-                  <h3>顧客輪廓</h3>
-                  <div id="customer-profile-content"><p class="loading-text">載入中...</p></div>
-                </div>
+              <div class="detail-section" id="shipping-address-section">
+                <h3>收件資訊</h3>
+                <div id="shipping-address"></div>
+              </div>
+              <div class="detail-section" id="customer-profile-section">
+                <h3>顧客輪廓</h3>
+                <div id="customer-profile-content"><p class="loading-text">載入中...</p></div>
+              </div>
             </div>
 
             <div class="detail-section">
@@ -128,20 +127,17 @@
           <div id="cancellation-action-section" class="detail-section action-section hidden">
             <!-- 訂單取消作業內容省略 -->
           </div>
-          
-          <!-- v3.0 新增: 訂單操作歷史紀錄 -->
+
           <div id="order-history-section" class="detail-section">
             <details>
-                <summary>顯示訂單操作歷史</summary>
-                <div id="order-history-content"><p class="loading-text">載入中...</p></div>
+              <summary>顯示訂單操作歷史</summary>
+              <div id="order-history-content"><p class="loading-text">載入中...</p></div>
             </details>
           </div>
-
         </div>
 
         <div id="search-results-container" class="hidden">
           <h3>查詢結果</h3>
-          <!-- v3.0 新增: 查詢彙總資訊容器 -->
           <div id="search-summary-container"></div>
           <div id="search-results-list"></div>
         </div>
