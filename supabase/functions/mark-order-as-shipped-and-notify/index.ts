@@ -1,36 +1,46 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/mark-order-as-shipped-and-notify/index.ts
-// 版本: v46.0 - 「職責回歸」最終版
+// 版本: v47.0 - 導入稽核日誌與 RBAC 權限
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Mark as Shipped & Notify Function (標記出貨並通知函式)
- * @description 處理訂單出貨的核心後端邏輯。職責單一：更新訂單狀態並發送出貨通知。
- * @version v46.0
- * 
- * @update v46.0 - [RESPONSIBILITY RESTORATION]
- * 1. [核心修正] 徹底移除了 _handleInvoiceIssuance 函式以及所有與自動開立發票
- *          相關的呼叫。
- * 2. [職責回歸] 此函式的職責已回歸純粹：僅負責將訂單狀態更新為 'shipped'，
- *          並向顧客發送出貨通知 Email。它不再負責任何發票相關的業務。
- * 3. [原理] 此修正遵循了您最初的、正確的業務流程設計，將「出貨」與「開票」
- *          這兩個獨立的業務流程進行了徹底的解耦，避免了因發票 API 問題
- *          而污染核心出貨流程的風險。
- * 4. [健壯性保留] 完整保留了先前版本中對關聯查詢的強化和對顧客 Email 的
- *          備援讀取邏輯，確保出貨通知能夠可靠地發送。
+ * @description 處理訂單出貨的核心後端邏輯。具備 RBAC 權限檢查，
+ *              透過 RPC 函式確保「更新訂單」與「寫入日誌」的原子性，
+ *              並非同步地發送出貨通知 Email。
+ * @version v47.0
+ *
+ * @update v47.0 - [AUDIT & RBAC]
+ * 1. [安全性] 新增 RBAC 權限檢查，僅允許 'warehouse_staff' 或 'super_admin' 執行。
+ * 2. [原子性] 將資料庫更新與日誌記錄移至 'ship_order_and_log' RPC 函式中，確保交易一致性。
+ * 3. [稽核日誌] 成功出貨後，會自動在 'order_history_logs' 表中新增一筆詳細記錄。
+ * 4. [架構統一] 程式碼結構與 'mark-order-as-paid' 函式保持一致，提升可維護性。
  */
 
-import { createClient, Resend } from '../_shared/deps.ts'
-import { corsHeaders } from '../_shared/cors.ts'
-import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
-// [v46.0] InvoiceService 已不再需要，故移除 import
-// import { InvoiceService } from '../_shared/services/InvoiceService.ts'
+import { createClient, Resend } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts';
+
+const ALLOWED_ROLES = ['warehouse_staff', 'super_admin'];
+
+function log(level: 'INFO' | 'WARN' | 'ERROR', message: string, context: object = {}) {
+  console.log(
+    JSON.stringify({
+      level,
+      timestamp: new Date().toISOString(),
+      function: 'mark-order-as-shipped-and-notify',
+      message,
+      ...context,
+    })
+  );
+}
 
 class MarkAsShippedHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
+  private userContext: { email: string; roles: string } = { email: 'unknown', roles: '[]' };
 
   constructor() {
     this.supabaseAdmin = createClient(
@@ -41,9 +51,8 @@ class MarkAsShippedHandler {
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
 
-  // --- 私有輔助方法 ---
-
   private _createShippedEmailText(order: any): string {
+    // ... 此函式內部邏輯維持不變 ...
     const address = order.shipping_address_snapshot;
     const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
     const itemsList = order.order_items.map((item: any) => {
@@ -112,100 +121,125 @@ ${antiFraudWarning}
 Green Health 團隊 敬上
     `.trim();
   }
-
-  /**
-   * [v46.0 核心修正] _handleInvoiceIssuance 函式已被完全移除
-   * 職責回歸單一化，此函式不再處理任何與發票相關的邏輯。
-   */
-
-  /**
-   * [主方法] 處理整個出貨請求
-   */
-  async handleRequest(req: Request) {
-    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json();
-    if (!orderId || !shippingTrackingCode || !selectedCarrierMethodName) {
-      throw new Error('缺少必要的出貨參數。');
-    }
-
-    const { data: orderToCheck, error: checkError } = await this.supabaseAdmin.from('orders').select('status, payment_status').eq('id', orderId).single();
-    if (checkError) throw new Error(`找不到訂單: ${checkError.message}`);
-    if (orderToCheck.payment_status !== 'paid') throw new Error('此訂單尚未完成付款，無法出貨。');
-    if (orderToCheck.status === 'shipped') throw new Error('此訂單已經出貨，請勿重複操作。');
-
-    // --- 核心出貨流程 ---
-    await this.supabaseAdmin.from('orders').update({
-        status: 'shipped',
-        shipping_tracking_code: shippingTrackingCode,
-        carrier: selectedCarrierMethodName,
-        shipped_at: new Date().toISOString(),
-      }).eq('id', orderId).throwOnError();
-      
-    // 為了發送郵件，我們依然需要查詢訂單的詳細資料
+  
+  private async _sendNotificationEmail(orderId: string) {
+    // 為了發送郵件，需要查詢訂單的詳細資料
     const { data: orderDetails, error: detailsError } = await this.supabaseAdmin
       .from('orders')
-      .select(`
-        *, 
-        profiles (email), 
-        order_items(
-            quantity, 
-            price_at_order, 
-            product_variants(name, products(name))
-        )
-      `)
+      .select(
+        `*, profiles (email), order_items(quantity, price_at_order, product_variants(name, products(name)))`
+      )
       .eq('id', orderId)
       .single();
 
-    // 發送出貨通知郵件 (非阻塞)
     if (detailsError) {
-      // 即使獲取郵件詳情失敗，出貨流程的核心（更新訂單狀態）也已完成。
-      // 我們只記錄一個嚴重錯誤，但不應讓整個請求失敗。
-      console.error(`[CRITICAL] 訂單 ${orderId} 已出貨，但獲取郵件詳情失敗:`, detailsError);
-    } else if (orderDetails) {
-      const recipientEmail = orderDetails.profiles?.email || orderDetails.customer_email;
-      if (recipientEmail) {
-        this.resend.emails.send({
+      log('ERROR', `訂單已出貨，但獲取郵件詳情失敗`, { ...this.userContext, orderId, dbError: detailsError.message });
+      return;
+    }
+
+    const recipientEmail = orderDetails.profiles?.email || orderDetails.customer_email;
+    if (recipientEmail) {
+      try {
+        await this.resend.emails.send({
           from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>',
-          to: [recipientEmail], 
+          to: [recipientEmail],
           bcc: ['a896214@gmail.com'],
           reply_to: 'service@greenhealthtw.com.tw',
           subject: `您的 Green Health 訂單 ${orderDetails.order_number} 已出貨`,
           text: this._createShippedEmailText(orderDetails),
-        }).catch(emailError => {
-            // 郵件發送失敗不應阻塞主流程，僅記錄警告。
-            console.warn(`[WARNING] 訂單 ${orderDetails.order_number} 的出貨通知郵件發送失敗:`, emailError);
         });
-      } else {
-        console.warn(`[WARNING] 訂單 ${orderId} 找不到顧客 Email，無法發送通知。`);
+        log('INFO', '出貨通知郵件已成功發送', { ...this.userContext, orderId, recipient: recipientEmail });
+      } catch (emailError: any) {
+        log('WARN', '出貨通知郵件發送失敗', { ...this.userContext, orderId, emailError: emailError.message });
       }
+    } else {
+      log('WARN', '找不到顧客 Email，無法發送出貨通知', { ...this.userContext, orderId });
+    }
+  }
+
+  async handleRequest(req: Request) {
+    // --- 1. 權限驗證 ---
+    const supabaseUserClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    );
+    const { data: { user } } = await supabaseUserClient.auth.getUser();
+    const roles: string[] = user?.app_metadata?.roles || [];
+    if (!user || !roles.some(r => ALLOWED_ROLES.includes(r))) {
+        log('WARN', '權限不足，操作被拒絕', { userId: user?.id, roles });
+        throw new Error('FORBIDDEN: 權限不足。');
+    }
+    this.userContext = { email: user.email!, roles: JSON.stringify(roles) };
+    log('INFO', '授權成功', this.userContext);
+
+    // --- 2. 輸入驗證 ---
+    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json();
+    if (!orderId || !shippingTrackingCode || !selectedCarrierMethodName) {
+        log('WARN', '缺少必要參數', { ...this.userContext, orderId });
+        throw new Error('BAD_REQUEST: 缺少必要的出貨參數。');
     }
 
-    // [v46.0 核心修正] 移除對 _handleInvoiceIssuance 的呼叫
+    // --- 3. 執行核心邏輯 (RPC) ---
+    const { data, error: rpcError } = await this.supabaseAdmin.rpc('ship_order_and_log', {
+        p_order_id: orderId,
+        p_operator_id: user.id,
+        p_carrier: selectedCarrierMethodName,
+        p_tracking_code: shippingTrackingCode
+    }).single();
     
-    // 立即回傳成功響應給前端
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: '訂單已成功標記為已出貨，出貨通知已排入佇列。' 
-    }), { 
-      status: 200, 
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+    if (rpcError) {
+        log('ERROR', '資料庫 RPC 函式執行失敗', { ...this.userContext, dbError: rpcError.message });
+        throw new Error(`DB_ERROR: ${rpcError.message}`);
+    }
+
+    const result = data as { success: boolean, message: string, updated_order: any };
+
+    if (!result.success) {
+        log('WARN', 'RPC 函式回傳業務邏輯失敗', { ...this.userContext, resultMessage: result.message });
+        throw new Error(result.message);
+    }
+    
+    log('INFO', '訂單出貨成功，已更新資料庫並寫入日誌', { ...this.userContext, orderId });
+
+    // --- 4. 非阻塞式發送郵件 ---
+    // 使用 setTimeout 確保立即回傳響應給前端，郵件在背景發送
+    setTimeout(() => this._sendNotificationEmail(orderId), 0);
+    
+    // --- 5. 回傳成功響應 ---
+    return new Response(JSON.stringify({
+      success: true,
+      message: '訂單已成功標記為已出貨，出貨通知已排入佇列。',
+      updatedOrder: result.updated_order
+    }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-};
+}
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') { 
-    return new Response('ok', { headers: corsHeaders }); 
-  }
-  try {
-    const handler = new MarkAsShippedHandler();
-    return await handler.handleRequest.bind(handler)(req);
-  } catch (error) {
-    console.error(`[mark-order-as-shipped] 函式最外層錯誤:`, error.message, error.stack);
-    return new Response(JSON.stringify({ 
-      error: error.message 
-    }), { 
-      status: 400,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-    });
-  }
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
+    }
+    try {
+        const handler = new MarkAsShippedHandler();
+        return await handler.handleRequest(req);
+    } catch (err: any) {
+        const message = err.message || 'UNEXPECTED_ERROR';
+        const status = 
+            message.startsWith('FORBIDDEN') ? 403 :
+            message.startsWith('BAD_REQUEST') ? 400 :
+            message.startsWith('DB_ERROR') ? 502 : 
+            message.startsWith('ORDER_NOT_FOUND') ? 404 :
+            message.startsWith('INVALID_STATUS') || message.startsWith('ALREADY_SHIPPED') ? 409 : 500;
+        
+        // 此處不記錄 userContext，因為 handler 實例化可能失敗
+        log('ERROR', `函式最外層錯誤`, { error: message, status });
+
+        return new Response(JSON.stringify({ error: message }), {
+            status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+    }
 });

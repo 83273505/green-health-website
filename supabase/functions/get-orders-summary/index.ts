@@ -1,18 +1,19 @@
 // ==============================================================================
-// 檔案路徑: supabase/functions/mark-order-as-paid/index.ts
-// 版本: v2.0 - 導入稽核日誌與 RBAC 權限
+// 檔案路徑: supabase/functions/get-orders-summary/index.ts
+// 版本: v1.0 - 全新訂單彙總資訊函式
 // ------------------------------------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
+// 【此為全新檔案，請在此路徑下建立 index.ts 並貼上內容】
 // ==============================================================================
 
 /**
- * @file Mark Order as Paid Function (標記訂單為已付款函式)
- * @description 處理後台確認收款的請求，具備 RBAC 權限檢查，
- *              並將核心邏輯委派給資料庫 RPC 函式以確保交易的原子性，
- *              同時自動記錄詳細的操作稽核日誌。
- * @version v2.0
+ * @file Get Orders Summary Function (獲取訂單彙總資訊函式)
+ * @description 根據可選的日期區間，查詢並回傳該區間內所有新顧客的訂單彙總資訊，
+ *              包括首次下單總數、總訂單數、以及總消費金額。
+ * @version v1.0
  *
  * @permission 呼叫者必須擁有 'warehouse_staff' 或 'super_admin' 角色。
+ * @param {string} [startDate] - 查詢區間開始日期 (YYYY-MM-DD)。
+ * @param {string} [endDate] - 查詢區間結束日期 (YYYY-MM-DD)。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -25,7 +26,7 @@ function log(level: 'INFO' | 'WARN' | 'ERROR', message: string, context: object 
     JSON.stringify({
       level,
       timestamp: new Date().toISOString(),
-      function: 'mark-order-as-paid',
+      function: 'get-orders-summary',
       message,
       ...context,
     })
@@ -53,44 +54,33 @@ Deno.serve(async (req) => {
         throw new Error('FORBIDDEN: 權限不足。');
     }
     userContext = { email: user.email!, roles: JSON.stringify(roles) };
-    log('INFO', '授權成功', userContext);
     
-    // --- 2. 輸入驗證 ---
-    const { orderId, paymentMethod, paymentReference } = await req.json();
-    if (!orderId || !paymentMethod) {
-      log('WARN', '缺少必要參數', { ...userContext, orderId, paymentMethod });
-      throw new Error('BAD_REQUEST: 缺少 orderId 或 paymentMethod 參數');
-    }
+    // --- 2. 輸入驗證 (日期區間為可選) ---
+    const { startDate, endDate } = await req.json();
+    log('INFO', '授權成功，開始查詢訂單彙總資訊', { ...userContext, startDate, endDate });
 
-    // --- 3. 執行核心邏輯 (RPC) ---
+    // --- 3. 執行資料庫查詢 (使用 RPC 以在資料庫層級進行彙總計算) ---
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const { data, error: rpcError } = await supabaseAdmin.rpc('confirm_order_payment', {
-        p_order_id: orderId,
-        p_operator_id: user.id,
-        p_payment_method: paymentMethod,
-        p_payment_reference: paymentReference || null
+    // 我們將使用 RPC 函式來執行高效的彙總查詢
+    // 這樣可以避免將大量訂單資料拉到 Edge Function 中進行計算
+    const { data, error } = await supabaseAdmin.rpc('get_new_customers_summary', {
+        p_start_date: startDate || null,
+        p_end_date: endDate || null
     }).single();
-
-    if (rpcError) {
-      log('ERROR', '資料庫 RPC 函式執行失敗', { ...userContext, dbError: rpcError.message });
-      throw new Error(`DB_ERROR: ${rpcError.message}`);
-    }
-
-    const result = data as { success: boolean, message: string, updated_order: any };
-
-    if (!result.success) {
-        log('WARN', 'RPC 函式回傳業務邏輯失敗', { ...userContext, resultMessage: result.message });
-        throw new Error(result.message);
-    }
     
-    log('INFO', '訂單付款確認成功', { ...userContext, orderId });
+    if (error) {
+        log('ERROR', '查詢訂單彙總資訊時 RPC 函式發生錯誤', { ...userContext, rpcError: error.message });
+        throw new Error(`DB_ERROR: ${error.message}`);
+    }
+
+    log('INFO', '訂單彙總資訊查詢成功', { ...userContext, summary: data });
 
     // --- 4. 回傳成功響應 ---
-    return new Response(JSON.stringify({ success: true, updatedOrder: result.updated_order }), {
+    return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });
@@ -100,9 +90,7 @@ Deno.serve(async (req) => {
     const status = 
         message.startsWith('FORBIDDEN') ? 403 :
         message.startsWith('BAD_REQUEST') ? 400 :
-        message.startsWith('DB_ERROR') ? 502 : 
-        message.startsWith('ORDER_NOT_FOUND') ? 404 :
-        message.startsWith('INVALID_STATUS') ? 409 : 500; // 409 Conflict is suitable for state mismatch
+        message.startsWith('DB_ERROR') ? 500 : 500;
 
     log('ERROR', '函式執行時發生錯誤', { ...userContext, error: message, status });
 
