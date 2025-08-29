@@ -96,7 +96,7 @@ Green Health 團隊 敬上
 
 ---
 
-### **第二步：重構 `resend-shipped-notification` 函式**
+ **第二步：重構 `resend-shipped-notification` 函式**
 
 現在我們可以使用新建的 `NotificationService` 來重構主函式。
 
