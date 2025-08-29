@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v45.5 - UX 升級（內嵌 Modal）+ 穩健錯誤處理
+// 版本: v46.0 - 導入多條件進階查詢
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,13 +17,14 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
+// --- v46.0 DOM 元素獲取 (擴充) ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
 const tabs = document.querySelectorAll('.tab-link');
 const orderListContainer = document.getElementById('order-list-container');
 const searchFormContainer = document.getElementById('search-form-container');
-const shippedOrderSearchForm = document.getElementById('shipped-order-search-form');
+const advancedOrderSearchForm = document.getElementById('advanced-order-search-form');
 const orderDetailView = document.getElementById('order-detail-view');
 const searchResultsContainer = document.getElementById('search-results-container');
 const searchResultsList = document.getElementById('search-results-list');
@@ -44,6 +45,8 @@ const trackingCodeInput = document.getElementById('tracking-code-input');
 const printBtn = document.getElementById('print-btn');
 const cancellationActionSection = document.getElementById('cancellation-action-section');
 const btnCancelOrder = document.getElementById('btn-cancel-order');
+const cancellationDetailsSection = document.getElementById('cancellation-details-section');
+const cancellationDetailsEl = document.getElementById('cancellation-details');
 
 /* ------------------------- 共用：資料讀取 ------------------------- */
 async function fetchOrdersByStatus(status) {
@@ -51,7 +54,7 @@ async function fetchOrdersByStatus(status) {
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.GET_PAID_ORDERS, {
-      body: { status }
+      body: { status },
     });
     if (error) throw error;
     ordersCache = data;
@@ -64,19 +67,33 @@ async function fetchOrdersByStatus(status) {
 
 function renderOrderList() {
   if (ordersCache.length === 0) {
-    const msg = currentStatusTab === 'paid'
-      ? '所有訂單皆已出貨，或尚有訂單在「待備貨」區等待確認付款。'
-      : '目前沒有待備貨的訂單。';
+    let msg = '目前沒有此狀態的訂單。';
+    switch (currentStatusTab) {
+      case 'paid':
+        msg = '所有訂單皆已出貨，或尚在「待備貨」區。';
+        break;
+      case 'pending_payment':
+        msg = '目前沒有待備貨的訂單。';
+        break;
+      case 'cancelled':
+        msg = '目前沒有已取消的訂單。';
+        break;
+    }
     orderListContainer.innerHTML = `<p style="padding:1rem;text-align:center;opacity:.7">${msg}</p>`;
     return;
   }
-  orderListContainer.innerHTML = ordersCache.map(o => `
-    <div class="order-list-item ${o.id === selectedOrderId ? 'active' : ''}" data-order-id="${o.id}">
-      <strong class="order-number">${o.order_number}</strong>
-      <span class="recipient-name">${o.shipping_address_snapshot?.recipient_name || 'N/A'}</span>
-      <span class="order-date">${new Date(o.created_at).toLocaleDateString()}</span>
-    </div>
-  `).join('');
+  orderListContainer.innerHTML = ordersCache
+    .map((o) => {
+      const dateToShow = currentStatusTab === 'cancelled' ? o.cancelled_at : o.created_at;
+      return `
+        <div class="order-list-item ${o.id === selectedOrderId ? 'active' : ''}" data-order-id="${o.id}">
+          <strong class="order-number">${o.order_number}</strong>
+          <span class="recipient-name">${o.shipping_address_snapshot?.recipient_name || 'N/A'}</span>
+          <span class="order-date">${new Date(dateToShow).toLocaleDateString()}</span>
+        </div>
+      `;
+    })
+    .join('');
 }
 
 function renderPickingList(items) {
@@ -84,57 +101,95 @@ function renderPickingList(items) {
     pickingListEl.innerHTML = '<p class="error-message">無法載入此訂單的商品項目。</p>';
     return;
   }
-  const rows = items.map(it => `
+  const rows = items
+    .map(
+      (it) => `
     <tr>
       <td>${it.product_variants.products.name}<small>（${it.product_variants.name}）</small></td>
       <td class="sku">${it.product_variants.sku}</td>
       <td class="quantity">${it.quantity}</td>
-    </tr>`).join('');
+    </tr>`
+    )
+    .join('');
   pickingListEl.innerHTML = `<table class="picking-table"><thead><tr><th>品名(規格)</th><th class="sku">SKU</th><th class="quantity">數量</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 async function handleOrderSelection(orderId) {
   selectedOrderId = orderId;
-  renderOrderList();
-  const order = ordersCache.find(o => o.id === orderId);
-  if (!order) return;
+  const isFromSearch = currentStatusTab === 'search';
+  const sourceCache = isFromSearch ? window.searchResultsCache || [] : ordersCache;
+
+  if (!isFromSearch) {
+    renderOrderList();
+  } else {
+    document.querySelectorAll('#search-results-list .search-result-item').forEach((item) => {
+      item.classList.toggle('active', item.dataset.orderId === orderId);
+    });
+  }
+
+  const order = sourceCache.find((o) => o.id === orderId);
+  if (!order) {
+    console.warn(`在快取中找不到 orderId: ${orderId}`);
+    return;
+  }
 
   emptyView.classList.add('hidden');
-  searchResultsContainer.classList.add('hidden');
+  if (!isFromSearch) searchResultsContainer.classList.add('hidden');
   orderDetailView.classList.remove('hidden');
-  [paymentConfirmationSection, shippingActionSection, cancellationActionSection].forEach(el => el.classList.add('hidden'));
+
+  [
+    paymentConfirmationSection,
+    shippingActionSection,
+    cancellationActionSection,
+    cancellationDetailsSection,
+  ].forEach((el) => el.classList.add('hidden'));
 
   trackingCodeInput.value = '';
   paymentReferenceInput.value = '';
   orderNumberTitle.textContent = `訂單 #${order.order_number}`;
 
   const adr = order.shipping_address_snapshot;
-  shippingAddressEl.innerHTML = (adr && typeof adr === 'object')
-    ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
-       <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
-       ${adr.tel_number ? `<p><strong>市話:</strong> ${adr.tel_number}</p>` : ''}
-       <p><strong>地址:</strong> ${adr.postal_code || ''} ${adr.city || ''}${adr.district || ''}${adr.street_address || ''}</p>`
-    : `<p class="error-message">無有效的收件資訊。</p>`;
+  shippingAddressEl.innerHTML =
+    adr && typeof adr === 'object'
+      ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
+         <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
+         ${adr.tel_number ? `<p><strong>市話:</strong> ${adr.tel_number}</p>` : ''}
+         <p><strong>地址:</strong> ${adr.postal_code || ''} ${adr.city || ''}${adr.district || ''}${
+           adr.street_address || ''
+         }</p>`
+      : `<p class="error-message">無有效的收件資訊。</p>`;
 
   const methodName = order.shipping_rates?.method_name || '未指定';
   shippingMethodDetailsEl.innerHTML = `<p><strong>配送方式:</strong> ${methodName}</p>`;
 
-  const paidText = order.payment_status === 'paid' ? '已付款' : '待付款';
-  paymentDetailsEl.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paidText}</span></p>
+  const paymentStatusText = order.payment_status === 'paid' ? '已付款' : '待付款';
+  paymentDetailsEl.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paymentStatusText}</span></p>
                                 <p><strong>付款參考:</strong> ${order.payment_reference || '無'}</p>`;
 
-  if (order.status === 'pending_payment') {
-    paymentConfirmationSection.classList.remove('hidden');
-    cancellationActionSection.classList.remove('hidden');
-  } else if (order.status === 'paid') {
-    shippingActionSection.classList.remove('hidden');
-    cancellationActionSection.classList.remove('hidden');
+  switch (order.status) {
+    case 'pending_payment':
+      paymentConfirmationSection.classList.remove('hidden');
+      cancellationActionSection.classList.remove('hidden');
+      break;
+    case 'paid':
+      shippingActionSection.classList.remove('hidden');
+      cancellationActionSection.classList.remove('hidden');
+      break;
+    case 'cancelled':
+      cancellationDetailsSection.classList.remove('hidden');
+      cancellationDetailsEl.innerHTML = `
+        <p><strong>取消時間:</strong> ${new Date(order.cancelled_at).toLocaleString('zh-TW')}</p>
+        <p><strong>取消原因:</strong> ${order.cancellation_reason || '未提供原因'}</p>
+      `;
+      break;
   }
 
   pickingListEl.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
   try {
     const client = await supabase;
-    const { data: items, error } = await client.functions.invoke(FUNCTION_NAMES.GET_ORDER_DETAILS, { body: { orderId } });
+    const { data: items, error } = await client.functions.invoke(FUNCTION_NAMES.GET_ORDER_DETAILS, {
+      body: { orderId },
+    });
     if (error) throw error;
     renderPickingList(items);
   } catch (e) {
@@ -142,7 +197,9 @@ async function handleOrderSelection(orderId) {
     pickingListEl.innerHTML = '<p class="error-message">讀取商品項目失敗。</p>';
   }
 
-  await populateCarrierSelector(methodName);
+  if (order.status === 'paid') {
+    await populateCarrierSelector(methodName);
+  }
 }
 
 async function populateCarrierSelector(defaultCarrier) {
@@ -157,9 +214,9 @@ async function populateCarrierSelector(defaultCarrier) {
       return;
     }
   }
-  carrierSelector.innerHTML = shippingRatesCache.map(r => `
-    <option value="${r.method_name}" ${r.method_name === defaultCarrier ? 'selected' : ''}>${r.method_name}</option>
-  `).join('');
+  carrierSelector.innerHTML = shippingRatesCache
+    .map((r) => `<option value="${r.method_name}" ${r.method_name === defaultCarrier ? 'selected' : ''}>${r.method_name}</option>`)
+    .join('');
 }
 
 /* ------------------------- 出貨/收款流程（原樣） ------------------------- */
@@ -169,12 +226,16 @@ async function handlePaymentConfirmation(e) {
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.MARK_ORDER_AS_PAID, {
-      body: { orderId: selectedOrderId, paymentMethod: paymentMethodSelector.value, paymentReference: paymentReferenceInput.value.trim() }
+      body: {
+        orderId: selectedOrderId,
+        paymentMethod: paymentMethodSelector.value,
+        paymentReference: paymentReferenceInput.value.trim(),
+      },
     });
     if (error) throw new Error(error.message);
     if (data.error) throw new Error(data.error);
     showNotification('收款確認成功！訂單已移至「待出貨」。', 'success');
-    ordersCache = ordersCache.filter(o => o.id !== selectedOrderId);
+    ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
     selectedOrderId = null;
     renderOrderList();
     orderDetailView.classList.add('hidden');
@@ -192,12 +253,16 @@ async function handleShippingFormSubmit(e) {
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.MARK_ORDER_AS_SHIPPED, {
-      body: { orderId: selectedOrderId, shippingTrackingCode: trackingCodeInput.value.trim(), selectedCarrierMethodName: carrierSelector.value }
+      body: {
+        orderId: selectedOrderId,
+        shippingTrackingCode: trackingCodeInput.value.trim(),
+        selectedCarrierMethodName: carrierSelector.value,
+      },
     });
     if (error) throw new Error(error.message);
     if (data.error) throw new Error(data.error);
     showNotification('出貨成功！訂單已更新並已通知顧客。', 'success');
-    ordersCache = ordersCache.filter(o => o.id !== selectedOrderId);
+    ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
     selectedOrderId = null;
     renderOrderList();
     orderDetailView.classList.add('hidden');
@@ -220,7 +285,7 @@ async function fetchCancellationReasons() {
       .eq('is_active', true)
       .order('sort_order');
     if (error) throw error;
-    cancellationReasonsCache = data.map(x => x.reason);
+    cancellationReasonsCache = data.map((x) => x.reason);
   } catch (e) {
     console.error('讀取取消原因失敗:', e);
     cancellationReasonsCache = ['顧客要求取消', '其他 (請於備註詳述)'];
@@ -228,67 +293,68 @@ async function fetchCancellationReasons() {
 }
 
 function buildCancelModal(orderNumber) {
-  // 若已存在則移除，保證乾淨 DOM
   document.getElementById('cancel-order-modal')?.remove();
 
   const wrapper = document.createElement('div');
   wrapper.id = 'cancel-order-modal';
-  wrapper.style.position = 'fixed';
-  wrapper.style.inset = '0';
-  wrapper.style.background = 'rgba(0,0,0,.45)';
-  wrapper.style.display = 'flex';
-  wrapper.style.alignItems = 'center';
-  wrapper.style.justifyContent = 'center';
-  wrapper.style.zIndex = '9999';
-
+  wrapper.className = 'modal-overlay'; // 使用 class 以利 CSS 管理
   wrapper.innerHTML = `
-    <div role="dialog" aria-modal="true" style="background:#fff;min-width:420px;max-width:520px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.2)">
-      <div style="padding:18px 20px;border-bottom:1px solid #eee">
-        <h3 style="margin:0">取消訂單 #${orderNumber}</h3>
-        <p style="margin:.25rem 0 0;color:#666">此動作將回補庫存且不可復原</p>
+    <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h3 id="modal-title" class="modal-title">取消訂單 #${orderNumber}</h3>
+        <p class="modal-subtitle">此動作將回補庫存且不可復原</p>
       </div>
-      <div style="padding:16px 20px;">
-        <label style="display:block;margin-bottom:8px;font-weight:600">取消原因</label>
-        <select id="cancel-reason-select" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px;margin-bottom:10px"></select>
-
-        <label style="display:block;margin:8px 0 6px;font-weight:600">補充說明（選填）</label>
-        <textarea id="cancel-reason-note" rows="3" style="width:100%;padding:8px;border:1px solid #ccc;border-radius:8px"></textarea>
+      <div class="modal-body">
+        <div class="form-group">
+            <label for="cancel-reason-select">取消原因</label>
+            <select id="cancel-reason-select"></select>
+        </div>
+        <div class="form-group">
+            <label for="cancel-reason-note">補充說明（選填）</label>
+            <textarea id="cancel-reason-note" rows="3"></textarea>
+        </div>
       </div>
-      <div style="padding:14px 20px;border-top:1px solid #eee;display:flex;gap:10px;justify-content:flex-end">
-        <button id="cancel-modal-close" class="btn-secondary" style="padding:8px 14px;border:1px solid #ddd;border-radius:8px;background:#fff">返回</button>
-        <button id="cancel-modal-confirm" class="btn-danger" style="padding:8px 14px;border:none;border-radius:8px;background:#cc1f1a;color:#fff">確認取消</button>
+      <div class="modal-footer">
+        <button id="cancel-modal-close" class="btn-secondary">返回</button>
+        <button id="cancel-modal-confirm" class="btn-danger">確認取消</button>
       </div>
     </div>
   `;
   document.body.appendChild(wrapper);
 
-  // ESC 關閉 & Enter 確認
   const onKey = (e) => {
     if (e.key === 'Escape') wrapper.remove();
     if (e.key === 'Enter') document.getElementById('cancel-modal-confirm')?.click();
   };
+
+  const closeModal = () => {
+    wrapper.remove();
+    document.removeEventListener('keydown', onKey);
+  };
+
   setTimeout(() => document.addEventListener('keydown', onKey), 0);
-  wrapper.addEventListener('click', (e) => { if (e.target === wrapper) { wrapper.remove(); document.removeEventListener('keydown', onKey); }});
-  document.getElementById('cancel-modal-close')?.addEventListener('click', () => { wrapper.remove(); document.removeEventListener('keydown', onKey); });
+  wrapper.addEventListener('click', (e) => {
+    if (e.target === wrapper) closeModal();
+  });
+  document.getElementById('cancel-modal-close')?.addEventListener('click', closeModal);
 
   return {
     wrapper,
     reasonSelect: wrapper.querySelector('#cancel-reason-select'),
     noteInput: wrapper.querySelector('#cancel-reason-note'),
-    confirmBtn: wrapper.querySelector('#cancel-modal-confirm')
+    confirmBtn: wrapper.querySelector('#cancel-modal-confirm'),
+    close: closeModal,
   };
 }
 
 async function handleCancelOrder() {
-  const order = ordersCache.find(o => o.id === selectedOrderId);
+  const order = ordersCache.find((o) => o.id === selectedOrderId);
   if (!order) return;
 
   await fetchCancellationReasons();
   const modal = buildCancelModal(order.order_number);
 
-  // 填入選項
-  modal.reasonSelect.innerHTML = cancellationReasonsCache
-    .map(r => `<option value="${r}">${r}</option>`).join('');
+  modal.reasonSelect.innerHTML = cancellationReasonsCache.map((r) => `<option value="${r}">${r}</option>`).join('');
 
   modal.confirmBtn.addEventListener('click', async () => {
     const base = modal.reasonSelect.value || '';
@@ -300,29 +366,25 @@ async function handleCancelOrder() {
       return;
     }
 
-    if (!confirm(`你確定要取消訂單 #${order.order_number} 嗎？此操作無法復原。`)) {
-      return;
-    }
-
     setFormSubmitting(btnCancelOrder, true, '取消中...');
     modal.confirmBtn.disabled = true;
 
     try {
       const client = await supabase;
       const { data, error } = await client.functions.invoke(FUNCTION_NAMES.CANCEL_ORDER, {
-        body: { orderId: selectedOrderId, reason: finalReason }
+        body: { orderId: selectedOrderId, reason: finalReason },
       });
 
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       showNotification(data?.message || '訂單已成功取消！', 'success');
-      ordersCache = ordersCache.filter(o => o.id !== selectedOrderId);
+      ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
       selectedOrderId = null;
       renderOrderList();
       orderDetailView.classList.add('hidden');
       emptyView.classList.remove('hidden');
-      modal.wrapper.remove();
+      modal.close();
     } catch (e) {
       showNotification(`取消訂單失敗：${e.message}`, 'error');
       console.error('[Cancel Order] Error:', e);
@@ -333,78 +395,109 @@ async function handleCancelOrder() {
   });
 }
 
-/* ------------------------- 查詢/重寄（原樣） ------------------------- */
-async function handleSearchShippedOrders(e) {
+/* ------------------------- v46.0 全新的進階查詢與結果渲染 ------------------------- */
+async function handleAdvancedOrderSearch(e) {
   e.preventDefault();
-  setFormSubmitting(shippedOrderSearchForm, true, '查詢中...');
+  setFormSubmitting(advancedOrderSearchForm, true, '查詢中...');
   searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
+
   const params = {
+    status: document.getElementById('search-status-selector').value,
     orderNumber: document.getElementById('search-order-number').value.trim(),
-    recipientName: document.getElementById('search-recipient-name').value.trim(),
-    email: document.getElementById('search-email').value.trim(),
-    phone: document.getElementById('search-phone').value.trim(),
+    customerKeyword: document.getElementById('search-customer-keyword').value.trim(),
     startDate: document.getElementById('search-start-date').value,
     endDate: document.getElementById('search-end-date').value,
   };
-  const filtered = Object.fromEntries(Object.entries(params).filter(([_, v]) => v));
+
+  const filteredParams = Object.fromEntries(Object.entries(params).filter(([_, v]) => v));
+
   try {
     const client = await supabase;
-    const { data: results, error } = await client.functions.invoke(FUNCTION_NAMES.SEARCH_SHIPPED_ORDERS, { body: filtered });
+    const { data: results, error } = await client.functions.invoke(FUNCTION_NAMES.SEARCH_ORDERS, {
+      body: filteredParams,
+    });
     if (error) throw error;
+    if (results.error) throw new Error(results.error);
+
+    window.searchResultsCache = results;
     renderSearchResults(results);
   } catch (e) {
-    console.error('查詢已出貨訂單失敗:', e);
-    searchResultsList.innerHTML = '<p class="error-message">查詢失敗，請稍後再試。</p>';
+    console.error('進階查詢訂單失敗:', e);
+    searchResultsList.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
   } finally {
-    setFormSubmitting(shippedOrderSearchForm, false, '查詢');
+    setFormSubmitting(advancedOrderSearchForm, false, '查詢');
   }
 }
 
 function renderSearchResults(results) {
   if (!results || results.length === 0) {
-    searchResultsList.innerHTML = '<p>找不到符合條件的已出貨訂單。</p>';
+    searchResultsList.innerHTML = '<p>找不到符合條件的訂單。</p>';
     return;
   }
-  searchResultsList.innerHTML = results.map(order => {
-    const adr = order.shipping_address_snapshot;
-    const items = order.order_items;
-    const adrHtml = (adr && typeof adr === 'object')
-      ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
-         <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
-         <p><strong>地址:</strong> ${adr.postal_code || ''} ${adr.city || ''}${adr.district || ''}${adr.street_address || ''}</p>`
-      : '<p class="error-message">無有效的收件資訊。</p>';
-    const itemsHtml = (items && items.length > 0)
-      ? `<table class="picking-table"><tbody>${
-          items.map(it => `<tr><td>${it.product_variants.products.name}<small>(${it.product_variants.name})</small></td><td class="quantity">x ${it.quantity}</td></tr>`).join('')
-        }</tbody></table>`
-      : '<p>無商品項目資訊。</p>';
-    return `
-      <div class="search-result-item">
-        <div class="result-header">
-          <h3>訂單 #${order.order_number}</h3>
-          <div class="result-sub-header">
-            <span><strong>出貨日期:</strong> ${new Date(order.shipped_at).toLocaleDateString()}</span>
-            <span><strong>物流:</strong> ${order.carrier} - ${order.shipping_tracking_code}</span>
+
+  const statusMap = {
+    pending_payment: { text: '待備貨', class: 'pending' },
+    paid: { text: '待出貨', class: 'paid' },
+    shipped: { text: '已出貨', class: 'shipped' },
+    cancelled: { text: '已取消', class: 'cancelled' },
+  };
+
+  searchResultsList.innerHTML = results
+    .map((order) => {
+      const statusInfo = statusMap[order.status] || { text: order.status, class: 'default' };
+      const adr = order.shipping_address_snapshot;
+
+      return `
+        <div class="search-result-item" data-order-id="${order.id}" role="button" tabindex="0">
+          <div class="result-header">
+            <h3>訂單 #${order.order_number}</h3>
+            <div class="result-sub-header">
+              <span class="status-badge status-${statusInfo.class}">${statusInfo.text}</span>
+              <span><strong>訂單日期:</strong> ${new Date(order.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          <div class="result-body">
+            <p><strong>顧客:</strong> ${adr?.recipient_name || 'N/A'} (${order.customer_email || '無Email'})</p>
+            ${
+              order.status === 'shipped'
+                ? `<p><strong>出貨資訊:</strong> ${new Date(order.shipped_at).toLocaleDateString()} / ${
+                    order.carrier
+                  } - ${order.shipping_tracking_code}</p>`
+                : ''
+            }
+            ${
+              order.status === 'cancelled'
+                ? `<p><strong>取消原因:</strong> ${order.cancellation_reason || '未提供'}</p>`
+                : ''
+            }
+          </div>
+          <div class="result-footer">
+            ${
+              order.status === 'shipped'
+                ? `
+              <button class="btn-secondary btn-resend" data-order-id="${order.id}" data-order-number="${order.order_number}">重寄通知</button>
+            `
+                : ''
+            }
           </div>
         </div>
-        <div class="result-body">
-          <div class="result-section"><h4>商品明細</h4>${itemsHtml}</div>
-          <div class="result-section"><h4>收件資訊</h4>${adrHtml}</div>
-        </div>
-        <div class="result-footer">
-          <button class="btn-secondary btn-resend" data-order-id="${order.id}" data-order-number="${order.order_number}">重寄通知</button>
-        </div>
-      </div>`;
-  }).join('');
+      `;
+    })
+    .join('');
 }
 
 async function handleResendNotification(orderId, orderNumber) {
   if (!confirm(`您確定要重新發送訂單 #${orderNumber} 的出貨通知嗎？`)) return;
   const btn = document.querySelector(`.btn-resend[data-order-id="${orderId}"]`);
-  if (btn) { btn.disabled = true; btn.textContent = '處理中...'; }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '處理中...';
+  }
   try {
     const client = await supabase;
-    const { data, error } = await client.functions.invoke(FUNCTION_NAMES.RESEND_SHIPPED_NOTIFICATION, { body: { orderId } });
+    const { data, error } = await client.functions.invoke(FUNCTION_NAMES.RESEND_SHIPPED_NOTIFICATION, {
+      body: { orderId },
+    });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
     alert(`訂單 #${orderNumber} 的出貨通知已成功重寄！`);
@@ -412,26 +505,47 @@ async function handleResendNotification(orderId, orderNumber) {
     console.error(`重寄訂單 #${orderNumber} 通知失敗:`, e);
     alert(`重寄失敗：${e.message}`);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = '重寄通知'; }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '重寄通知';
+    }
   }
 }
 
 /* ------------------------- 事件綁定/初始化 ------------------------- */
 function bindEvents() {
   logoutBtn.addEventListener('click', handleWarehouseLogout);
+
   orderListContainer.addEventListener('click', (e) => {
     const t = e.target.closest('.order-list-item');
     if (t) handleOrderSelection(t.dataset.orderId);
   });
+
   searchResultsList.addEventListener('click', (e) => {
-    const t = e.target.closest('.btn-resend');
-    if (t) handleResendNotification(t.dataset.orderId, t.dataset.orderNumber);
+    const resendBtn = e.target.closest('.btn-resend');
+    if (resendBtn) {
+      e.stopPropagation();
+      handleResendNotification(resendBtn.dataset.orderId, resendBtn.dataset.orderNumber);
+      return;
+    }
+    const resultItem = e.target.closest('.search-result-item');
+    if (resultItem) {
+      handleOrderSelection(resultItem.dataset.orderId);
+    }
   });
+
   paymentConfirmationForm.addEventListener('submit', handlePaymentConfirmation);
   shippingForm.addEventListener('submit', handleShippingFormSubmit);
   printBtn.addEventListener('click', () => window.print());
-  tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
-  shippedOrderSearchForm.addEventListener('submit', handleSearchShippedOrders);
+  tabs.forEach((tab) => tab.addEventListener('click', handleTabClick));
+
+  advancedOrderSearchForm.addEventListener('submit', handleAdvancedOrderSearch);
+  advancedOrderSearchForm.addEventListener('reset', () => {
+    searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
+    orderDetailView.classList.add('hidden');
+    emptyView.classList.remove('hidden');
+  });
+
   btnCancelOrder.addEventListener('click', handleCancelOrder);
 }
 
@@ -439,7 +553,7 @@ function handleTabClick(e) {
   const tab = e.target;
   if (currentStatusTab === tab.dataset.statusTab) return;
   currentStatusTab = tab.dataset.statusTab;
-  tabs.forEach(t => t.classList.remove('active'));
+  tabs.forEach((t) => t.classList.remove('active'));
   tab.classList.add('active');
   orderDetailView.classList.add('hidden');
   searchResultsContainer.classList.add('hidden');
@@ -453,7 +567,7 @@ function handleTabClick(e) {
   } else {
     orderListContainer.classList.remove('hidden');
     searchFormContainer.classList.add('hidden');
-    shippedOrderSearchForm.reset();
+    if (advancedOrderSearchForm) advancedOrderSearchForm.reset();
     selectedOrderId = null;
     ordersCache = [];
     fetchOrdersByStatus(currentStatusTab);

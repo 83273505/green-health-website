@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/core/constants.js
-// 版本: v23.2 - 新增取消訂單函式常數
+// 版本: v23.5 - 儀表板路徑最終確認版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,14 +8,19 @@
 /**
  * @file Warehouse Panel Constants (倉庫後台常數模組)
  * @description 集中管理倉庫後台應用程式的所有常數。
+ * @version v23.5
+ * 
+ * @update v23.5
+ * 1. [路徑最終確認] 根據使用者提供的最終檔案結構，將 DASHBOARD 路徑確認為 'index.html'。
+ * 2. [功能整合] 保留先前版本新增的 CANCEL_ORDER 與 SEARCH_ORDERS 函式常數。
  */
 
 export const WAREHOUSE_ROUTES = {
   // 【核心修改】將登入路徑指向統一的 admin 登入頁
   LOGIN: '/admin/index.html',
 
-  // 【修改部分】將所有路徑改為從網站根目錄開始的絕對路徑，更為穩健
-  DASHBOARD: '/warehouse-panel/shipping-dashboard.html',
+  // 【v23.5 最終修正】根據實際檔案結構，將路徑指向 index.html
+  DASHBOARD: '/warehouse-panel/index.html',
   USER_MANAGEMENT: '/warehouse-panel/user-management.html',
 };
 
@@ -40,11 +45,12 @@ export const FUNCTION_NAMES = {
   GET_ORDER_DETAILS: 'get-order-details',
   MARK_ORDER_AS_PAID: 'mark-order-as-paid',
   MARK_ORDER_AS_SHIPPED: 'mark-order-as-shipped-and-notify',
-  SEARCH_SHIPPED_ORDERS: 'search-shipped-orders',
+  SEARCH_SHIPPED_ORDERS: 'search-shipped-orders', // 保留以與舊邏輯相容
   RESEND_SHIPPED_NOTIFICATION: 'resend-shipped-notification',
   SEARCH_USERS: 'search-users',
   MANAGE_USER_ROLE: 'manage-user-role',
-  CANCEL_ORDER: 'cancel-order', // 【v23.2 新增】補上取消訂單的函式名稱
+  CANCEL_ORDER: 'cancel-order',
+  SEARCH_ORDERS: 'search-orders', // 統一訂單查詢函式
 };
 
 /**
