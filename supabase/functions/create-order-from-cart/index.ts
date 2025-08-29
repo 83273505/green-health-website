@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v46.3 - 引導式註冊郵件流程 (完整版)
+// 版本: v47.0 - 企業級日誌框架整合 (完整版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -12,8 +12,18 @@
  *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
  *              3. 全新訪客 (建立純訪客訂單)
  *              並採用「權限透傳」模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v46.3
- * 
+ * @version v47.0
+ *
+ * @update v47.0 - [ENTERPRISE LOGGING FRAMEWORK INTEGRATION]
+ * 1. [核心架構] 引入全新的 `LoggingService` v2.0，取代所有 `console.*` 呼叫。
+ * 2. [全域錯誤捕捉] 使用 `withErrorLogging` 中介軟體包裹主要處理邏輯，
+ *          自動捕捉未處理的異常，記錄詳細的 CRITICAL 日誌，並回傳標準 500 錯誤。
+ * 3. [情境感知日誌] 在所有關鍵決策點（如身份識別、價格比對、資料庫操作）
+ *          加入了帶有豐富上下文的結構化日誌。
+ * 4. [追蹤 ID] 整個請求生命週期由 `correlationId` 貫穿，方便在日誌平台中
+ *          聚合查詢單一請求的所有相關日誌。
+ * 5. [程式碼重構] 將主要邏輯封裝，使 `Deno.serve` 的進入點更為清晰簡潔。
+ *
  * @update v46.3 - [GUIDED REGISTRATION EMAIL FLOW]
  * 1. [核心流程修正] 重構了 `_createOrderEmailText` 函式，移除了舊的「無感註冊」
  *          連結，改為產生一個引導式的 HTML 按鈕。
@@ -21,40 +31,51 @@
  *          的行動呼籲按鈕，避免對已登入會員造成干擾。
  * 3. [技術實現] 郵件內容現在以 HTML 格式產生，確保了按鈕樣式在多數郵件客戶端中
  *          的相容性。`resend.emails.send` 的呼叫也從 `text` 改為 `html`。
- * 
- * @update v46.2 - 新增訂單通知副本與正體化
  */
 
-import { createClient, Resend } from '../_shared/deps.ts'
-import { corsHeaders } from '../_shared/cors.ts'
-import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts'
-import { InvoiceService } from '../_shared/services/InvoiceService.ts'
+import { createClient, Resend } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts';
+import { InvoiceService } from '../_shared/services/InvoiceService.ts';
+import LoggingService from '../_shared/services/loggingService.ts';
+import { withErrorLogging } from '../_shared/services/loggingService.ts';
+
+const FUNCTION_NAME = 'create-order-from-cart';
+const FUNCTION_VERSION = 'v47.0';
 
 class CreateUnifiedOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
   private resend: Resend;
+  private logger: LoggingService;
 
-  constructor() {
+  constructor(logger: LoggingService) {
+    this.logger = logger;
     this.supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '', 
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '', 
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
-    );
+    );Ｄ
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
-  
-  private async _calculateCartSummary(req: Request, cartId: string, couponCode?: string, shippingMethodId?: string) {
+
+  private async _calculateCartSummary(
+    req: Request,
+    cartId: string,
+    correlationId: string,
+    couponCode?: string,
+    shippingMethodId?: string
+  ) {
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
     if (!supabaseUrl || !supabaseAnonKey) {
-        throw new Error('Supabase URL 或 Anon Key 未在環境變數中設定。');
+      throw new Error('Supabase URL 或 Anon Key 未在環境變數中設定。');
     }
 
     const authHeader = req.headers.get('Authorization');
     const clientOptions: { global?: { headers: { [key: string]: string } } } = {};
     if (authHeader) {
-        clientOptions.global = { headers: { Authorization: authHeader } };
+      clientOptions.global = { headers: { Authorization: authHeader } };
     }
 
     const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, clientOptions);
@@ -63,18 +84,35 @@ class CreateUnifiedOrderHandler {
       .from('cart_items')
       .select(`*, product_variants(name, price, sale_price, products(image_url))`)
       .eq('cart_id', cartId);
-      
+
     if (cartItemsError) {
-        console.error('[RLS 檢查] _calculateCartSummary 查詢失敗:', cartItemsError);
-        throw new Error(`無法讀取購物車項目，請檢查權限：${cartItemsError.message}`);
+      this.logger.error(
+        '[RLS 檢查] _calculateCartSummary 查詢失敗',
+        correlationId,
+        cartItemsError,
+        { cartId }
+      );
+      throw new Error(`無法讀取購物車項目，請檢查權限：${cartItemsError.message}`);
     }
 
     if (!cartItems || cartItems.length === 0) {
-      return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 }, appliedCoupon: null };
+      return {
+        items: [],
+        itemCount: 0,
+        summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+        appliedCoupon: null,
+      };
     }
 
-    const subtotal = cartItems.reduce((sum, item) => 
-      sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
+    const subtotal = cartItems.reduce(
+      (sum, item) =>
+        sum +
+        Math.round(
+          (item.product_variants.sale_price ?? item.product_variants.price) *
+            item.quantity
+        ),
+      0
+    );
 
     let couponDiscount = 0;
     let appliedCoupon = null;
@@ -87,8 +125,13 @@ class CreateUnifiedOrderHandler {
         .single();
       if (coupon && subtotal >= coupon.min_purchase_amount) {
         if (coupon.discount_type === 'PERCENTAGE' && coupon.discount_percentage) {
-          couponDiscount = Math.round(subtotal * (coupon.discount_percentage / 100));
-        } else if (coupon.discount_type === 'FIXED_AMOUNT' && coupon.discount_amount) {
+          couponDiscount = Math.round(
+            subtotal * (coupon.discount_percentage / 100)
+          );
+        } else if (
+          coupon.discount_type === 'FIXED_AMOUNT' &&
+          coupon.discount_amount
+        ) {
           couponDiscount = Math.round(coupon.discount_amount);
         }
         appliedCoupon = { code: coupon.code, discountAmount: couponDiscount };
@@ -104,7 +147,11 @@ class CreateUnifiedOrderHandler {
         .eq('id', shippingMethodId)
         .eq('is_active', true)
         .single();
-      if (shippingRate && (!shippingRate.free_shipping_threshold || subtotalAfterDiscount < shippingRate.free_shipping_threshold)) {
+      if (
+        shippingRate &&
+        (!shippingRate.free_shipping_threshold ||
+          subtotalAfterDiscount < shippingRate.free_shipping_threshold)
+      ) {
         shippingFee = Math.round(shippingRate.rate);
       }
     }
@@ -114,7 +161,12 @@ class CreateUnifiedOrderHandler {
     return {
       items: cartItems,
       itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
-      summary: { subtotal, couponDiscount, shippingFee, total: total < 0 ? 0 : total },
+      summary: {
+        subtotal,
+        couponDiscount,
+        shippingFee,
+        total: total < 0 ? 0 : total,
+      },
       appliedCoupon,
     };
   }
@@ -122,22 +174,38 @@ class CreateUnifiedOrderHandler {
   /**
    * [v46.3 核心修正] 產生訂單確認信的 HTML 內容。
    */
-  private _createOrderEmailHtml(order: any, orderItems: any[], address: any, shippingMethod: any, paymentMethod: any, isAnonymous: boolean, magicLink?: string | null): string {
-    const fullAddress = `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim();
+  private _createOrderEmailHtml(
+    order: any,
+    orderItems: any[],
+    address: any,
+    shippingMethod: any,
+    paymentMethod: any,
+    isAnonymous: boolean,
+    magicLink?: string | null
+  ): string {
+    const fullAddress =
+      `${address.postal_code || ''} ${address.city || ''}${
+        address.district || ''
+      }${address.street_address || ''}`.trim();
     const itemsHtml = (orderItems || []).map((item: any) => {
-      const priceAtOrder = Number(item.price_at_order);
-      const quantity = Number(item.quantity);
-      const variantName = item.product_variants?.name || '未知品項';
-      if (Number.isNaN(priceAtOrder) || Number.isNaN(quantity)) { return `<li style="padding-bottom: 10px;">${variantName} (數量: ${item.quantity}) - 金額計算錯誤</li>`; }
-      const itemTotal = priceAtOrder * quantity;
-      return `<li style="padding-bottom: 10px;">${variantName}<br/><small style="color:#555;">數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(priceAtOrder)} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}</small></li>`;
-    }).join('');
+        const priceAtOrder = Number(item.price_at_order);
+        const quantity = Number(item.quantity);
+        const variantName = item.product_variants?.name || '未知品項';
+        if (Number.isNaN(priceAtOrder) || Number.isNaN(quantity)) {
+          return `<li style="padding-bottom: 10px;">${variantName} (數量: ${item.quantity}) - 金額計算錯誤</li>`;
+        }
+        const itemTotal = priceAtOrder * quantity;
+        return `<li style="padding-bottom: 10px;">${variantName}<br/><small style="color:#555;">數量: ${quantity} × 單價: ${NumberToTextHelper.formatMoney(
+          priceAtOrder
+        )} = 小計: ${NumberToTextHelper.formatMoney(itemTotal)}</small></li>`;
+      })
+      .join('');
 
     // [v46.3 新增] 只有匿名訪客才顯示註冊引導
     let signupCtaHtml = '';
     if (isAnonymous) {
-        const signupUrl = `${Deno.env.get('SITE_URL')}/account-module/index.html?email=${encodeURIComponent(order.customer_email)}`;
-        signupCtaHtml = `
+      const signupUrl = `${Deno.env.get('SITE_URL')}/account-module/index.html?email=${encodeURIComponent(order.customer_email)}`;
+      signupCtaHtml = `
         <tr><td style="padding: 20px 0; border-top:1px dashed #cccccc;">
             <h3 style="margin:0 0 10px 0; color:#5E8C61;">✨ 想讓下次購物更快速嗎？</h3>
             <p style="margin:0 0 15px 0; font-size:14px; color:#555555;">加入會員即可保存您的收件資訊，並隨時查詢訂單狀態！</p>
@@ -145,12 +213,14 @@ class CreateUnifiedOrderHandler {
         </td></tr>`;
     }
 
-    const magicLinkHtml = magicLink ? `
+    const magicLinkHtml = magicLink
+      ? `
       <tr><td style="padding: 20px 0; border-top:1px dashed #cccccc;">
           <h3 style="margin:0 0 10px 0; color:#5E8C61;">🔑 快速登入</h3>
           <p style="margin:0 0 15px 0; font-size:14px; color:#555555;">我們偵測到此 Email 為已註冊之會員。您本次雖未登入，但訂單已自動歸戶。您可以點擊以下安全連結快速登入，查看完整訂單歷史：</p>
           <a href="${magicLink}" target="_blank" style="background-color: #6c757d; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; display: inline-block; font-weight: bold;">安全登入會員中心</a>
-      </td></tr>` : '';
+      </td></tr>`
+      : '';
 
     return `
       <div style="font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif; line-height: 1.6; color: #333333; max-width: 600px; margin: 0 auto; border: 1px solid #dddddd; padding: 20px;">
@@ -194,72 +264,145 @@ class CreateUnifiedOrderHandler {
       </div>
     `;
   }
-  
-  private async _handleInvoiceCreation(newOrder: any, invoiceOptions: any) {
+
+  private async _handleInvoiceCreation(
+    newOrder: any,
+    invoiceOptions: any,
+    correlationId: string
+  ) {
     try {
       const invoiceService = new InvoiceService(this.supabaseAdmin);
       const finalInvoiceData = await invoiceService.determineInvoiceData(newOrder, invoiceOptions);
       await invoiceService.createInvoiceRecord(newOrder.id, newOrder.total_amount, finalInvoiceData);
-      console.log(`[資訊] 訂單 ${newOrder.id} 的發票記錄已成功排入佇列。`);
+      this.logger.info(
+        `訂單的發票記錄已成功排入佇列`,
+        correlationId,
+        { orderId: newOrder.id }
+      );
     } catch (err: any) {
-      console.error(`[嚴重] 訂單 ${newOrder.id} 已建立，但發票記錄建立失敗:`, err?.message ?? err);
+      this.logger.error(
+        `訂單已建立，但發票記錄建立失敗`,
+        correlationId,
+        err,
+        { orderId: newOrder.id }
+      );
     }
   }
-  
-  private async _ensureProfileExists(userId: string): Promise<void> {
-    const { data: existingProfile, error: selectError } = await this.supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
+
+  private async _ensureProfileExists(
+    userId: string,
+    correlationId: string
+  ): Promise<void> {
+    const { data: existingProfile, error: selectError } =
+      await this.supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', userId)
+        .maybeSingle();
 
     if (selectError) {
-        console.error(`[_ensureProfileExists] 查詢 profiles 失敗:`, selectError);
-        throw selectError;
+      this.logger.error(
+        '[_ensureProfileExists] 查詢 profiles 失敗',
+        correlationId,
+        selectError,
+        { userId }
+      );
+      throw selectError;
     }
 
     if (!existingProfile) {
-      console.log(`[_ensureProfileExists] profiles 記錄不存在，為 User ID ${userId} 建立「空殼」記錄...`);
+      this.logger.info(
+        `profiles 記錄不存在，為 User ID 建立「空殼」記錄...`,
+        correlationId,
+        { userId }
+      );
       const { error: upsertError } = await this.supabaseAdmin
         .from('profiles')
-        .upsert({ 
-          id: userId, 
-          status: 'active',
-        });
+        .upsert({ id: userId, status: 'active' });
 
       if (upsertError) {
-          console.error(`[_ensureProfileExists] 建立「空殼」profiles 記錄失敗:`, upsertError);
-          throw upsertError;
+        this.logger.error(
+          '[_ensureProfileExists] 建立「空殼」profiles 記錄失敗',
+          correlationId,
+          upsertError,
+          { userId }
+        );
+        throw upsertError;
       }
-      console.log(`[_ensureProfileExists] 成功為 User ID ${userId} 建立「空殼」profiles 記錄。`);
+      this.logger.info(
+        `成功為 User ID 建立「空殼」profiles 記錄`,
+        correlationId,
+        { userId }
+      );
     }
   }
-  
-  private async _findUserIdByEmail(email: string): Promise<string | null> {
+
+  private async _findUserIdByEmail(
+    email: string,
+    correlationId: string
+  ): Promise<string | null> {
     if (!email) return null;
     const lowerCaseEmail = email.toLowerCase();
-    
+
     try {
-      const { data, error } = await this.supabaseAdmin.from('users', { schema: 'auth' }).select('id').eq('email', lowerCaseEmail).single();
+      const { data, error } = await this.supabaseAdmin
+        .from('users', { schema: 'auth' })
+        .select('id')
+        .eq('email', lowerCaseEmail)
+        .single();
       if (data?.id) return data.id;
-      if (error && error.code !== 'PGRST116') { 
-        console.warn('[_findUserIdByEmail] 直接查詢 auth.users 返回非預期錯誤:', error);
+      if (error && error.code !== 'PGRST116') {
+        this.logger.warn(
+          '[_findUserIdByEmail] 直接查詢 auth.users 返回非預期錯誤',
+          correlationId,
+          { error }
+        );
       }
-    } catch (e: any) { 
-      console.warn('[_findUserIdByEmail] 直接查詢 auth.users 失敗:', e?.message ?? e);
+    } catch (e: any) {
+      this.logger.warn(
+        '[_findUserIdByEmail] 直接查詢 auth.users 失敗',
+        correlationId,
+        { error: e?.message ?? e }
+      );
     }
     return null;
   }
 
-  private async _generateMagicLink(email: string): Promise<string | null> {
+  private async _generateMagicLink(
+    email: string,
+    correlationId: string
+  ): Promise<string | null> {
     try {
       const siteUrl = Deno.env.get('SITE_URL');
-      if (!siteUrl) { console.warn('[MagicLink] SITE_URL 未設定, 無法產生連結。'); return null; }
-      const redirectTo = `${siteUrl.replace(/\/+$/, '')}/account-module/dashboard.html`;
-      const { data, error } = await this.supabaseAdmin.auth.admin.generateLink({ type: 'magiclink', email, options: { redirectTo } });
-      if (error) { console.warn('[admin.generateLink] 失敗:', error); return null; }
+      if (!siteUrl) {
+        this.logger.warn(
+          '[MagicLink] SITE_URL 未設定, 無法產生連結。',
+          correlationId
+        );
+        return null;
+      }
+      const redirectTo = `${siteUrl.replace(
+        /\/+$/,
+        ''
+      )}/account-module/dashboard.html`;
+      const { data, error } = await this.supabaseAdmin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: { redirectTo },
+      });
+      if (error) {
+        this.logger.warn('[admin.generateLink] 失敗', correlationId, {
+          error,
+        });
+        return null;
+      }
       return data?.properties?.action_link ?? null;
-    } catch (e: any) { console.warn('[generateMagicLink] 未預期錯誤:', e); return null; }
+    } catch (e: any) {
+      this.logger.warn('[generateMagicLink] 未預期錯誤', correlationId, {
+        error: e,
+      });
+      return null;
+    }
   }
 
   private _getBccRecipients(): string[] {
@@ -273,24 +416,52 @@ class CreateUnifiedOrderHandler {
   }
 
   private _validateRequest(data: any): { valid: boolean; message?: string } {
-    const required = ['cartId', 'shippingDetails', 'selectedShippingMethodId', 'selectedPaymentMethodId', 'frontendValidationSummary'];
-    for (const key of required) { if (!data?.[key]) return { valid: false, message: `缺少必要參數: ${key}` }; }
-    if (!data.shippingDetails.email) { return { valid: false, message: 'shippingDetails 中缺少 email' }; }
+    const required = [
+      'cartId',
+      'shippingDetails',
+      'selectedShippingMethodId',
+      'selectedPaymentMethodId',
+      'frontendValidationSummary',
+    ];
+    for (const key of required) {
+      if (!data?.[key]) return { valid: false, message: `缺少必要參數: ${key}` };
+    }
+    if (!data.shippingDetails.email) {
+      return { valid: false, message: 'shippingDetails 中缺少 email' };
+    }
     return { valid: true };
   }
 
-  async handleRequest(req: Request): Promise<Response> {
-    console.log(`[${new Date().toISOString()}] create-order-from-cart 收到一個請求。`);
-    
+  async handleRequest(
+    req: Request,
+    correlationId: string
+  ): Promise<Response> {
     const requestData = await req.json().catch(() => ({}));
     const validation = this._validateRequest(requestData);
     if (!validation.valid) {
-      return new Response(JSON.stringify({ error: { message: validation.message ?? '無效請求' } }),
-        { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      this.logger.warn('Request validation failed', correlationId, {
+        reason: validation.message ?? '無效請求',
+        requestData,
+      });
+      return new Response(
+        JSON.stringify({ error: { message: validation.message ?? '無效請求' } }),
+        {
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
-    const { cartId, shippingDetails, selectedShippingMethodId, selectedPaymentMethodId, frontendValidationSummary, invoiceOptions, couponCode } = requestData;
-    
+    const {
+      cartId,
+      shippingDetails,
+      selectedShippingMethodId,
+      selectedPaymentMethodId,
+      frontendValidationSummary,
+      invoiceOptions,
+      couponCode,
+    } = requestData;
+
     let userId: string | null = null;
     let wasAutoLinked = false;
     let isAnonymous = false;
@@ -298,114 +469,239 @@ class CreateUnifiedOrderHandler {
     const authHeader = req.headers.get('Authorization');
     if (authHeader?.startsWith('Bearer ')) {
       const token = authHeader.replace('Bearer ', '');
-      const { data: { user } } = await this.supabaseAdmin.auth.getUser(token);
+      const {
+        data: { user },
+      } = await this.supabaseAdmin.auth.getUser(token);
       if (user) {
         userId = user.id;
         isAnonymous = !!user.is_anonymous;
-        console.log(`[資訊] 請求已授權給使用者: ${userId} (匿名: ${isAnonymous})`);
+        this.logger.info('Identity resolved via JWT', correlationId, {
+          userId,
+          isAnonymous,
+        });
       } else {
-         console.warn(`[警告] 收到無效的 token。將以訪客身份繼續。`);
+        this.logger.warn('收到無效的 token，將以訪客身份繼續', correlationId);
       }
-    } 
-    
+    }
+
     if (!userId && shippingDetails?.email) {
-      const maybeExistingUserId = await this._findUserIdByEmail(shippingDetails.email);
+      const maybeExistingUserId = await this._findUserIdByEmail(
+        shippingDetails.email,
+        correlationId
+      );
       if (maybeExistingUserId) {
         userId = maybeExistingUserId;
         wasAutoLinked = true;
         isAnonymous = false; // 已歸戶，不再視為匿名
-        console.log(`[資訊] 訪客 Email 匹配到已存在會員。自動將訂單歸戶至使用者: ${userId}`);
+        this.logger.info(
+          'Identity resolved via email auto-linking',
+          correlationId,
+          { email: shippingDetails.email, linkedUserId: userId }
+        );
       } else {
         isAnonymous = true; // 找不到對應會員，確認為匿名訪客
+        this.logger.info(
+          'Identity treated as new anonymous visitor',
+          correlationId,
+          { email: shippingDetails.email }
+        );
       }
     }
-    
+
     if (userId) {
-        await this._ensureProfileExists(userId);
+      await this._ensureProfileExists(userId, correlationId);
     }
 
-    const backendSnapshot = await this._calculateCartSummary(req, cartId, couponCode, selectedShippingMethodId);
+    const backendSnapshot = await this._calculateCartSummary(
+      req,
+      cartId,
+      correlationId,
+      couponCode,
+      selectedShippingMethodId
+    );
 
     if (backendSnapshot.summary.total !== frontendValidationSummary.total) {
-      return new Response(JSON.stringify({ error: { code: 'PRICE_MISMATCH', message: '訂單金額與當前優惠不符，請重新確認。' } }),
-        { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      this.logger.warn(
+        'Price mismatch detected (409 Conflict)',
+        correlationId,
+        {
+          frontend: frontendValidationSummary,
+          backend: backendSnapshot.summary,
+        }
+      );
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: 'PRICE_MISMATCH',
+            message: '訂單金額與當前優惠不符，請重新確認。',
+          },
+        }),
+        {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
     if (!backendSnapshot.items?.length) {
-      return new Response(JSON.stringify({ error: { message: '無法建立訂單，購物車為空。' } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      this.logger.warn('無法建立訂單，購物車為空', correlationId, { cartId });
+      return new Response(
+        JSON.stringify({ error: { message: '無法建立訂單，購物車為空。' } }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
-    const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
-    const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
+    const { data: shippingMethod } = await this.supabaseAdmin
+      .from('shipping_rates')
+      .select('*')
+      .eq('id', selectedShippingMethodId)
+      .single();
+    const { data: paymentMethod } = await this.supabaseAdmin
+      .from('payment_methods')
+      .select('*')
+      .eq('id', selectedPaymentMethodId)
+      .single();
     if (!shippingMethod || !paymentMethod) {
-      return new Response(JSON.stringify({ error: { message: '結帳所需資料不完整 (運送或付款方式)。' } }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      this.logger.warn(
+        '結帳所需資料不完整 (運送或付款方式)',
+        correlationId,
+        { selectedShippingMethodId, selectedPaymentMethodId }
+      );
+      return new Response(
+        JSON.stringify({
+          error: { message: '結帳所需資料不完整 (運送或付款方式)。' },
+        }),
+        {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
-    const { data: newOrder, error: orderError } = await this.supabaseAdmin.from('orders').insert({
-      user_id: userId, 
-      status: 'pending_payment', 
-      total_amount: backendSnapshot.summary.total,
-      subtotal_amount: backendSnapshot.summary.subtotal, 
-      coupon_discount: backendSnapshot.summary.couponDiscount,
-      shipping_fee: backendSnapshot.summary.shippingFee, 
-      shipping_address_snapshot: shippingDetails,
-      payment_method: paymentMethod.method_name, 
-      shipping_method_id: selectedShippingMethodId,
-      payment_status: 'pending', 
-      customer_email: shippingDetails.email, 
-      customer_name: shippingDetails.recipient_name,
-    }).select().single();
+    const { data: newOrder, error: orderError } = await this.supabaseAdmin
+      .from('orders')
+      .insert({
+        user_id: userId,
+        status: 'pending_payment',
+        total_amount: backendSnapshot.summary.total,
+        subtotal_amount: backendSnapshot.summary.subtotal,
+        coupon_discount: backendSnapshot.summary.couponDiscount,
+        shipping_fee: backendSnapshot.summary.shippingFee,
+        shipping_address_snapshot: shippingDetails,
+        payment_method: paymentMethod.method_name,
+        shipping_method_id: selectedShippingMethodId,
+        payment_status: 'pending',
+        customer_email: shippingDetails.email,
+        customer_name: shippingDetails.recipient_name,
+      })
+      .select()
+      .single();
 
     if (orderError) {
-      console.error('[orders.insert] 錯誤:', orderError);
-      return new Response(JSON.stringify({ error: { message: `建立訂單失敗: ${orderError.message}` } }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      this.logger.critical(
+        '建立訂單失敗 (orders.insert)',
+        correlationId,
+        orderError
+      );
+      return new Response(
+        JSON.stringify({ error: { message: `建立訂單失敗: ${orderError.message}` } }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
+      );
     }
 
-    const orderItemsToInsert = backendSnapshot.items.map((item: any) => ({
-      order_id: newOrder.id, product_variant_id: item.product_variant_id, quantity: item.quantity,
-      price_at_order: item.product_variants.sale_price ?? item.product_variants.price,
-    }));
-    await this.supabaseAdmin.from('order_items').insert(orderItemsToInsert).throwOnError();
-
-    const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
-
-    await Promise.allSettled([
-      this.supabaseAdmin.from('carts').update({ status: 'completed' }).eq('id', cartId),
-      this._handleInvoiceCreation(newOrder, invoiceOptions),
-    ]);
-    
-    let magicLinkForMail: string | null = null;
-    if (wasAutoLinked) {
-        magicLinkForMail = await this._generateMagicLink(shippingDetails.email);
-    }
-    
-    const bccRecipients = this._getBccRecipients();
-
-    await this.resend.emails.send({
-      from: `${Deno.env.get('ORDER_MAIL_FROM_NAME') ?? 'Green Health 訂單中心'} <${Deno.env.get('ORDER_MAIL_FROM_ADDR') ?? 'sales@greenhealthtw.com.tw'}>`,
-      to: [newOrder.customer_email],
-      bcc: bccRecipients,
-      reply_to: Deno.env.get('ORDER_MAIL_REPLY_TO') ?? 'service@greenhealthtw.com.tw',
-      subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
-      // [v46.3 核心修正] 從 text 改為 html，並傳入 isAnonymous 參數
-      html: this._createOrderEmailHtml(newOrder, finalOrderItems ?? [], shippingDetails, shippingMethod, paymentMethod, isAnonymous, magicLinkForMail),
-    }).catch(emailErr => {
-        console.error(`[警告] 訂單 ${newOrder.order_number} 確認信發送失敗:`, emailErr);
+    this.logger.info('Order created successfully in "orders" table', correlationId, {
+      orderId: newOrder.id,
+      orderNumber: newOrder.order_number,
     });
 
-    return new Response(JSON.stringify({
+    const orderItemsToInsert = backendSnapshot.items.map((item: any) => ({
+      order_id: newOrder.id,
+      product_variant_id: item.product_variant_id,
+      quantity: item.quantity,
+      price_at_order:
+        item.product_variants.sale_price ?? item.product_variants.price,
+    }));
+    await this.supabaseAdmin
+      .from('order_items')
+      .insert(orderItemsToInsert)
+      .throwOnError();
+
+    const { data: finalOrderItems } = await this.supabaseAdmin
+      .from('order_items')
+      .select('*, product_variants(name)')
+      .eq('order_id', newOrder.id);
+
+    await Promise.allSettled([
+      this.supabaseAdmin
+        .from('carts')
+        .update({ status: 'completed' })
+        .eq('id', cartId),
+      this._handleInvoiceCreation(newOrder, invoiceOptions, correlationId),
+    ]);
+
+    let magicLinkForMail: string | null = null;
+    if (wasAutoLinked) {
+      magicLinkForMail = await this._generateMagicLink(
+        shippingDetails.email,
+        correlationId
+      );
+    }
+
+    const bccRecipients = this._getBccRecipients();
+
+    this.resend.emails.send({
+        from: `${Deno.env.get('ORDER_MAIL_FROM_NAME') ?? 'Green Health 訂單中心'} <${
+          Deno.env.get('ORDER_MAIL_FROM_ADDR') ?? 'sales@greenhealthtw.com.tw'
+        }>`,
+        to: [newOrder.customer_email],
+        bcc: bccRecipients,
+        reply_to:
+          Deno.env.get('ORDER_MAIL_REPLY_TO') ??
+          'service@greenhealthtw.com.tw',
+        subject: `您的 Green Health 訂單 ${newOrder.order_number} 已確認`,
+        html: this._createOrderEmailHtml(
+          newOrder,
+          finalOrderItems ?? [],
+          shippingDetails,
+          shippingMethod,
+          paymentMethod,
+          isAnonymous,
+          magicLinkForMail
+        ),
+      })
+      .catch((emailErr) => {
+        this.logger.warn(
+          `訂單確認信發送失敗`,
+          correlationId,
+          { orderNumber: newOrder.order_number, error: emailErr }
+        );
+      });
+
+    this.logger.info(
+      'Order processing complete, sending success response',
+      correlationId,
+      { orderNumber: newOrder.order_number }
+    );
+
+    return new Response(
+      JSON.stringify({
         success: true,
         orderNumber: newOrder.order_number,
-        orderDetails: { 
-            order: newOrder, 
-            items: finalOrderItems ?? [],
-            address: shippingDetails,
-            shippingMethod,
-            paymentMethod
-        }
-    }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        orderDetails: {
+          order: newOrder,
+          items: finalOrderItems ?? [],
+          address: shippingDetails,
+          shippingMethod,
+          paymentMethod,
+        },
+      }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
   }
 }
 
@@ -413,14 +709,20 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
-  try {
-    const handler = new CreateUnifiedOrderHandler();
-    return await handler.handleRequest(req);
-  } catch (error: any) {
-    console.error('[create-order-from-cart] 未攔截的錯誤:', error?.message, error?.stack);
-    return new Response(
-      JSON.stringify({ error: { message: `[create-order-from-cart] ${error?.message ?? 'Unknown error'}` } }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
+
+  const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+
+  const mainHandler = async (
+    request: Request,
+    logger: LoggingService,
+    correlationId: string
+  ): Promise<Response> => {
+    const orderHandler = new CreateUnifiedOrderHandler(logger);
+    return await orderHandler.handleRequest(request, correlationId);
+  };
+
+  // 使用 withErrorLogging 中介軟體包裹主要處理邏輯
+  const wrappedHandler = withErrorLogging(mainHandler, logger);
+
+  return await wrappedHandler(req);
 });

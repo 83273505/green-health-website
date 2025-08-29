@@ -1,37 +1,124 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-paid-orders/index.ts
-// 版本: v2.1 - 向下相容擴充版
+// 版本: v3.0 - 安全性強化與日誌框架整合
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Get Orders by Status (依狀態獲取訂單函式)
- * @description 根據傳入的訂單狀態，查詢並回傳對應的訂單列表。
- * @version v2.1
+ * @description 根據傳入的訂單狀態，安全地查詢並回傳對應的訂單列表。
+ * @version v3.0
+ *
+ * @update v3.0 - [SECURITY ENHANCEMENT & LOGGING INTEGRATION]
+ * 1. [核心安全修正] 函式現在強制要求呼叫者必須經過身份驗證，並且角色必須為
+ *          'warehouse_staff' 或 'super_admin'，徹底修復了先前版本中存在的
+ *          未授權資料存取漏洞。
+ * 2. [核心架構] 引入 `LoggingService` v2.0，取代所有本地 `log()` 函式。
+ * 3. [全域錯誤捕捉] 使用 `withErrorLogging` 中介軟體處理未預期異常。
+ * 4. [安全稽核日誌] 清晰記錄每一次的查詢請求，包括操作者、角色及查詢條件。
  *
  * @update v2.1 - [BACKWARD COMPATIBLE]
  * 1. [核心原則] 維持函式名稱 'get-paid-orders' 不變，確保對現有系統的完全向下相容性。
  * 2. [功能擴充] 擴充 status 參數的接受範圍，新增對 'cancelled' 狀態的支援。
- * 3. [條件化邏輯] 僅在 status 為 'cancelled' 時，才查詢額外欄位並採用新的排序方式，
- *              原有 'paid' 與 'pending_payment' 的查詢邏輯保持不變。
- *
- * @param {string} status - 欲查詢的訂單狀態 ('pending_payment', 'paid', 'cancelled')。
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
-function log(level: 'INFO' | 'ERROR', message: string, context: object = {}) {
-  console.log(
-    JSON.stringify({
-      level,
-      timestamp: new Date().toISOString(),
-      function: 'get-paid-orders', // 維持原始函式名
-      message,
-      ...context,
-    })
+const FUNCTION_NAME = 'get-paid-orders';
+const FUNCTION_VERSION = 'v3.0';
+
+const ALLOWED_ROLES = ['warehouse_staff', 'super_admin'];
+
+async function mainHandler(
+  req: Request,
+  logger: LoggingService,
+  correlationId: string
+): Promise<Response> {
+  // --- 1. 權限驗證 ---
+  const supabaseUserClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
   );
+  const {
+    data: { user },
+  } = await supabaseUserClient.auth.getUser();
+  const roles: string[] = user?.app_metadata?.roles || [];
+
+  if (!user || !roles.some((r) => ALLOWED_ROLES.includes(r))) {
+    logger.warn('權限不足，操作被拒絕', correlationId, {
+      callerUserId: user?.id,
+      callerRoles: roles,
+    });
+    return new Response(JSON.stringify({ error: '權限不足。' }), {
+      status: 403,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // --- 2. 輸入驗證 ---
+  const { status } = await req.json().catch(() => ({ status: null }));
+  const allowedStatus = ['pending_payment', 'paid', 'cancelled'];
+  if (!status || !allowedStatus.includes(status)) {
+    logger.warn('缺少或無效的 status 參數', correlationId, {
+      callerUserId: user.id,
+      receivedStatus: status,
+    });
+    return new Response(JSON.stringify({ error: '缺少或無效的 status 參數' }), {
+      status: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+  
+  logger.info('授權成功，開始查詢訂單', correlationId, {
+    callerUserId: user.id,
+    callerRoles: roles,
+    status,
+  });
+
+  // --- 3. 執行資料庫查詢 ---
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  let columns = `
+    id, order_number, created_at, status, payment_status, payment_reference,
+    shipping_address_snapshot, shipping_rates (method_name)
+  `;
+  if (status === 'cancelled') {
+    columns += `, cancelled_at, cancellation_reason`;
+  }
+
+  let query = supabaseAdmin.from('orders').select(columns).eq('status', status);
+
+  if (status === 'cancelled') {
+    query = query.order('cancelled_at', { ascending: false });
+  } else {
+    query = query.order('created_at', { ascending: true });
+  }
+
+  if (status === 'paid') {
+    query = query.is('shipping_tracking_code', null);
+  }
+
+  const { data: orders, error } = await query.limit(100);
+
+  if (error) {
+    throw error; // 將由 withErrorLogging 捕捉
+  }
+
+  logger.info(`查詢成功，找到 ${orders.length} 筆 [${status}] 狀態的訂單`, correlationId, {
+    callerUserId: user.id,
+  });
+
+  return new Response(JSON.stringify(orders), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    status: 200,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -39,81 +126,10 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  try {
-    const { status } = await req.json();
+  const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
 
-    // v2.1 擴充：在不改變函式名稱的前提下，增加對 'cancelled' 狀態的支援
-    const allowedStatus = ['pending_payment', 'paid', 'cancelled'];
-    if (!status || !allowedStatus.includes(status)) {
-      log('ERROR', '缺少或無效的 status 參數', { receivedStatus: status });
-      return new Response(JSON.stringify({ error: '缺少或無效的 status 參數' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    log('INFO', '請求已接收', { status });
+  // 使用 withErrorLogging 中介軟體包裹主要處理邏輯
+  const wrappedHandler = withErrorLogging(mainHandler, logger);
 
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    // 基礎查詢欄位
-    let columns = `
-      id,
-      order_number,
-      created_at,
-      status,
-      payment_status,
-      payment_reference,
-      shipping_address_snapshot,
-      shipping_rates (
-        method_name
-      )
-    `;
-
-    // v2.1 新增：如果請求的是 'cancelled' 狀態，則加入額外的欄位
-    if (status === 'cancelled') {
-      columns += `,
-        cancelled_at,
-        cancellation_reason
-      `;
-    }
-
-    let query = supabaseClient.from('orders').select(columns).eq('status', status);
-
-    // v2.1 調整：根據不同狀態設定排序
-    if (status === 'cancelled') {
-      // 已取消訂單按取消時間倒序排列
-      query = query.order('cancelled_at', { ascending: false });
-    } else {
-      // 維持原有邏輯：待付款和待出貨訂單按建立時間正序排列
-      query = query.order('created_at', { ascending: true });
-    }
-
-    // 維持原有 'paid' 狀態的特定過濾邏輯
-    if (status === 'paid') {
-      query = query.is('shipping_tracking_code', null);
-    }
-
-    const { data: orders, error } = await query.limit(100); // 增加上限以防查詢過多資料
-
-    if (error) {
-      log('ERROR', '查詢訂單時發生資料庫錯誤', { status, dbError: error.message });
-      throw error;
-    }
-
-    log('INFO', `查詢成功，找到 ${orders.length} 筆訂單`, { status });
-
-    return new Response(JSON.stringify(orders), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200,
-    });
-  } catch (error) {
-    log('ERROR', '函式發生未預期的錯誤', { errorMessage: error.message });
-    return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500,
-    });
-  }
+  return await wrappedHandler(req);
 });

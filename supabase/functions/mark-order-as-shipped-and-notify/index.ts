@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/mark-order-as-shipped-and-notify/index.ts
-// 版本: v47.0 - 導入稽核日誌與 RBAC 權限
+// 版本: v48.0 - 企業級日誌框架整合與結構標準化
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -10,49 +10,31 @@
  * @description 處理訂單出貨的核心後端邏輯。具備 RBAC 權限檢查，
  *              透過 RPC 函式確保「更新訂單」與「寫入日誌」的原子性，
  *              並非同步地發送出貨通知 Email。
- * @version v47.0
+ * @version v48.0
+ *
+ * @update v48.0 - [ENTERPRISE LOGGING & REFACTOR]
+ * 1. [核心架構] 引入 `LoggingService` v2.0，完全取代原有的本地 `log()` 函式。
+ * 2. [結構標準化] 將原有的 Class-based 結構重構為與平台一致的 Function-based
+ *          `mainHandler` 模式，提升了可維護性。
+ * 3. [日誌追蹤] `correlationId` 現在會被傳遞到非同步執行的郵件通知函式中，
+ *          實現了對背景任務的端到端日誌追蹤。
+ * 4. [安全稽核] 對每一次出貨操作都留下了詳細的 `audit` 級別日誌。
  *
  * @update v47.0 - [AUDIT & RBAC]
  * 1. [安全性] 新增 RBAC 權限檢查，僅允許 'warehouse_staff' 或 'super_admin' 執行。
- * 2. [原子性] 將資料庫更新與日誌記錄移至 'ship_order_and_log' RPC 函式中，確保交易一致性。
- * 3. [稽核日誌] 成功出貨後，會自動在 'order_history_logs' 表中新增一筆詳細記錄。
- * 4. [架構統一] 程式碼結構與 'mark-order-as-paid' 函式保持一致，提升可維護性。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import { NumberToTextHelper } from '../_shared/utils/NumberToTextHelper.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
+
+const FUNCTION_NAME = 'mark-order-as-shipped-and-notify';
+const FUNCTION_VERSION = 'v48.0';
 
 const ALLOWED_ROLES = ['warehouse_staff', 'super_admin'];
 
-function log(level: 'INFO' | 'WARN' | 'ERROR', message: string, context: object = {}) {
-  console.log(
-    JSON.stringify({
-      level,
-      timestamp: new Date().toISOString(),
-      function: 'mark-order-as-shipped-and-notify',
-      message,
-      ...context,
-    })
-  );
-}
-
-class MarkAsShippedHandler {
-  private supabaseAdmin: ReturnType<typeof createClient>;
-  private resend: Resend;
-  private userContext: { email: string; roles: string } = { email: 'unknown', roles: '[]' };
-
-  constructor() {
-    this.supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-      { auth: { persistSession: false } }
-    );
-    this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
-  }
-
-  private _createShippedEmailText(order: any): string {
-    // ... 此函式內部邏輯維持不變 ...
+function _createShippedEmailText(order: any): string {
     const address = order.shipping_address_snapshot;
     const fullAddress = address ? `${address.postal_code || ''} ${address.city || ''}${address.district || ''}${address.street_address || ''}`.trim() : '無地址資訊';
     const itemsList = order.order_items.map((item: any) => {
@@ -120,44 +102,44 @@ ${antiFraudWarning}
 
 Green Health 團隊 敬上
     `.trim();
-  }
-  
-  private async _sendNotificationEmail(orderId: string) {
-    // 為了發送郵件，需要查詢訂單的詳細資料
-    const { data: orderDetails, error: detailsError } = await this.supabaseAdmin
+}
+
+async function _sendNotificationEmail(
+    { orderId, supabaseAdmin, resend, logger, correlationId }: 
+    { orderId: string, supabaseAdmin: ReturnType<typeof createClient>, resend: Resend, logger: LoggingService, correlationId: string }
+) {
+    const { data: orderDetails, error: detailsError } = await supabaseAdmin
       .from('orders')
-      .select(
-        `*, profiles (email), order_items(quantity, price_at_order, product_variants(name, products(name)))`
-      )
+      .select(`*, profiles (email), order_items(quantity, price_at_order, product_variants(name, products(name)))`)
       .eq('id', orderId)
       .single();
 
     if (detailsError) {
-      log('ERROR', `訂單已出貨，但獲取郵件詳情失敗`, { ...this.userContext, orderId, dbError: detailsError.message });
+      logger.error(`訂單已出貨，但為發送郵件獲取訂單詳情時失敗`, correlationId, detailsError, { orderId });
       return;
     }
 
     const recipientEmail = orderDetails.profiles?.email || orderDetails.customer_email;
     if (recipientEmail) {
       try {
-        await this.resend.emails.send({
+        await resend.emails.send({
           from: 'Green Health 出貨中心 <service@greenhealthtw.com.tw>',
           to: [recipientEmail],
           bcc: ['a896214@gmail.com'],
           reply_to: 'service@greenhealthtw.com.tw',
           subject: `您的 Green Health 訂單 ${orderDetails.order_number} 已出貨`,
-          text: this._createShippedEmailText(orderDetails),
+          text: _createShippedEmailText(orderDetails),
         });
-        log('INFO', '出貨通知郵件已成功發送', { ...this.userContext, orderId, recipient: recipientEmail });
+        logger.info('出貨通知郵件已成功發送', correlationId, { orderId, recipient: recipientEmail });
       } catch (emailError: any) {
-        log('WARN', '出貨通知郵件發送失敗', { ...this.userContext, orderId, emailError: emailError.message });
+        logger.warn('出貨通知郵件發送失敗 (非阻斷性)', correlationId, { orderId, emailErrorName: emailError.name, emailErrorMessage: emailError.message });
       }
     } else {
-      log('WARN', '找不到顧客 Email，無法發送出貨通知', { ...this.userContext, orderId });
+      logger.warn('找不到顧客 Email，無法發送出貨通知', correlationId, { orderId });
     }
-  }
+}
 
-  async handleRequest(req: Request) {
+async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     // --- 1. 權限驗證 ---
     const supabaseUserClient = createClient(
         Deno.env.get('SUPABASE_URL')!,
@@ -167,44 +149,47 @@ Green Health 團隊 敬上
     const { data: { user } } = await supabaseUserClient.auth.getUser();
     const roles: string[] = user?.app_metadata?.roles || [];
     if (!user || !roles.some(r => ALLOWED_ROLES.includes(r))) {
-        log('WARN', '權限不足，操作被拒絕', { userId: user?.id, roles });
-        throw new Error('FORBIDDEN: 權限不足。');
+        logger.warn('權限不足，操作被拒絕', correlationId, { callerUserId: user?.id, callerRoles: roles });
+        return new Response(JSON.stringify({ error: '權限不足。' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
-    this.userContext = { email: user.email!, roles: JSON.stringify(roles) };
-    log('INFO', '授權成功', this.userContext);
 
     // --- 2. 輸入驗證 ---
-    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json();
+    const { orderId, shippingTrackingCode, selectedCarrierMethodName } = await req.json().catch(() => ({}));
     if (!orderId || !shippingTrackingCode || !selectedCarrierMethodName) {
-        log('WARN', '缺少必要參數', { ...this.userContext, orderId });
-        throw new Error('BAD_REQUEST: 缺少必要的出貨參數。');
+        logger.warn('缺少必要的出貨參數', correlationId, { operatorId: user.id, payload: { orderId, shippingTrackingCode, selectedCarrierMethodName }});
+        return new Response(JSON.stringify({ error: '缺少必要的出貨參數。' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }});
     }
 
+    logger.info('授權成功，準備標記訂單為已出貨', correlationId, { operatorId: user.id, orderId });
+
     // --- 3. 執行核心邏輯 (RPC) ---
-    const { data, error: rpcError } = await this.supabaseAdmin.rpc('ship_order_and_log', {
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+      { auth: { persistSession: false } }
+    );
+    const resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
+
+    const rpcParams = {
         p_order_id: orderId,
         p_operator_id: user.id,
         p_carrier: selectedCarrierMethodName,
         p_tracking_code: shippingTrackingCode
-    }).single();
+    };
+    const { data, error: rpcError } = await supabaseAdmin.rpc('ship_order_and_log', rpcParams).single();
     
-    if (rpcError) {
-        log('ERROR', '資料庫 RPC 函式執行失敗', { ...this.userContext, dbError: rpcError.message });
-        throw new Error(`DB_ERROR: ${rpcError.message}`);
-    }
+    if (rpcError) throw rpcError;
 
     const result = data as { success: boolean, message: string, updated_order: any };
-
     if (!result.success) {
-        log('WARN', 'RPC 函式回傳業務邏輯失敗', { ...this.userContext, resultMessage: result.message });
-        throw new Error(result.message);
+        logger.warn('RPC 函式回傳業務邏輯失敗', correlationId, { operatorId: user.id, orderId, rpcResultMessage: result.message });
+        const status = result.message.includes('找不到') ? 404 : result.message.includes('狀態不符') || result.message.includes('已出貨') ? 409 : 400;
+        return new Response(JSON.stringify({ error: result.message }), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
     
-    log('INFO', '訂單出貨成功，已更新資料庫並寫入日誌', { ...this.userContext, orderId });
-
-    // --- 4. 非阻塞式發送郵件 ---
-    // 使用 setTimeout 確保立即回傳響應給前端，郵件在背景發送
-    setTimeout(() => this._sendNotificationEmail(orderId), 0);
+    // --- 4. 記錄稽核日誌並非阻塞式發送郵件 ---
+    logger.audit('訂單已成功標記為已出貨', correlationId, { operatorId: user.id, orderId, details: rpcParams });
+    setTimeout(() => _sendNotificationEmail({ orderId, supabaseAdmin, resend, logger, correlationId }), 0);
     
     // --- 5. 回傳成功響應 ---
     return new Response(JSON.stringify({
@@ -215,31 +200,13 @@ Green Health 團隊 敬上
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  }
 }
 
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
-    try {
-        const handler = new MarkAsShippedHandler();
-        return await handler.handleRequest(req);
-    } catch (err: any) {
-        const message = err.message || 'UNEXPECTED_ERROR';
-        const status = 
-            message.startsWith('FORBIDDEN') ? 403 :
-            message.startsWith('BAD_REQUEST') ? 400 :
-            message.startsWith('DB_ERROR') ? 502 : 
-            message.startsWith('ORDER_NOT_FOUND') ? 404 :
-            message.startsWith('INVALID_STATUS') || message.startsWith('ALREADY_SHIPPED') ? 409 : 500;
-        
-        // 此處不記錄 userContext，因為 handler 實例化可能失敗
-        log('ERROR', `函式最外層錯誤`, { error: message, status });
-
-        return new Response(JSON.stringify({ error: message }), {
-            status,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
+    const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+    const wrappedHandler = withErrorLogging(mainHandler, logger);
+    return await wrappedHandler(req);
 });

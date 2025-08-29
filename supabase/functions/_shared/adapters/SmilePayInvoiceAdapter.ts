@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/SmilePayInvoiceAdapter.ts
-// 版本: v49.1 - 隱私保護勝利收官版
+// 版本: v50.0 - 企業級日誌框架整合
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,22 +8,32 @@
 /**
  * @file SmilePay Invoice Adapter (速買配 API 適配器)
  * @description 最終版。此類別專職將內部資料模型，轉換並【驗證】為速買配 API 格式。
- * @version v49.1
- * 
+ * @version v50.0
+ *
+ * @update v50.0 - [ENTERPRISE LOGGING FRAMEWORK INTEGRATION]
+ * 1. [核心架構] 引入 `LoggingService`，並透過建構函式注入，實現了從上層服務
+ *          到 Adapter 的 `correlationId` 端到端日誌追蹤。
+ * 2. [詳細日誌] 在 API 請求發送前後、參數驗證等關鍵節點增加了詳細的結構化日誌，
+ *          極大提升了與第三方服務對接時的問題排查能力。
+ * 3. [標準化] 所有 `console.error` 均已替換為 `logger.error()`。
+ *
  * @update v49.1 - [PRIVACY ENHANCEMENT]
  * 1. [隱私保護] 根據最終決策，移除了所有向速買配 API 傳遞 `Phone` (電話號碼)
- *          的相關邏輯，因為此欄位為非必填。
- * 2. [流程閉環] 確保 `Email` 欄位能被正確傳遞以利通知，同時保護了非必要的
- *          顧客個人敏感資訊。專案至此勝利收官。
+ *          的相關邏輯。
  */
 
 import { SmilePayAPIClient, SmilePayInvoiceParams } from '../clients/SmilePayAPIClient.ts';
+import LoggingService from '../services/loggingService.ts'; // 引入標準日誌服務
 
 export class SmilePayInvoiceAdapter {
   private apiClient: SmilePayAPIClient;
+  private logger: LoggingService;
+  private correlationId: string;
 
-  constructor() {
+  constructor(logger: LoggingService, correlationId: string) {
     this.apiClient = new SmilePayAPIClient();
+    this.logger = logger;
+    this.correlationId = correlationId;
   }
 
   async issueInvoice(invoiceData: any): Promise<any> {
@@ -31,34 +41,58 @@ export class SmilePayInvoiceAdapter {
       const smilePayParams = this._convertToSmilePayFormat(invoiceData);
       this._validateParams(smilePayParams);
       
+      this.logger.info('[SmilePay] 準備發送開立發票請求', this.correlationId, {
+        orderNumber: invoiceData.orders.order_number,
+        // 脫敏處理，僅記錄部分關鍵參數
+        params: {
+            AllAmount: smilePayParams.AllAmount,
+            DonateMark: smilePayParams.DonateMark,
+            CarrierType: smilePayParams.CarrierType,
+            Buyer_id: smilePayParams.Buyer_id ? '***' : undefined,
+        }
+      });
+
       const response = await this.apiClient.issueInvoice(smilePayParams);
+      
       if (!response.success) {
+        this.logger.error('[SmilePay] API 返回失敗', this.correlationId, new Error(response.error?.message), { apiResponse: response });
         throw new Error(`[SmilePay] ${response.error?.message || '未知的 API 錯誤'}`);
       }
+
+      this.logger.info('[SmilePay] API 返回成功', this.correlationId, { 
+          orderNumber: invoiceData.orders.order_number,
+          invoiceNumber: response.data?.invoiceNumber
+      });
+
       return {
         success: true,
         invoiceNumber: response.data?.invoiceNumber,
         randomNumber: response.data?.randomNumber,
-        apiResponse: response
+        apiResponse: response,
       };
     } catch (error) {
-      console.error('[SmilePayInvoiceAdapter] issueInvoice 執行失敗:', error);
+      // 錯誤已在內部記錄，此處只需重新拋出
+      this.logger.error('[SmilePayInvoiceAdapter] issueInvoice 執行時捕獲到錯誤', this.correlationId, error);
       throw error;
     }
   }
 
   private _validateParams(params: SmilePayInvoiceParams): void {
     if (params.DonateMark === '1' && params.CarrierType) {
-        throw new Error('格式錯誤：捐贈發票不得同時包含載具資訊。');
+        const error = new Error('格式錯誤：捐贈發票不得同時包含載具資訊。');
+        this.logger.warn('[SmilePay] 參數驗證失敗', this.correlationId, { validationError: error.message, params });
+        throw error;
     }
     
-    // [v49.1] 移除對 Phone 的檢查，因為我們不再傳遞它
     if (params.CarrierType === 'EJ0113' && !params.Email) {
-        throw new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email。');
+        const error = new Error('格式錯誤 (-10054)：會員載具發票必須提供 Email。');
+        this.logger.warn('[SmilePay] 參數驗證失敗', this.correlationId, { validationError: error.message, params });
+        throw error;
     }
   }
 
   private _convertToSmilePayFormat(invoiceData: any): SmilePayInvoiceParams {
+    // ... 此函式內部邏輯完全不變 ...
     const order = invoiceData.orders;
     const items = order.order_items || [];
     const couponDiscount = Number(order.coupon_discount) || 0;

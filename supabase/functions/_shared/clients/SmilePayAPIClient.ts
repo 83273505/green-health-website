@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/clients/SmilePayAPIClient.ts
-// 版本: v48.4 - 語法修正勝利收官版
+// 版本: v50.0 - 企業級日誌框架整合
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,15 +8,23 @@
 /**
  * @file SmilePay API Client (速買配 API 客戶端)
  * @description 封裝與速買配 API 溝通的細節。
- * @version v48.4
- * 
+ * @version v50.0
+ *
+ * @update v50.0 - [ENTERPRISE LOGGING FRAMEWORK INTEGRATION]
+ * 1. [核心架構] 引入 `LoggingService`，並透過建構函式可選地注入，實現了從
+ *          上層服務到最底層 Client 的 `correlationId` 端到端日誌追蹤閉環。
+ * 2. [詳細日誌] 在 API 請求發送、接收、逾時、XML 解析等所有關鍵節點增加了
+ *          詳細的結構化日誌。
+ * 3. [雙模式日誌] 新增 `_log` 方法以優雅地處理日誌，在 `logger` 可用時使用
+ *          標準日誌，否則退回至 `console`，確保了向下相容性。
+ *
  * @update v48.4 - [FINAL SYNTAX FIX]
- * 1. [核心修正] 審查並移除了 `issueInvoice` 函式中潛在的、重複的變數宣告，
- *          徹底解決了 `Identifier 'url' has already been declared` 語法錯誤。
- * 2. [錯誤解決] 此修改確保了所有依賴此檔案的後端函式 (如 create-order-from-cart)
- *          都能成功啟動 (`Boot`)，不再發生 `BootFailure`。
+ * 1. [核心修正] 審查並移除了 `issueInvoice` 函式中潛在的、重複的變數宣告。
  */
 
+import LoggingService from '../services/loggingService.ts';
+
+// ... 介面定義維持不變 ...
 export interface SmilePayInvoiceParams {
   InvoiceDate: string;
   InvoiceTime: string;
@@ -73,22 +81,42 @@ export class SmilePayAPIError extends Error {
   }
 }
 
+
 export class SmilePayAPIClient {
   private grvc: string;
   private verifyKey: string;
   private readonly baseUrl: string = 'https://api-proxy.greenhealthtw.com.tw';
   private readonly TIMEOUT = 15000;
+  private logger?: LoggingService;
+  private correlationId?: string;
 
-  constructor() {
+  constructor(logger?: LoggingService, correlationId?: string) {
+    this.logger = logger;
+    this.correlationId = correlationId;
+
     this.grvc = Deno.env.get('SMILEPAY_GRVC') || '';
     this.verifyKey = Deno.env.get('SMILEPAY_VERIFY_KEY') || '';
     
     if (!this.grvc || !this.verifyKey) {
-      console.error("[SmilePayAPIClient] 致命錯誤: 缺少 SMILEPAY_GRVC 或 SMILEPAY_VERIFY_KEY 環境變數(Secrets)。");
+      this._log('CRITICAL', "致命錯誤: 缺少 SMILEPAY_GRVC 或 SMILEPAY_VERIFY_KEY 環境變數。", {}, new Error("SmilePay API 憑證未設定。"));
       throw new Error("SmilePay API 憑證未設定。");
     }
     
-    console.log(`[SmilePayAPIClient] 已初始化，目標代理 URL: ${this.baseUrl}`);
+    this._log('INFO', `SmilePayAPIClient 已初始化`, { baseUrl: this.baseUrl });
+  }
+  
+  private _log(level: 'INFO' | 'WARN' | 'ERROR' | 'CRITICAL', message: string, context: object, error?: Error) {
+      const correlationId = this.correlationId || 'no-correlation-id';
+      if (this.logger) {
+          switch(level) {
+              case 'INFO': this.logger.info(message, correlationId, context); break;
+              case 'WARN': this.logger.warn(message, correlationId, context); break;
+              case 'ERROR': this.logger.error(message, correlationId, error || new Error(message), context); break;
+              case 'CRITICAL': this.logger.critical(message, correlationId, error || new Error(message), context); break;
+          }
+      } else {
+          console.log(JSON.stringify({ level, message, context, timestamp: new Date().toISOString() }));
+      }
   }
 
   async issueInvoice(params: SmilePayInvoiceParams): Promise<SmilePayResponse> {
@@ -98,10 +126,10 @@ export class SmilePayAPIClient {
       ...params
     });
     
-    // [v48.4] 確保 url 變數只被宣告一次
     const requestUrl = `${this.baseUrl}/api/SPEinvoice_Storage.asp`;
     
     try {
+      this._log('INFO', '向速買配 API 發送請求', { url: requestUrl, method: 'POST' });
       const response = await this._fetchWithTimeout(requestUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -109,10 +137,11 @@ export class SmilePayAPIClient {
       });
 
       const xmlText = await response.text();
+      this._log('INFO', '收到速買配 API 回應', { xml: xmlText.substring(0, 500) + (xmlText.length > 500 ? '...' : '') }); // 避免日誌過長
       return this._parseXMLResponse(xmlText);
     } catch (error) {
-      console.error('[SmilePayAPIClient] issueInvoice 請求失敗:', error);
       const message = error.name === 'AbortError' ? '向速買配 API 發送請求時逾時。' : '向速買配 API 發送請求時失敗。';
+      this._log('ERROR', message, { url: requestUrl }, error);
       throw new SmilePayAPIError(message, error);
     }
   }
@@ -122,8 +151,7 @@ export class SmilePayAPIClient {
     const timeoutId = setTimeout(() => controller.abort(), this.TIMEOUT);
     
     try {
-      const response = await fetch(url, { ...options, signal: controller.signal });
-      return response;
+      return await fetch(url, { ...options, signal: controller.signal });
     } finally {
       clearTimeout(timeoutId);
     }
@@ -149,7 +177,7 @@ export class SmilePayAPIClient {
       const success = status === 0;
       const desc = getXMLValue('Desc');
       if (!success) {
-          console.error(`[SmilePay] API 回報錯誤: Status=${status}, Desc=${desc}`);
+          this._log('WARN', `速買配 API 回報業務錯誤`, { status, desc });
       }
       return {
         success, status, desc,
@@ -171,7 +199,7 @@ export class SmilePayAPIClient {
         } : undefined
       };
     } catch (error) {
-      console.error('[SmilePayAPIClient] 解析 XML 回應失敗:', xmlText, error);
+      this._log('ERROR', '解析速買配 API 的 XML 回應時失敗', { xml: xmlText }, error);
       throw new SmilePayAPIError('解析速買配 API 的 XML 回應時失敗。', error);
     }
   }
