@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
-// 版本: v46.0 - 安全性強化與企業級日誌整合
+// 版本: v46.1 - 業務邏輯修正 (價格快照)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,19 +8,17 @@
 /**
  * @file Unified Cart Management Function (統一購物車管理函式)
  * @description 處理購物車的增刪改操作，並在操作後進行權威的價格計算。
- * @version v46.0
+ * @version v46.1
+ *
+ * @update v46.1 - [BUSINESS LOGIC FIX - PRICE SNAPSHOT]
+ * 1. [核心修正] 在 `_processCartActions` 的 `ADD_ITEM` 邏輯中，補上了
+ *          對 `product_variants` 表的查詢，以獲取商品的當前價格。
+ * 2. [錯誤解決] 將獲取到的價格作為 `price_snapshot` 寫入 `cart_items` 表，
+ *          解決了因違反資料庫 `NOT NULL` 約束而導致的 500 錯誤。
  *
  * @update v46.0 - [SECURITY, LOGGING & REFACTORING]
- * 1. [核心安全修正] 新增了購物車所有權驗證。在執行任何寫入操作前，
- *          會強制檢查當前使用者是否為該購物車的擁有者，徹底杜絕了
- *          跨使用者修改購物車的安全風險。
+ * 1. [核心安全修正] 新增了購物車所有權驗證，杜絕跨使用者修改購物車的風險。
  * 2. [核心架構] 引入 `LoggingService` v2.0，並使用 `withErrorLogging` 處理異常。
- * 3. [結構重構] 將原有的龐大 Deno.serve 區塊重構為 mainHandler + 輔助函式
- *          模式，提升了程式碼的可讀性與可維護性。
- * 4. [詳細日誌] 為每一次購物車的具體操作（新增、更新、移除）都增加了
- *          詳細的結構化日誌，極大提升了問題追蹤的效率。
- *
- * @update v45.1 - AI 協作優化收官版
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -28,8 +26,9 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v46.0';
+const FUNCTION_VERSION = 'v46.1';
 
+// ... (interface CartAction 維持不變) ...
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
   payload: {
@@ -40,11 +39,11 @@ interface CartAction {
   };
 }
 
+// ... (_calculateCartSummary 函式維持不變) ...
 async function _calculateCartSummary(
   { req, supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId }:
   { req: Request; supabaseAdmin: ReturnType<typeof createClient>; cartId: string; couponCode?: string; shippingMethodId?: string; logger: LoggingService; correlationId: string; }
 ) {
-  // ... 此函式內部邏輯基本不變，僅加入日誌 ...
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
 
@@ -123,6 +122,7 @@ async function _calculateCartSummary(
   return result;
 }
 
+// [v46.1 核心修正]
 async function _processCartActions(
     { supabaseAdmin, cartId, actions, logger, correlationId }:
     { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; actions: CartAction[]; logger: LoggingService; correlationId: string; }
@@ -135,9 +135,21 @@ async function _processCartActions(
                     const { variantId, quantity } = action.payload;
                     if (!variantId || !quantity || quantity <= 0) throw new Error('ADD_ITEM 缺少或無效的參數');
                     
+                    // [v46.1 新增] 查詢價格以建立快照
+                    const { data: variant, error: vError } = await supabaseAdmin
+                        .from('product_variants').select('price, sale_price').eq('id', variantId).single();
+                    if (vError || !variant) throw new Error(`找不到商品規格 ${variantId}: ${vError?.message || '不存在'}`);
+                    const price_snapshot = variant.sale_price ?? variant.price;
+
                     const { error: upsertError } = await supabaseAdmin
                         .from('cart_items')
-                        .upsert({ cart_id: cartId, product_variant_id: variantId, quantity: quantity }, { onConflict: 'cart_id,product_variant_id' });
+                        .upsert({ 
+                            cart_id: cartId, 
+                            product_variant_id: variantId, 
+                            quantity: quantity,
+                            price_snapshot: price_snapshot // [v46.1 新增] 寫入價格快照
+                        }, { onConflict: 'cart_id,product_variant_id' });
+
                     if (upsertError) throw upsertError;
                     
                     logger.info(`[Action] 成功新增商品`, correlationId, { cartId, variantId, quantity });
@@ -171,11 +183,12 @@ async function _processCartActions(
             }
         } catch (actionError) {
             logger.error(`購物車操作 ${action.type} 執行失敗`, correlationId, actionError, { cartId, payload: action.payload });
-            throw actionError; // 拋出以中斷流程
+            throw actionError;
         }
     }
 }
 
+// ... (mainHandler 和 Deno.serve 維持不變) ...
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, couponCode, shippingMethodId, actions } = await req.json().catch(() => ({}));
 
@@ -186,7 +199,6 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
 
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } });
     
-    // 如果有寫入操作，執行核心安全檢查
     if (actions && Array.isArray(actions) && actions.length > 0) {
         const supabaseUserClient = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: req.headers.get('Authorization')! } } });
         const { data: { user } } = await supabaseUserClient.auth.getUser();
