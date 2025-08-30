@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/search-invoices/index.ts
-// 版本: v48.0 - 企業級日誌與安全稽核整合
+// 版本: v48.1 - 同步 RPC v2.0 资料结构
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,19 +8,18 @@
 /**
  * @file Search Invoices Function (搜尋發票函式)
  * @description 發票管理後台的核心後端服務。
- * @version v48.0
+ * @version v48.1
+ *
+ * @update v48.1 - [SYNC WITH RPC v2.0]
+ * 1. [文件同步] 更新注解，确认此函式依赖的 `search_invoices_advanced` RPC v2.0
+ *          版本，该版本确保了回传的 `invoice_details` JSON 物件中
+ *          必然包含 `recipient_email` 栏位。
  *
  * @update v48.0 - [ENTERPRISE LOGGING & SECURITY AUDIT INTEGRATION]
  * 1. [核心架構] 引入 `LoggingService` v2.0，取代所有 `console.*` 呼叫。
  * 2. [全域錯誤捕捉] 使用 `withErrorLogging` 中介軟體處理未預期異常。
- * 3. [安全稽核日誌] 對每一次發票搜尋操作都留下了詳細的稽核日誌，記錄了
- *          操作者、完整的查詢條件以及返回的結果數量，為安全與效能分析
- *          提供了關鍵數據。
- * 4. [追蹤 ID] 整個請求生命週期由 `correlationId` 貫穿。
- *
- * @update v47.0 - [ALIGN WITH v47.0 RPC FUNCTION]
- * 1. [核心簡化] 移除在 Edge Function 中手動組合搜尋詞的邏輯，將其下沉至
- *          `search_invoices_advanced` RPC 函式中。
+ * 3. [安全稽核日誌] 對每一次發票搜尋操作都留下了詳細的稽核日誌。
+ * 4. [追蹤 ID] 整个请求生命周期由 `correlationId` 贯穿。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -28,7 +27,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'search-invoices';
-const FUNCTION_VERSION = 'v48.0';
+const FUNCTION_VERSION = 'v48.1';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
   // --- 1. 初始化並驗證使用者權限 ---
@@ -60,6 +59,7 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
   
+  // 依赖 v2.0 版本的 RPC 函式
   const { data, error: rpcError } = await supabaseAdmin.rpc('search_invoices_advanced', {
     _status: filters.status || null,
     _search_term: filters.searchTerm || null,
