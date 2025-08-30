@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v47.2 - 修复 null 引用错误并增加防御性编程
+// 版本: v47.3 - 修正稽核日誌查詢與通知元素錯誤
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,7 +17,7 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
-// --- v47.2 DOM 元素獲取 (完整版) ---
+// --- v47.3 DOM 元素獲取 (完整版) ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
@@ -122,6 +122,7 @@ function renderPickingList(items) {
 }
 
 function renderCustomerProfile(summary) {
+  if (!customerProfileContentEl) return;
   if (!summary) {
     customerProfileContentEl.innerHTML = '<p class="error-message">無法載入顧客資訊。</p>';
     return;
@@ -148,6 +149,7 @@ function renderCustomerProfile(summary) {
 }
 
 function renderOrderHistory(logs) {
+  if (!orderHistoryContentEl) return;
   if (!logs || logs.length === 0) {
     orderHistoryContentEl.innerHTML = '<p>尚無操作歷史記錄。</p>';
     return;
@@ -157,7 +159,7 @@ function renderOrderHistory(logs) {
       return `
           <div class="history-item">
               <span class="timestamp">${new Date(log.changed_at).toLocaleString('zh-TW')}</span>
-              <strong>${log.event_type}</strong> by ${log.changed_by_user_id ? log.changed_by_user_id : 'System'}
+              <strong>${log.event_type}</strong> by ${log.operator_email || 'System'}
               ${detailsHtml}
           </div>
       `;
@@ -165,23 +167,55 @@ function renderOrderHistory(logs) {
 }
 
 async function fetchOrderHistory(orderId) {
+    if (!orderHistoryContentEl) return;
     const client = await supabase;
-    const { data, error } = await client
+    
+    // v47.3 核心修正：分兩步查詢以解決 RLS 和關聯問題
+    // 步驟 1: 獲取日誌
+    const { data: logs, error: logsError } = await client
         .from('order_history_logs')
-        .select('*, profiles(email)')
+        .select('changed_at, changed_by_user_id, event_type, details')
         .eq('order_id', orderId)
         .order('changed_at', { ascending: false });
-    
-    if (error) {
-        console.error('讀取訂單歷史失敗:', error);
+
+    if (logsError) {
+        console.error('讀取訂單歷史失敗:', logsError);
         orderHistoryContentEl.innerHTML = '<p class="error-message">讀取訂單歷史失敗。</p>';
-    } else {
-        const formattedLogs = data.map(log => ({
-            ...log,
-            changed_by_user_id: log.profiles ? log.profiles.email : (log.changed_by_user_id || 'System')
-        }));
-        renderOrderHistory(formattedLogs);
+        return;
     }
+
+    if (logs.length === 0) {
+        renderOrderHistory([]);
+        return;
+    }
+
+    // 步驟 2: 根據日誌中的 user ID 列表，一次性獲取所有操作員的 email
+    const operatorIds = [...new Set(logs.map(log => log.changed_by_user_id).filter(Boolean))];
+    let operatorsMap = {};
+
+    if (operatorIds.length > 0) {
+        const { data: profiles, error: profilesError } = await client
+            .from('profiles')
+            .select('id, email')
+            .in('id', operatorIds);
+
+        if (profilesError) {
+            console.warn('獲取操作員Email失敗:', profilesError.message);
+        } else {
+            operatorsMap = profiles.reduce((acc, profile) => {
+                acc[profile.id] = profile.email;
+                return acc;
+            }, {});
+        }
+    }
+
+    // 步驟 3: 將 Email 組合到日誌中並渲染
+    const formattedLogs = logs.map(log => ({
+        ...log,
+        operator_email: operatorsMap[log.changed_by_user_id] || log.changed_by_user_id || 'System'
+    }));
+
+    renderOrderHistory(formattedLogs);
 }
 
 async function handleOrderSelection(orderId) {
@@ -259,8 +293,8 @@ async function handleOrderSelection(orderId) {
   }
 
   pickingListEl.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
-  customerProfileContentEl.innerHTML = '<p class="loading-text">載入顧客輪廓...</p>';
-  orderHistoryContentEl.innerHTML = '<p class="loading-text">載入操作歷史...</p>';
+  if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p class="loading-text">載入顧客輪廓...</p>';
+  if (orderHistoryContentEl) orderHistoryContentEl.innerHTML = '<p class="loading-text">載入操作歷史...</p>';
 
   const client = await supabase;
   const [itemsResult, profileResult] = await Promise.all([
@@ -276,10 +310,10 @@ async function handleOrderSelection(orderId) {
   }
   
   if (!order.user_id) {
-    customerProfileContentEl.innerHTML = '<p>匿名顧客無歷史資料。</p>';
+    if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p>匿名顧客無歷史資料。</p>';
   } else if (profileResult.error) {
     console.error('讀取顧客輪廓失敗:', profileResult.error);
-    customerProfileContentEl.innerHTML = '<p class="error-message">讀取顧客輪廓失敗。</p>';
+    if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p class="error-message">讀取顧客輪廓失敗。</p>';
   } else {
     renderCustomerProfile(profileResult.data);
   }
@@ -312,6 +346,7 @@ async function populateCarrierSelector(defaultCarrier) {
 
 async function handlePaymentConfirmation(e) {
   e.preventDefault();
+  if (!paymentConfirmationForm) return;
   setFormSubmitting(paymentConfirmationForm, true, '確認中...');
   try {
     const client = await supabase;
@@ -339,6 +374,7 @@ async function handlePaymentConfirmation(e) {
 
 async function handleShippingFormSubmit(e) {
   e.preventDefault();
+  if (!shippingForm) return;
   setFormSubmitting(shippingForm, true, '處理中...');
   try {
     const client = await supabase;
@@ -482,30 +518,30 @@ async function handleCancelOrder() {
 }
 
 function renderSearchSummary(summary) {
+    if (!searchSummaryContainerEl) return;
     if (!summary) {
-        if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
+        searchSummaryContainerEl.innerHTML = '';
         return;
     }
-    if (searchSummaryContainerEl) {
-        searchSummaryContainerEl.innerHTML = `
-            <div class="summary-item">
-                <span class="value">${summary.new_customers_count}</span>
-                <span class="label">區間新客數</span>
-            </div>
-            <div class="summary-item">
-                <span class="value">${summary.total_orders_from_new_customers}</span>
-                <span class="label">新客總訂單</span>
-            </div>
-            <div class="summary-item">
-                <span class="value">${formatCurrency(summary.total_spent_from_new_customers)}</span>
-                <span class="label">新客總金額</span>
-            </div>
-        `;
-    }
+    searchSummaryContainerEl.innerHTML = `
+        <div class="summary-item">
+            <span class="value">${summary.new_customers_count}</span>
+            <span class="label">區間新客數</span>
+        </div>
+        <div class="summary-item">
+            <span class="value">${summary.total_orders_from_new_customers}</span>
+            <span class="label">新客總訂單</span>
+        </div>
+        <div class="summary-item">
+            <span class="value">${formatCurrency(summary.total_spent_from_new_customers)}</span>
+            <span class="label">新客總金額</span>
+        </div>
+    `;
 }
 
 async function handleAdvancedOrderSearch(e) {
   e.preventDefault();
+  if (!advancedOrderSearchForm) return;
   setFormSubmitting(advancedOrderSearchForm, true, '查詢中...');
   searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
   if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
@@ -546,6 +582,7 @@ async function handleAdvancedOrderSearch(e) {
 }
 
 function renderSearchResults(results) {
+  if (!searchResultsList) return;
   if (!results || results.length === 0) {
     searchResultsList.innerHTML = '<p>找不到符合條件的訂單。</p>';
     return;
@@ -639,7 +676,9 @@ function bindEvents() {
   safeAddEventListener(paymentConfirmationForm, 'submit', handlePaymentConfirmation);
   safeAddEventListener(shippingForm, 'submit', handleShippingFormSubmit);
   safeAddEventListener(printBtn, 'click', () => window.print());
-  tabs.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
+  if (tabs) {
+      tabs.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
+  }
   safeAddEventListener(advancedOrderSearchForm, 'submit', handleAdvancedOrderSearch);
   safeAddEventListener(advancedOrderSearchForm, 'reset', () => {
     if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
@@ -654,7 +693,9 @@ function handleTabClick(e) {
   const tab = e.target;
   if (currentStatusTab === tab.dataset.statusTab) return;
   currentStatusTab = tab.dataset.statusTab;
-  tabs.forEach((t) => t.classList.remove('active'));
+  if (tabs) {
+    tabs.forEach((t) => t.classList.remove('active'));
+  }
   tab.classList.add('active');
   orderDetailView.classList.add('hidden');
   searchResultsContainer.classList.add('hidden');
