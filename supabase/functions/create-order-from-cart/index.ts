@@ -1,36 +1,25 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v47.0 - 企業級日誌框架整合 (完整版)
+// 版本: v47.1 - 依賴注入修正 (最終穩定版)
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Unified Intelligent Order Creation Function (統一智慧型訂單建立函式)
- * @description 最終版訂單建立函式。能智慧處理三種情境：
- *              1. 已登入會員 (透過 JWT)
- *              2. 忘記登入的會員 (透過 Email 後端查詢自動歸戶)
- *              3. 全新訪客 (建立純訪客訂單)
- *              並採用「權限透傳」模式優雅地處理 RLS，整合 Resend 寄送郵件。
- * @version v47.0
+ * @description 最終版訂單建立函式。
+ * @version v47.1
+ *
+ * @update v47.1 - [DEPENDENCY INJECTION FIX]
+ * 1. [核心修正] 修正了 `_handleInvoiceCreation` 方法中對 `InvoiceService` 的
+ *          實例化方式。現在會將 `logger` 和 `correlationId` 正確地注入
+ *          到 `InvoiceService` 的建構函式中。
+ * 2. [錯誤解決] 此修改解決了因依賴注入鏈路中斷，導致在 `SmilePay...` 層級
+ *          發生 `TypeError` 的根本問題，修復了 500 錯誤。
+ * 3. [專案閉環] 這是本次大規模重構的最後一個已知業務邏輯錯誤。
  *
  * @update v47.0 - [ENTERPRISE LOGGING FRAMEWORK INTEGRATION]
- * 1. [核心架構] 引入全新的 `LoggingService` v2.0，取代所有 `console.*` 呼叫。
- * 2. [全域錯誤捕捉] 使用 `withErrorLogging` 中介軟體包裹主要處理邏輯，
- *          自動捕捉未處理的異常，記錄詳細的 CRITICAL 日誌，並回傳標準 500 錯誤。
- * 3. [情境感知日誌] 在所有關鍵決策點（如身份識別、價格比對、資料庫操作）
- *          加入了帶有豐富上下文的結構化日誌。
- * 4. [追蹤 ID] 整個請求生命週期由 `correlationId` 貫穿，方便在日誌平台中
- *          聚合查詢單一請求的所有相關日誌。
- * 5. [程式碼重構] 將主要邏輯封裝，使 `Deno.serve` 的進入點更為清晰簡潔。
- *
- * @update v46.3 - [GUIDED REGISTRATION EMAIL FLOW]
- * 1. [核心流程修正] 重構了 `_createOrderEmailText` 函式，移除了舊的「無感註冊」
- *          連結，改為產生一個引導式的 HTML 按鈕。
- * 2. [智慧判斷] 現在只有當訂單來自匿名訪客時，確認信中才會包含「立即加入會員」
- *          的行動呼籲按鈕，避免對已登入會員造成干擾。
- * 3. [技術實現] 郵件內容現在以 HTML 格式產生，確保了按鈕樣式在多數郵件客戶端中
- *          的相容性。`resend.emails.send` 的呼叫也從 `text` 改為 `html`。
+ * 1. [核心架構] 引入全新的 `LoggingService` v2.0，並整合企業級日誌框架。
  */
 
 import { createClient, Resend } from '../_shared/deps.ts';
@@ -41,7 +30,7 @@ import LoggingService from '../_shared/services/loggingService.ts';
 import { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'create-order-from-cart';
-const FUNCTION_VERSION = 'v47.0';
+const FUNCTION_VERSION = 'v47.1';
 
 class CreateUnifiedOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
@@ -54,7 +43,7 @@ class CreateUnifiedOrderHandler {
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
       { auth: { persistSession: false } }
-    );Ｄ
+    );
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
 
@@ -171,9 +160,6 @@ class CreateUnifiedOrderHandler {
     };
   }
 
-  /**
-   * [v46.3 核心修正] 產生訂單確認信的 HTML 內容。
-   */
   private _createOrderEmailHtml(
     order: any,
     orderItems: any[],
@@ -201,7 +187,6 @@ class CreateUnifiedOrderHandler {
       })
       .join('');
 
-    // [v46.3 新增] 只有匿名訪客才顯示註冊引導
     let signupCtaHtml = '';
     if (isAnonymous) {
       const signupUrl = `${Deno.env.get('SITE_URL')}/account-module/index.html?email=${encodeURIComponent(order.customer_email)}`;
@@ -264,21 +249,18 @@ class CreateUnifiedOrderHandler {
       </div>
     `;
   }
-
+  
+  // [v47.1 核心修正]
   private async _handleInvoiceCreation(
     newOrder: any,
     invoiceOptions: any,
     correlationId: string
   ) {
     try {
-      const invoiceService = new InvoiceService(this.supabaseAdmin);
+      // [v47.1 核心修正] 將 logger 和 correlationId 正確地注入到 InvoiceService
+      const invoiceService = new InvoiceService(this.supabaseAdmin, this.logger, correlationId);
       const finalInvoiceData = await invoiceService.determineInvoiceData(newOrder, invoiceOptions);
       await invoiceService.createInvoiceRecord(newOrder.id, newOrder.total_amount, finalInvoiceData);
-      this.logger.info(
-        `訂單的發票記錄已成功排入佇列`,
-        correlationId,
-        { orderId: newOrder.id }
-      );
     } catch (err: any) {
       this.logger.error(
         `訂單已建立，但發票記錄建立失敗`,
@@ -480,7 +462,7 @@ class CreateUnifiedOrderHandler {
           isAnonymous,
         });
       } else {
-        this.logger.warn('收到無效的 token，將以訪客身份繼續', correlationId);
+        this.logger.warn('收到無效的 token', correlationId);
       }
     }
 
@@ -492,14 +474,14 @@ class CreateUnifiedOrderHandler {
       if (maybeExistingUserId) {
         userId = maybeExistingUserId;
         wasAutoLinked = true;
-        isAnonymous = false; // 已歸戶，不再視為匿名
+        isAnonymous = false;
         this.logger.info(
           'Identity resolved via email auto-linking',
           correlationId,
           { email: shippingDetails.email, linkedUserId: userId }
         );
       } else {
-        isAnonymous = true; // 找不到對應會員，確認為匿名訪客
+        isAnonymous = true;
         this.logger.info(
           'Identity treated as new anonymous visitor',
           correlationId,
@@ -636,6 +618,7 @@ class CreateUnifiedOrderHandler {
       .select('*, product_variants(name)')
       .eq('order_id', newOrder.id);
 
+    // [v47.1 核心修正] 將 correlationId 傳遞給 _handleInvoiceCreation
     await Promise.allSettled([
       this.supabaseAdmin
         .from('carts')
