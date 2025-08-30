@@ -14,7 +14,7 @@
             xmlns="http://www.w3.org/2000/svg"
             width="24"
             height="24"
-            viewBox="0 0 24 24" /* 【v3.1 核心修正】補上 viewBox 缺少的第四個參數 */
+            viewBox="0 0 24 24"
             fill="none"
             stroke="currentColor"
             stroke-width="2"
@@ -119,13 +119,42 @@
           </div>
 
           <div id="payment-confirmation-section" class="detail-section action-section hidden">
-            <!-- 付款確認作業內容省略 -->
+            <h3>付款確認作業</h3>
+            <form id="payment-confirmation-form">
+                <div class="form-group">
+                    <label for="payment-method-selector">最終收款方式</label>
+                    <select id="payment-method-selector" required>
+                        <option value="銀行轉帳 / ATM">銀行轉帳 / ATM</option>
+                        <option value="貨到付款">貨到付款</option>
+                        <option value="信用卡付款">信用卡付款</option>
+                        <option value="現金">現金</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="payment-reference-input">付款參考 (後五碼或其他說明)</label>
+                    <input type="text" id="payment-reference-input">
+                </div>
+                <button type="submit" class="btn-submit">確認收款</button>
+            </form>
           </div>
           <div id="shipping-action-section" class="detail-section action-section hidden">
-            <!-- 出貨作業內容省略 -->
+            <h3>出貨作業</h3>
+            <form id="shipping-form">
+                <div class="form-group">
+                    <label for="carrier-selector">配送服務</label>
+                    <select id="carrier-selector" required></select>
+                </div>
+                <div class="form-group">
+                    <label for="tracking-code-input">物流追蹤單號</label>
+                    <input type="text" id="tracking-code-input" required>
+                </div>
+                <button type="submit" id="mark-as-shipped-btn" class="btn-submit">確認出貨並通知顧客</button>
+            </form>
           </div>
           <div id="cancellation-action-section" class="detail-section action-section hidden">
-            <!-- 訂單取消作業內容省略 -->
+            <h3>訂單取消作業</h3>
+            <p class="warning-text">注意：取消訂單將會自動回補商品庫存。此操作無法復原。</p>
+            <button id="btn-cancel-order" class="btn-danger">取消此訂單</button>
           </div>
 
           <div id="order-history-section" class="detail-section">

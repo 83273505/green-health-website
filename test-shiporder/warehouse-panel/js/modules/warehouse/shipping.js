@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v47.1 - 錯誤修復與功能整合最終版
+// 版本: v47.2 - 修复 null 引用错误并增加防御性编程
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,7 +17,7 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
-// --- v47.1 DOM 元素獲取 (完整版) ---
+// --- v47.2 DOM 元素獲取 (完整版) ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
@@ -157,7 +157,7 @@ function renderOrderHistory(logs) {
       return `
           <div class="history-item">
               <span class="timestamp">${new Date(log.changed_at).toLocaleString('zh-TW')}</span>
-              <strong>${log.event_type}</strong> by ${log.changed_by_user_id ? 'Operator' : 'System'}
+              <strong>${log.event_type}</strong> by ${log.changed_by_user_id ? log.changed_by_user_id : 'System'}
               ${detailsHtml}
           </div>
       `;
@@ -212,10 +212,12 @@ async function handleOrderSelection(orderId) {
     shippingActionSection,
     cancellationActionSection,
     cancellationDetailsSection,
-  ].forEach((el) => el.classList.add('hidden'));
+  ].forEach((el) => {
+    if (el) el.classList.add('hidden');
+  });
 
-  trackingCodeInput.value = '';
-  paymentReferenceInput.value = '';
+  if (trackingCodeInput) trackingCodeInput.value = '';
+  if (paymentReferenceInput) paymentReferenceInput.value = '';
   orderNumberTitle.textContent = `訂單 #${order.order_number}`;
 
   const adr = order.shipping_address_snapshot;
@@ -238,19 +240,21 @@ async function handleOrderSelection(orderId) {
 
   switch (order.status) {
     case 'pending_payment':
-      paymentConfirmationSection.classList.remove('hidden');
-      cancellationActionSection.classList.remove('hidden');
+      if (paymentConfirmationSection) paymentConfirmationSection.classList.remove('hidden');
+      if (cancellationActionSection) cancellationActionSection.classList.remove('hidden');
       break;
     case 'paid':
-      shippingActionSection.classList.remove('hidden');
-      cancellationActionSection.classList.remove('hidden');
+      if (shippingActionSection) shippingActionSection.classList.remove('hidden');
+      if (cancellationActionSection) cancellationActionSection.classList.remove('hidden');
       break;
     case 'cancelled':
-      cancellationDetailsSection.classList.remove('hidden');
-      cancellationDetailsEl.innerHTML = `
-        <p><strong>取消時間:</strong> ${new Date(order.cancelled_at).toLocaleString('zh-TW')}</p>
-        <p><strong>取消原因:</strong> ${order.cancellation_reason || '未提供原因'}</p>
-      `;
+      if (cancellationDetailsSection) cancellationDetailsSection.classList.remove('hidden');
+      if (cancellationDetailsEl) {
+        cancellationDetailsEl.innerHTML = `
+            <p><strong>取消時間:</strong> ${new Date(order.cancelled_at).toLocaleString('zh-TW')}</p>
+            <p><strong>取消原因:</strong> ${order.cancellation_reason || '未提供原因'}</p>
+        `;
+      }
       break;
   }
 
@@ -299,9 +303,11 @@ async function populateCarrierSelector(defaultCarrier) {
       return;
     }
   }
-  carrierSelector.innerHTML = shippingRatesCache
-    .map((r) => `<option value="${r.method_name}" ${r.method_name === defaultCarrier ? 'selected' : ''}>${r.method_name}</option>`)
-    .join('');
+  if (carrierSelector) {
+    carrierSelector.innerHTML = shippingRatesCache
+        .map((r) => `<option value="${r.method_name}" ${r.method_name === defaultCarrier ? 'selected' : ''}>${r.method_name}</option>`)
+        .join('');
+  }
 }
 
 async function handlePaymentConfirmation(e) {
@@ -477,30 +483,32 @@ async function handleCancelOrder() {
 
 function renderSearchSummary(summary) {
     if (!summary) {
-        searchSummaryContainerEl.innerHTML = '';
+        if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
         return;
     }
-    searchSummaryContainerEl.innerHTML = `
-        <div class="summary-item">
-            <span class="value">${summary.new_customers_count}</span>
-            <span class="label">區間新客數</span>
-        </div>
-        <div class="summary-item">
-            <span class="value">${summary.total_orders_from_new_customers}</span>
-            <span class="label">新客總訂單</span>
-        </div>
-        <div class="summary-item">
-            <span class="value">${formatCurrency(summary.total_spent_from_new_customers)}</span>
-            <span class="label">新客總金額</span>
-        </div>
-    `;
+    if (searchSummaryContainerEl) {
+        searchSummaryContainerEl.innerHTML = `
+            <div class="summary-item">
+                <span class="value">${summary.new_customers_count}</span>
+                <span class="label">區間新客數</span>
+            </div>
+            <div class="summary-item">
+                <span class="value">${summary.total_orders_from_new_customers}</span>
+                <span class="label">新客總訂單</span>
+            </div>
+            <div class="summary-item">
+                <span class="value">${formatCurrency(summary.total_spent_from_new_customers)}</span>
+                <span class="label">新客總金額</span>
+            </div>
+        `;
+    }
 }
 
 async function handleAdvancedOrderSearch(e) {
   e.preventDefault();
   setFormSubmitting(advancedOrderSearchForm, true, '查詢中...');
   searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
-  searchSummaryContainerEl.innerHTML = '';
+  if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
 
   const params = {
     status: document.getElementById('search-status-selector').value,
@@ -607,7 +615,7 @@ function bindEvents() {
     if (element) {
       element.addEventListener(event, handler);
     } else {
-      console.warn(`[bindEvents] 警告：試圖綁定事件的元素不存在。`);
+      console.warn(`[bindEvents] 警告：試圖綁定事件的元素不存在。元素 ID 可能有誤或尚未被渲染。`);
     }
   };
   
@@ -634,10 +642,10 @@ function bindEvents() {
   tabs.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
   safeAddEventListener(advancedOrderSearchForm, 'submit', handleAdvancedOrderSearch);
   safeAddEventListener(advancedOrderSearchForm, 'reset', () => {
-    searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
-    searchSummaryContainerEl.innerHTML = '';
-    orderDetailView.classList.add('hidden');
-    emptyView.classList.remove('hidden');
+    if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
+    if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
+    if (orderDetailView) orderDetailView.classList.add('hidden');
+    if (emptyView) emptyView.classList.remove('hidden');
   });
   safeAddEventListener(btnCancelOrder, 'click', handleCancelOrder);
 }
@@ -656,8 +664,8 @@ function handleTabClick(e) {
     orderListContainer.classList.add('hidden');
     searchFormContainer.classList.remove('hidden');
     searchResultsContainer.classList.remove('hidden');
-    searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
-    searchSummaryContainerEl.innerHTML = '';
+    if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
+    if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
   } else {
     orderListContainer.classList.remove('hidden');
     searchFormContainer.classList.add('hidden');
