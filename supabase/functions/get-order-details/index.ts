@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-order-details/index.ts
-// 版本: v2.0 - 安全性強化與日誌框架整合
+// 版本: v2.1 - RBAC 權限強化與 Service Role 查詢
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,15 +8,15 @@
 /**
  * @file Get Order Details Function (獲取訂單詳細資訊函式)
  * @description 根據 orderId，安全地查詢並回傳該訂單的商品項目列表。
- * @version v2.0
+ *              此函式為後台專用，執行前會進行 RBAC 角色權限檢查。
+ * @version v2.1
  *
- * @update v2.0 - [SECURITY ENHANCEMENT & LOGGING INTEGRATION]
- * 1. [核心安全修正] 函式現在強制要求使用者授權 (JWT)。所有查詢都在使用者的
- *          權限上下文中執行，並依賴 RLS 策略確保使用者只能查詢自己的訂單，
- *          徹底修復了先前版本中存在的資料外洩風險。
- * 2. [核心架構] 引入 `LoggingService` v2.0，取代所有 `console.*` 呼叫。
- * 3. [全域錯誤捕捉] 使用 `withErrorLogging` 中介軟體處理未預期異常。
- * 4. [安全稽核日誌] 清晰記錄每一次的查詢請求，包括操作者與目標訂單 ID。
+ * @update v2.1 - [RBAC & SERVICE ROLE]
+ * 1. [核心安全修正] 新增 RBAC 角色權限檢查，確保只有 'warehouse_staff' 或
+ *          'super_admin' 角色的使用者才能呼叫此函式。
+ * 2. [核心功能修正] 在權限驗證通過後，所有資料庫查詢將使用 service_role_key
+ *          執行，以繞過 RLS 限制，確保後台能夠讀取所有訂單的詳細資訊。
+ * 3. [架構保留] 完整保留 v2.0 的 LoggingService 和 withErrorLogging 框架。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -24,14 +24,15 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-order-details';
-const FUNCTION_VERSION = 'v2.0';
+const FUNCTION_VERSION = 'v2.1';
+const ALLOWED_ROLES = ['warehouse_staff', 'super_admin'];
 
 async function mainHandler(
   req: Request,
   logger: LoggingService,
   correlationId: string
 ): Promise<Response> {
-  // 步驟 1: 驗證使用者身份
+  // 步驟 1: 驗證使用者身份與角色權限 (RBAC)
   const authHeader = req.headers.get('Authorization');
   if (!authHeader) {
     logger.warn('缺少授權標頭', correlationId);
@@ -41,7 +42,6 @@ async function mainHandler(
     });
   }
 
-  // 建立在使用者權限上下文中的 Supabase Client
   const supabaseUserClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -57,6 +57,17 @@ async function mainHandler(
     });
   }
 
+  const roles: string[] = user.app_metadata?.roles || [];
+  const isAuthorized = roles.some(r => ALLOWED_ROLES.includes(r));
+
+  if (!isAuthorized) {
+    logger.warn('權限不足，操作被拒絕', correlationId, { userId: user.id, roles });
+    return new Response(JSON.stringify({ error: '權限不足' }), {
+        status: 403,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   // 步驟 2: 獲取並驗證輸入參數
   const { orderId } = await req.json().catch(() => ({ orderId: null }));
   if (!orderId) {
@@ -69,8 +80,14 @@ async function mainHandler(
   
   logger.info('授權成功，開始查詢訂單詳細資訊', correlationId, { userId: user.id, orderId });
 
-  // 步驟 3: 使用 user client 進行查詢，自動應用 RLS
-  const { data: items, error } = await supabaseUserClient
+  // 步驟 3: 【核心修正】建立具有 service_role 權限的 Admin Client
+  const supabaseAdminClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  // 使用 Admin Client 進行查詢，以繞過 RLS
+  const { data: items, error } = await supabaseAdminClient
     .from('order_items')
     .select(
       `
@@ -88,8 +105,8 @@ async function mainHandler(
     )
     .eq('order_id', orderId);
 
-  // 任何資料庫錯誤都將被 `withErrorLogging` 捕捉
   if (error) {
+    // 任何資料庫錯誤都將被 `withErrorLogging` 捕捉
     throw error;
   }
   
@@ -103,14 +120,11 @@ async function mainHandler(
 }
 
 Deno.serve(async (req) => {
-  // 處理 CORS 預檢請求
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
-
-  // 使用 withErrorLogging 中介軟體包裹主要處理邏輯
   const wrappedHandler = withErrorLogging(mainHandler, logger);
 
   return await wrappedHandler(req);
