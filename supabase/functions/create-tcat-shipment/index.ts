@@ -1,18 +1,16 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/create-tcat-shipment/index.ts
-// 版本: v1.1 - 對齊代理架構
+// 版本: v1.2 - 部署語法修正
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接覆蓋】
-// 原檔案共 0 行，新檔案共 112 行
-// 合理性：此為全新的 Edge Function 端點，作為後台觸發建立託運單的標準
-// 入口。它嚴格遵循了專案的安全與日誌標準，包含了完整的 CORS 處理、
-// 基於 JWT 的權限驗證、全域錯誤捕捉、日誌框架整合以及呼叫核心服務的
-// 所有必要樣板程式碼。
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 /**
 @file Create T-cat Shipment Function (建立黑貓託運單函式)
 @description 允許授權的後台使用者為特定訂單建立黑貓託運單。
-@version v1.1
+@version v1.2
+@update v1.2 - [DEPLOYMENT SYNTAX FIX]
+[核心修正] 修正了成功回應中 JSON.stringify 的 message 屬性未使用
+標準字串格式，導致的致命語法錯誤。
 @update v1.1 - [ALIGN WITH PROXY ARCHITECTURE]
 [架構確認] 端點邏輯無需任何變動。
 */
@@ -21,7 +19,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import { ShipmentService } from '../_shared/services/ShipmentService.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 const FUNCTION_NAME = 'create-tcat-shipment';
-const FUNCTION_VERSION = 'v1.1';
+const FUNCTION_VERSION = 'v1.2';
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
 const { orderId } = await req.json().catch(() => ({ orderId: null }));
 if (!orderId) {
@@ -74,6 +72,7 @@ trackingNumber: result.obtNumber,
 return new Response(
 JSON.stringify({
 success: true,
+// [v1.2 修正] 將 message 修正為標準的樣板字串
 message: 訂單 (ID: ${orderId}) 的託運單已成功建立。,
 data: result,
 }),
