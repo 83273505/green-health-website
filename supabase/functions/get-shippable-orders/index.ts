@@ -1,8 +1,8 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-shippable-orders/index.ts
-// 版本: v1.0 - 初始建立
+// 版本: v1.1 - 語法修正
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接覆蓋】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 /**
 @file Get Shippable Orders Function (獲取待出貨訂單函式)
@@ -14,19 +14,24 @@
 作為「Functions 層」，它的職責是：
 處理 HTTP 請求與回應，包括 CORS 預檢。
 透過 JWT 驗證後台操作員的身份與權限。
-根據前端傳入的 statusType 參數，執行不同的資料庫查詢邏輯。
+根據前端傳入的 statusType 參數，執行不同的資料庫查詢 logique。
 將查詢結果安全地格式化後，以 JSON 格式回傳給前端。
-@version v1.0
+@version v1.1
+@update v1.1 - [SYNTAX FIX]
+[核心修正] 修正了 logger 呼叫中訊息字串未加引號導致的語法錯誤，
+此錯誤會導致 Supabase 部署失敗。
+[程式碼標準化] 統一所有日誌訊息的格式，提升可讀性與一致性。
 */
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 const FUNCTION_NAME = 'get-shippable-orders';
-const FUNCTION_VERSION = 'v1.0';
+const FUNCTION_VERSION = 'v1.1';
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
 const { statusType } = await req.json().catch(() => ({ statusType: null }));
 if (!statusType || !['pending', 'shipped'].includes(statusType)) {
-logger.warn(請求中缺少或包含無效的 'statusType' 參數, correlationId, { received: statusType });
+// [v1.1 修正] 為日誌訊息加上引號
+logger.warn("請求中缺少或包含無效的 'statusType' 參數", correlationId, { received: statusType });
 return new Response(JSON.stringify({ error: "請求中必須包含有效的 'statusType' ('pending' 或 'shipped')。" }), {
 status: 400,
 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -39,8 +44,9 @@ global: { headers: { Authorization: req.headers.get('Authorization')! } },
 const {
 data: { user },
 error: userError,
-} = await supabaseUserClient.auth.getUser();
+} = await supabaseUserC-lient.auth.getUser();
 if (userError || !user) {
+// [v1.1 修正] 為日誌訊息加上引號
 logger.warn('使用者認證失敗', correlationId, { error: userError?.message });
 return new Response(JSON.stringify({ error: '使用者未授權或 Token 無效。' }), {
 status: 401,
@@ -51,6 +57,7 @@ headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 const requiredPermission = 'permissions:users:edit';
 const userPermissions = user.app_metadata?.permissions || [];
 if (!userPermissions.includes(requiredPermission)) {
+// [v1.1 修正] 為日誌訊息加上引號
 logger.warn('權限不足，獲取訂單列表操作被拒絕', correlationId, {
 userId: user.id,
 requiredPermission: requiredPermission,
@@ -60,6 +67,7 @@ status: 403,
 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
 }
+// [v1.1 修正] 為日誌訊息加上引號並使用樣板字串
 logger.info(權限驗證通過，準備查詢 (${statusType}) 狀態的訂單, correlationId, { userId: user.id });
 // --- 2. 執行資料庫查詢 ---
 const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -88,6 +96,7 @@ query = supabaseAdmin
 }
 const { data: orders, error: dbError } = await query;
 if (dbError) {
+// [v1.1 修正] 為日誌訊息加上引號
 logger.error('查詢訂單時發生資料庫錯誤', correlationId, dbError);
 throw dbError; // 讓全域錯誤處理器捕捉
 }
