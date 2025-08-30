@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v47.3 - 修正稽核日誌查詢與通知元素錯誤
+// 版本: v47.4 - 修正彙總查询条件不同步的错误
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,7 +17,7 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
-// --- v47.3 DOM 元素獲取 (完整版) ---
+// --- v47.4 DOM 元素獲取 (完整版) ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
@@ -104,6 +104,7 @@ function renderOrderList() {
 }
 
 function renderPickingList(items) {
+  if (!pickingListEl) return;
   if (!items || items.length === 0) {
     pickingListEl.innerHTML = '<p class="error-message">無法載入此訂單的商品項目。</p>';
     return;
@@ -170,8 +171,6 @@ async function fetchOrderHistory(orderId) {
     if (!orderHistoryContentEl) return;
     const client = await supabase;
     
-    // v47.3 核心修正：分兩步查詢以解決 RLS 和關聯問題
-    // 步驟 1: 獲取日誌
     const { data: logs, error: logsError } = await client
         .from('order_history_logs')
         .select('changed_at, changed_by_user_id, event_type, details')
@@ -189,7 +188,6 @@ async function fetchOrderHistory(orderId) {
         return;
     }
 
-    // 步驟 2: 根據日誌中的 user ID 列表，一次性獲取所有操作員的 email
     const operatorIds = [...new Set(logs.map(log => log.changed_by_user_id).filter(Boolean))];
     let operatorsMap = {};
 
@@ -209,7 +207,6 @@ async function fetchOrderHistory(orderId) {
         }
     }
 
-    // 步驟 3: 將 Email 組合到日誌中並渲染
     const formattedLogs = logs.map(log => ({
         ...log,
         operator_email: operatorsMap[log.changed_by_user_id] || log.changed_by_user_id || 'System'
@@ -255,21 +252,23 @@ async function handleOrderSelection(orderId) {
   orderNumberTitle.textContent = `訂單 #${order.order_number}`;
 
   const adr = order.shipping_address_snapshot;
-  shippingAddressEl.innerHTML =
-    adr && typeof adr === 'object'
-      ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
-         <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
-         ${adr.tel_number ? `<p><strong>市話:</strong> ${adr.tel_number}</p>` : ''}
-         <p><strong>地址:</strong> ${adr.postal_code || ''} ${adr.city || ''}${adr.district || ''}${
-           adr.street_address || ''
-         }</p>`
-      : `<p class="error-message">無有效的收件資訊。</p>`;
+  if (shippingAddressEl) {
+    shippingAddressEl.innerHTML =
+      adr && typeof adr === 'object'
+        ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
+           <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
+           ${adr.tel_number ? `<p><strong>市話:</strong> ${adr.tel_number}</p>` : ''}
+           <p><strong>地址:</strong> ${adr.postal_code || ''} ${adr.city || ''}${adr.district || ''}${
+             adr.street_address || ''
+           }</p>`
+        : `<p class="error-message">無有效的收件資訊。</p>`;
+  }
 
   const methodName = order.shipping_rates?.method_name || '未指定';
-  shippingMethodDetailsEl.innerHTML = `<p><strong>配送方式:</strong> ${methodName}</p>`;
+  if (shippingMethodDetailsEl) shippingMethodDetailsEl.innerHTML = `<p><strong>配送方式:</strong> ${methodName}</p>`;
 
   const paymentStatusText = order.payment_status === 'paid' ? '已付款' : '待付款';
-  paymentDetailsEl.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paymentStatusText}</span></p>
+  if (paymentDetailsEl) paymentDetailsEl.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paymentStatusText}</span></p>
                                 <p><strong>付款參考:</strong> ${order.payment_reference || '無'}</p>`;
 
   switch (order.status) {
@@ -292,7 +291,7 @@ async function handleOrderSelection(orderId) {
       break;
   }
 
-  pickingListEl.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
+  if (pickingListEl) pickingListEl.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
   if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p class="loading-text">載入顧客輪廓...</p>';
   if (orderHistoryContentEl) orderHistoryContentEl.innerHTML = '<p class="loading-text">載入操作歷史...</p>';
 
@@ -304,7 +303,7 @@ async function handleOrderSelection(orderId) {
 
   if (itemsResult.error) {
     console.error('讀取商品項目失敗:', itemsResult.error);
-    pickingListEl.innerHTML = '<p class="error-message">讀取商品項目失敗。</p>';
+    if (pickingListEl) pickingListEl.innerHTML = '<p class="error-message">讀取商品項目失敗。</p>';
   } else {
     renderPickingList(itemsResult.data);
   }
@@ -543,7 +542,7 @@ async function handleAdvancedOrderSearch(e) {
   e.preventDefault();
   if (!advancedOrderSearchForm) return;
   setFormSubmitting(advancedOrderSearchForm, true, '查詢中...');
-  searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
+  if (searchResultsList) searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
   if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
 
   const params = {
@@ -564,18 +563,19 @@ async function handleAdvancedOrderSearch(e) {
     window.searchResultsCache = results;
     renderSearchResults(results);
 
-    if (params.startDate && params.endDate) {
+    // v47.4 核心修正: 使用【同样完整】的筛选条件查询彙總数据
+    if (Object.keys(filteredParams).length > 0) {
         client.functions.invoke(FUNCTION_NAMES.GET_ORDERS_SUMMARY, { 
-            body: { startDate: params.startDate, endDate: params.endDate }
+            body: filteredParams 
         }).then(({ data, error }) => {
-            if (error) console.error('讀取訂單彙總失敗:', error);
+            if (error) console.error('读取订单彙總失败:', error);
             else renderSearchSummary(data);
         });
     }
 
   } catch (e) {
     console.error('進階查詢訂單失敗:', e);
-    searchResultsList.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
+    if (searchResultsList) searchResultsList.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
   } finally {
     setFormSubmitting(advancedOrderSearchForm, false, '查詢');
   }
@@ -697,19 +697,19 @@ function handleTabClick(e) {
     tabs.forEach((t) => t.classList.remove('active'));
   }
   tab.classList.add('active');
-  orderDetailView.classList.add('hidden');
-  searchResultsContainer.classList.add('hidden');
-  emptyView.classList.remove('hidden');
+  if (orderDetailView) orderDetailView.classList.add('hidden');
+  if (searchResultsContainer) searchResultsContainer.classList.add('hidden');
+  if (emptyView) emptyView.classList.remove('hidden');
 
   if (currentStatusTab === 'search') {
-    orderListContainer.classList.add('hidden');
-    searchFormContainer.classList.remove('hidden');
-    searchResultsContainer.classList.remove('hidden');
+    if (orderListContainer) orderListContainer.classList.add('hidden');
+    if (searchFormContainer) searchFormContainer.classList.remove('hidden');
+    if (searchResultsContainer) searchResultsContainer.classList.remove('hidden');
     if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
     if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
   } else {
-    orderListContainer.classList.remove('hidden');
-    searchFormContainer.classList.add('hidden');
+    if (orderListContainer) orderListContainer.classList.remove('hidden');
+    if (searchFormContainer) searchFormContainer.classList.add('hidden');
     if (advancedOrderSearchForm) advancedOrderSearchForm.reset();
     selectedOrderId = null;
     ordersCache = [];
