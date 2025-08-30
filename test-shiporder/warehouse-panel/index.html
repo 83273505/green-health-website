@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>出貨儀表板 - Green Health</title>
+    <title>出貨管理儀表板 - Green Health</title>
     <link rel="stylesheet" href="/warehouse-panel/css/warehouse-style.css" />
   </head>
   <body id="shipping-dashboard">
@@ -40,7 +40,7 @@
         <div class="tabs">
           <button class="tab-link active" data-status-tab="pending_payment">待備貨</button>
           <button class="tab-link" data-status-tab="paid">待出貨</button>
-          <button class="tab-link" data-status-tab="cancelled">已取消</button>
+          <!-- v4.2 核心修正：移除“已取消”页籤，统一由“订单查询”处理 -->
           <button class="tab-link" data-status-tab="search">訂單查詢</button>
         </div>
         <div id="order-list-container">
@@ -85,7 +85,6 @@
         <div id="order-detail-view" class="hidden">
           <h2 id="order-number-title">訂單 #</h2>
 
-          <!-- v4.1 核心修正：將通知元素移至此處，使其在詳情頁面中全域可用 -->
           <div id="notification-message" style="display: none;"></div>
           
           <div id="printable-area">

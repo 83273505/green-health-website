@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v47.4 - 修正彙總查询条件不同步的错误
+// 版本: v48.0 - 重构工作流程，分离待办与查询
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -17,7 +17,7 @@ let cancellationReasonsCache = [];
 let selectedOrderId = null;
 let currentStatusTab = 'pending_payment';
 
-// --- v47.4 DOM 元素獲取 (完整版) ---
+// --- v48.0 DOM 元素獲取 ---
 const logoutBtn = document.getElementById('logout-btn');
 const currentUserEmailEl = document.getElementById('current-user-email');
 const userManagementLink = document.getElementById('user-management-link');
@@ -74,29 +74,22 @@ async function fetchOrdersByStatus(status) {
 
 function renderOrderList() {
   if (ordersCache.length === 0) {
-    let msg = '目前沒有此狀態的訂單。';
-    switch (currentStatusTab) {
-      case 'paid':
+    let msg = '目前沒有此狀態的待办订单。';
+    if (currentStatusTab === 'paid') {
         msg = '所有訂單皆已出貨，或尚在「待備貨」區。';
-        break;
-      case 'pending_payment':
+    } else if (currentStatusTab === 'pending_payment') {
         msg = '目前沒有待備貨的訂單。';
-        break;
-      case 'cancelled':
-        msg = '目前沒有已取消的訂單。';
-        break;
     }
     orderListContainer.innerHTML = `<p style="padding:1rem;text-align:center;opacity:.7">${msg}</p>`;
     return;
   }
   orderListContainer.innerHTML = ordersCache
     .map((o) => {
-      const dateToShow = currentStatusTab === 'cancelled' ? o.cancelled_at : o.created_at;
       return `
         <div class="order-list-item ${o.id === selectedOrderId ? 'active' : ''}" data-order-id="${o.id}">
           <strong class="order-number">${o.order_number}</strong>
           <span class="recipient-name">${o.shipping_address_snapshot?.recipient_name || 'N/A'}</span>
-          <span class="order-date">${new Date(dateToShow).toLocaleDateString()}</span>
+          <span class="order-date">${new Date(o.created_at).toLocaleDateString()}</span>
         </div>
       `;
     })
@@ -563,7 +556,6 @@ async function handleAdvancedOrderSearch(e) {
     window.searchResultsCache = results;
     renderSearchResults(results);
 
-    // v47.4 核心修正: 使用【同样完整】的筛选条件查询彙總数据
     if (Object.keys(filteredParams).length > 0) {
         client.functions.invoke(FUNCTION_NAMES.GET_ORDERS_SUMMARY, { 
             body: filteredParams 
