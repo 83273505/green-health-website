@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/core/constants.js
-// 版本: v25.0 - 整合式物流流程擴充版
+// 版本: v25.1 - 版本校準與物流功能擴充
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,22 +8,18 @@
 /**
  * @file 出貨管理儀表板 - 常數模組 (Warehouse Panel Constants)
  * @description 集中管理出貨管理儀表板應用程式的所有常數。
- * @version v25.0
+ * @version v25.1
+ * 
+ * @update v25.1 - [BUGFIX: VERSION_ALIGNMENT]
+ * 1. [錯誤修正] 全面校準函式名稱的版本號 (例如 get-order-details-v2)，
+ *          使其與 shipping.js 中實際呼叫的版本完全一致，解決 CORS 錯誤。
  * 
  * @update v25.0 - [FEATURE: INTEGRATED LOGISTICS]
  * 1. [功能新增] 新增 CREATE_TCAT_SHIPMENT 與 GET_TCAT_SHIPMENT_STATUS 函式常數，以支援整合式物流作業流程。
- * 2. [程式碼品質] 移除原始檔案中重複的常數宣告區塊。
- * 3. [本地化] 全面修正為正體中文註解。
- * 
- * @update v24.0
- * 1. [功能新增] 新增 GET_CUSTOMER_SUMMARY 函式，用於獲取單一顧客的歷史輪廓。
- * 2. [功能新增] 新增 GET_ORDERS_SUMMARY 函式，用於獲取訂單查詢結果的彙總數據。
  */
 
 export const WAREHOUSE_ROUTES = {
-  // 將登入路徑指向統一的 admin 登入頁
   LOGIN: '/admin/index.html',
-  // 根據實際檔案結構，將路徑指向 index.html
   DASHBOARD: '/warehouse-panel/index.html',
   USER_MANAGEMENT: '/warehouse-panel/user-management.html',
 };
@@ -42,35 +38,35 @@ export const TABLE_NAMES = {
   SHIPPING_RATES: 'shipping_rates',
   COUPONS: 'coupons',
   INVENTORY_LOGS: 'inventory_logs',
-  ORDER_CANCELLATION_REASONS: 'order_cancellation_reasons', // v49.0 新增，確保 shipping.js 可用
-  ORDER_HISTORY_LOGS: 'order_history_logs', // v49.0 新增，確保 shipping.js 可用
+  ORDER_CANCELLATION_REASONS: 'order_cancellation_reasons',
+  ORDER_HISTORY_LOGS: 'order_history_logs',
 };
 
 export const FUNCTION_NAMES = {
+  // 訂單操作
   GET_PAID_ORDERS: 'get-paid-orders',
-  GET_ORDER_DETAILS: 'get-order-details-v2', // 指向更新的版本
+  GET_ORDER_DETAILS: 'get-order-details-v2',
   MARK_ORDER_AS_PAID: 'mark-order-as-paid',
-  MARK_ORDER_AS_SHIPPED: 'mark-order-as-shipped-v3', // 指向更新的版本
-  RESEND_SHIPPED_NOTIFICATION: 'resend-shipped-notification-v2', // 指向更新的版本
+  MARK_ORDER_AS_SHIPPED: 'mark-order-as-shipped-v3',
+  RESEND_SHIPPED_NOTIFICATION: 'resend-shipped-notification-v2',
+  CANCEL_ORDER: 'cancel-order-v2',
+  // 訂單查詢與分析
+  SEARCH_ORDERS: 'search-orders-v2',
+  GET_ORDERS_SUMMARY: 'get-orders-summary',
+  // 顧客資訊
+  GET_CUSTOMER_SUMMARY: 'get-customer-summary',
+  // 使用者管理
   SEARCH_USERS: 'search-users',
   MANAGE_USER_ROLE: 'manage-user-role',
-  CANCEL_ORDER: 'cancel-order-v2', // 指向更新的版本
-  SEARCH_ORDERS: 'search-orders-v2', // 指向更新的版本
-  GET_CUSTOMER_SUMMARY: 'get-customer-summary',
-  GET_ORDERS_SUMMARY: 'get-orders-summary',
-  // [v25.0 新增] 黑貓物流 API
+  // 黑貓物流 API
   CREATE_TCAT_SHIPMENT: 'create-tcat-shipment',
   GET_TCAT_SHIPMENT_STATUS: 'get-tcat-shipment-status',
 };
 
 /**
  * 郵件相關的文字內容
- * 集中管理可重複使用的郵件文字片段。
  */
 export const EMAIL_TEXTS = {
-  /**
-   * 防詐騙宣導文字 (標準詳細版)
-   */
   ANTI_FRAUD_WARNING: `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
