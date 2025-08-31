@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/TCatShipmentAdapter.ts
-// 版本: v1.2 - 整合託運單下載功能
+// 版本: v1.3 - 支援動態物流參數
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,13 +9,15 @@
  * @file T-cat Shipment Adapter (黑貓託運單適配器)
  * @description 扮演「翻譯官」的角色，負責將我們系統內部的訂單資料模型，
  *              轉換為黑貓宅急便 API 所需的特定請求格式，並處理 API 呼叫。
- * @version v1.2
+ * @version v1.3
+ * 
+ * @update v1.3 - [FEATURE: DYNAMIC_PARAMS]
+ * 1. [核心升級] `_transformOrderToTcatFormat` 函式現在能夠接收並應用
+ *          來自前端的動態物流參數 (溫層、尺寸、代收貨款等)。
+ * 2. [流程適配] `createShipmentFromOrder` 函式簽章已更新，以接收動態參數。
  * 
  * @update v1.2 - [FEATURE: SHIPMENT DOWNLOAD]
  * 1. [核心新增] 新增 downloadShipmentPDF 方法，用於呼叫底層 Client 下載 PDF。
- * 
- * @update v1.1 - [FEATURE: SHIPMENT STATUS]
- * 1. [核心新增] 新增 fetchShipmentStatus 方法，用於呼叫底層 Client 查詢貨態。
  */
 
 import { TcatAPIClient, TcatOrder, TcatStatusResponse } from '../clients/TCatAPIClient.ts';
@@ -35,13 +37,14 @@ export class TcatShipmentAdapter {
   /**
    * 從內部訂單資料建立一筆黑貓託運單
    * @param orderData - 從我們資料庫查詢到的完整訂單物件
+   * @param logisticsParams - 來自前端操作員確認的動態物流參數
    * @returns {Promise<object>} 包含託運單號等資訊的成功回應
    */
-  async createShipmentFromOrder(orderData: any): Promise<any> {
-    this.logger.info('開始將內部訂單資料轉換為黑貓 API 格式', this.correlationId, { orderNumber: orderData.order_number });
+  async createShipmentFromOrder(orderData: any, logisticsParams: any): Promise<any> {
+    this.logger.info('開始將內部訂單資料轉換為黑貓 API 格式', this.correlationId, { orderNumber: orderData.order_number, params: logisticsParams });
 
     try {
-      const tcatOrderPayload = this._transformOrderToTcatFormat(orderData);
+      const tcatOrderPayload = this._transformOrderToTcatFormat(orderData, logisticsParams);
       const response = await this.apiClient.createShipment(tcatOrderPayload);
 
       if (response.IsOK !== 'Y' || !response.Data?.Orders?.[0]?.OBTNumber) {
@@ -77,9 +80,9 @@ export class TcatShipmentAdapter {
       throw error;
     }
   }
-
+  
   /**
-   * [v1.2 新增] 呼叫 Client 下載託運單 PDF
+   * 呼叫 Client 下載託運單 PDF
    * @param fileNo - 檔案編號
    * @param trackingNumber - 託運單號 (僅單筆下載時需要)
    * @returns {Promise<Blob>} PDF 檔案的二進位資料
@@ -87,7 +90,6 @@ export class TcatShipmentAdapter {
   async downloadShipmentPDF(fileNo: string, trackingNumber: string): Promise<Blob> {
     this.logger.info('Adapter 開始呼叫底層 Client 下載 PDF', this.correlationId, { fileNo, trackingNumber });
     try {
-      // 根據 API 規格，下載單筆時也需傳入託運單號
       const response = await this.apiClient.downloadShipmentPDF({
         FileNo: fileNo,
         Orders: [{ OBTNumber: trackingNumber }],
@@ -100,11 +102,12 @@ export class TcatShipmentAdapter {
   }
 
   /**
-   * [私有] 核心轉換邏輯：將我們的訂單物件，轉換為黑貓 API 的參數格式
+   * [v1.3 核心升級] 核心轉換邏輯
    * @param order - 我們系統的訂單物件
+   * @param params - 前端傳入的動態物流參數
    * @returns {TcatOrder} 準備好發送給黑貓 API 的參數物件
    */
-  private _transformOrderToTcatFormat(order: any): TcatOrder {
+  private _transformOrderToTcatFormat(order: any, params: any): TcatOrder {
     const address = order.shipping_address_snapshot;
     if (!address) {
       throw new Error(`訂單 #${order.order_number} 缺少必要的收件地址快照資訊。`);
@@ -124,8 +127,9 @@ export class TcatShipmentAdapter {
     return {
       OBTNumber: '',
       OrderId: order.order_number,
-      Thermosphere: '0001',
-      Spec: '0002',
+      // 使用前端傳入的參數，若無則使用預設值
+      Thermosphere: params.thermosphere || '0001',
+      Spec: params.spec || '0002',
       ReceiptLocation: '01',
       RecipientName: address.recipient_name,
       RecipientTel: address.tel_number || address.phone_number,
@@ -138,11 +142,11 @@ export class TcatShipmentAdapter {
       SenderAddress: Deno.env.get('TCAT_SENDER_ADDRESS') || '台北市中山區某某路一段一號',
       ShipmentDate: shipmentDate,
       DeliveryDate: deliveryDateStr,
-      DeliveryTime: '04',
-      IsCollection: 'N',
-      CollectionAmount: 0,
+      DeliveryTime: '04', // 不指定
+      IsCollection: params.isCollection || 'N',
+      CollectionAmount: params.collectionAmount || 0,
       ProductName: productName,
-      Memo: `訂單編號: ${order.order_number}`,
+      Memo: params.memo || `訂單編號: ${order.order_number}`,
     };
   }
 }
