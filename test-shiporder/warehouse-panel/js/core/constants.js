@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/core/constants.js
-// 版本: v25.1 - 版本校準與物流功能擴充
+// 版本: v25.3 - 核心服務引用最終修正版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,18 +8,21 @@
 /**
  * @file 出貨管理儀表板 - 常數模組 (Warehouse Panel Constants)
  * @description 集中管理出貨管理儀表板應用程式的所有常數。
- * @version v25.1
+ * @version v25.3
+ * 
+ * @update v25.3 - [BUGFIX: CORE_SERVICE_REFERENCE]
+ * 1. [錯誤修正] 根據使用者提供的原始碼，將 GET_ORDER_DETAILS 的引用，
+ *          從錯誤的 'get-order-details-v2' 修正為系統中已存在的
+ *          'get-order-details' (v2.1)，徹底解決 CORS 與網路錯誤。
  * 
  * @update v25.1 - [BUGFIX: VERSION_ALIGNMENT]
- * 1. [錯誤修正] 全面校準函式名稱的版本號 (例如 get-order-details-v2)，
- *          使其與 shipping.js 中實際呼叫的版本完全一致，解決 CORS 錯誤。
- * 
- * @update v25.0 - [FEATURE: INTEGRATED LOGISTICS]
- * 1. [功能新增] 新增 CREATE_TCAT_SHIPMENT 與 GET_TCAT_SHIPMENT_STATUS 函式常數，以支援整合式物流作業流程。
+ * 1. [錯誤修正] 全面校準函式名稱的版本號。
  */
 
 export const WAREHOUSE_ROUTES = {
+  // 將登入路徑指向統一的 admin 登入頁
   LOGIN: '/admin/index.html',
+  // 根據實際檔案結構，將路徑指向 index.html
   DASHBOARD: '/warehouse-panel/index.html',
   USER_MANAGEMENT: '/warehouse-panel/user-management.html',
 };
@@ -45,7 +48,7 @@ export const TABLE_NAMES = {
 export const FUNCTION_NAMES = {
   // 訂單操作
   GET_PAID_ORDERS: 'get-paid-orders',
-  GET_ORDER_DETAILS: 'get-order-details-v2',
+  GET_ORDER_DETAILS: 'get-order-details', // [v25.3] 核心修正
   MARK_ORDER_AS_PAID: 'mark-order-as-paid',
   MARK_ORDER_AS_SHIPPED: 'mark-order-as-shipped-v3',
   RESEND_SHIPPED_NOTIFICATION: 'resend-shipped-notification-v2',
@@ -67,6 +70,9 @@ export const FUNCTION_NAMES = {
  * 郵件相關的文字內容
  */
 export const EMAIL_TEXTS = {
+  /**
+   * 防詐騙宣導文字 (標準詳細版)
+   */
   ANTI_FRAUD_WARNING: `
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ⚠️ 防詐騙提醒
