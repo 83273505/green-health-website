@@ -1,15 +1,17 @@
 // ==============================================================================
 // 檔案路徑: tcatshipment-panel/js/constants.js
-// 版本: v1.0 - 核心功能常數
+// 版本: v1.1 - 功能擴充版
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接使用】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file T-cat Shipment Panel Constants (黑貓託運單儀表板 - 常數模組)
  * @description 集中管理黑貓託運單儀表板應用程式的所有常數，
  *              特別是後端 Edge Function 的名稱。
- * @version v1.0
+ * @version v1.1
+ * 
+ * @update v1.1 - [FEATURE] 新增貨態查詢與託運單下載的函式名稱。
  */
 
 /**
@@ -20,8 +22,8 @@
  */
 export const FUNCTION_NAMES = {
     CREATE_TCAT_SHIPMENT: 'create-tcat-shipment',
-    // 未來可擴充，例如：
-    // GET_TCAT_SHIPMENT_STATUS: 'get-tcat-shipment-status',
+    GET_TCAT_SHIPMENT_STATUS: 'get-tcat-shipment-status',
+    DOWNLOAD_TCAT_SHIPMENT: 'download-tcat-shipment',
 };
 
 // 未來可視需求擴充其他類型的常數，例如 TABLE_NAMES 或 ROUTES 等。

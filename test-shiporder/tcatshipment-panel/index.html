@@ -3,28 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>黑貓託運單列印 - Green Health</title>
+    <title>黑貓物流作業中心 - Green Health</title>
     <meta name="robots" content="noindex, nofollow" />
-    <!-- [v1.1] 核心修正: 引用專屬於此模組的 CSS 檔案 -->
     <link rel="stylesheet" href="/tcatshipment-panel/css/tcat-style.css">
-    <style>
-        /* 針對此頁面的微調 */
-        .shipment-details-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 1rem;
-        }
-        .detail-block {
-            background-color: #f9f9f9;
-            padding: 1rem;
-            border-radius: 8px;
-        }
-        .detail-block h4 {
-            margin-top: 0;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 0.5rem;
-        }
-    </style>
+    <!-- 
+      版本: v1.3
+      更新日誌:
+      1. [UI] 新增「查詢貨態」與「下載託運單」按鈕。
+      2. [UI] 新增貨態查詢彈出視窗 (Modal) 的基礎 HTML 結構。
+    -->
 </head>
 <body id="tcat-shipment-dashboard">
 
@@ -33,7 +20,7 @@
             <a href="/admin/launcher.html" class="back-to-launcher" title="返回後台首頁">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
             </a>
-            <h1>黑貓託運單作業</h1>
+            <h1>黑貓物流作業中心</h1>
         </div>
         <div class="header-actions">
             <span id="current-user-email"></span>
@@ -97,9 +84,12 @@
                     </div>
                     <div id="result-section" class="hidden">
                         <h4>託運單已建立</h4>
-                        <p><strong>託運單號 (OBTNumber):</strong> <strong id="obt-number" style="color: var(--brand); font-size: 1.2em;"></strong></p>
-                        <p><strong>下載檔案編號 (FileNo):</strong> <span id="file-no"></span></p>
-                        <a id="btn-download-shipment" href="#" class="btn-secondary" target="_blank">下載託運單 (PDF)</a>
+                        <p><strong>託運單號 (OBTNumber):</strong> <strong id="obt-number" class="highlight-text"></strong></p>
+                        <p><strong>下載檔案編號 (FileNo):</strong> <span id="file-no" class="monospace-text"></span></p>
+                        <div class="btn-group">
+                            <button id="btn-query-status" class="btn-secondary">查詢貨態</button>
+                            <button id="btn-download-shipment" class="btn-primary">下載託運單 (PDF)</button>
+                        </div>
                     </div>
                 </div>
 
@@ -112,9 +102,21 @@
         </section>
     </main>
 
+    <!-- [v1.3 新增] 貨態查詢 Modal -->
+    <div id="status-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">貨態歷程</h3>
+                <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- 貨態時間軸將動態插入此處 -->
+            </div>
+        </div>
+    </div>
+
     <script type="module">
         async function initializeApp() {
-            const authCheckView = document.getElementById('auth-check-view');
             const mainContent = document.querySelector('.dashboard-container');
             const fatalErrorView = document.createElement('div');
             fatalErrorView.style.padding = '2rem';
@@ -126,7 +128,6 @@
                 await app.init();
             } catch (error) {
                 console.error('[tcatshipment-panel/index.html] 應用程式初始化時發生致命錯誤:', error);
-                if (authCheckView) authCheckView.style.display = 'none';
                 if (mainContent) mainContent.style.display = 'none';
                 
                 fatalErrorView.innerHTML = `
