@@ -1,6 +1,6 @@
 // ==============================================================================
-// 檔案路徑: test-shiporder/admin/js/core/app.js
-// 版本: v45.3 - 路徑現代化重構 (決定版)
+// 檔案路徑: admin/js/core/app.js
+// 版本: v45.4 - 物流中心路由整合版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -9,17 +9,16 @@
  * @file Admin Module - App Initializer (管理後台 - 應用程式主入口)
  * @description 統一後台入口模組的應用程式主入口。
  *              負責根據頁面 ID，動態載入並初始化對應的業務邏輯。
- * @version v45.3
+ * @version v45.4
  * 
- * @update v45.3 - [PATH MODERNIZATION & LOCALIZATION]
- * 1. [核心修正] 徹底放棄了所有相對路徑的 import 寫法，所有 import 均改為
- *          從網站根目錄 (`/`) 開始的絕對路徑。
- * 2. [原理] 絕對路徑不受檔案自身位置變化的影響，在 Netlify 等複雜的部署
- *          環境下，是最健壯、最無歧義、最可靠的路徑引用方式。
- * 3. [正體化] 檔案內所有註解及 UI 字串均已修正為正體中文。
+ * @update v45.4 - [LOGISTICS_CENTER_ROUTING]
+ * 1. [核心新增] 在路由 `switch` 區塊中，新增了對 `tcat-shipment-dashboard`
+ *          頁面 ID 的處理，並將其正確地指向 `tcatshipment-panel` 的主
+ *          應用程式腳本。
+ * 2. [錯誤解決] 此修改解決了點擊「物流託運管理」模組卡片後，因缺少路由
+ *          而無法載入對應功能的問題。
  */
 
-// [v45.3 核心修正] 使用絕對路徑引用共用模組
 import { supabase } from '/_shared/js/supabaseClient.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -33,7 +32,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         let modulePath;
 
-        // [v45.3 核心修正] 動態載入的路徑也使用絕對路徑
         switch (pageId) {
             case 'admin-login':
                 modulePath = '/admin/js/modules/auth.js';
@@ -41,6 +39,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             case 'admin-launcher':
                 modulePath = '/admin/js/modules/launcher.js';
+                break;
+            
+            // [v45.4] 核心新增：為黑貓託運單儀表板新增路由
+            case 'tcat-shipment-dashboard':
+                modulePath = '/tcatshipment-panel/js/app.js';
                 break;
             
             default:
@@ -58,7 +61,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (err) {
         console.error(`[admin/app.js] 應用程式初始化時發生致命錯誤:`, err);
-        const mainContent = document.querySelector('.launcher-container') || document.querySelector('.login-container') || document.body;
+        const mainContent = document.querySelector('.launcher-container') || document.querySelector('.login-container') || document.querySelector('main') || document.body;
         if (mainContent) {
             mainContent.innerHTML = `<div style="padding: 2rem; text-align: center; color: var(--error-color);">系統初始化失敗，請稍後再試或聯繫管理員。</div>`;
         }
