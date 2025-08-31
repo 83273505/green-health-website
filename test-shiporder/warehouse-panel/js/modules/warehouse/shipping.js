@@ -1,55 +1,81 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v48.0 - 重构工作流程，分离待办与查询
+// 版本: v49.0 - 整合式物流流程最終版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
+
+/**
+ * @file Warehouse Panel - Shipping Module (出貨管理儀表板 - 核心業務模組)
+ * @description 處理待備貨、待出貨及訂單查詢的所有前端業務邏輯，並整合全新物流作業流程。
+ * @version v49.0
+ *
+ * @update v49.0 - [REFACTOR: INTEGRATED LOGISTICS WORKFLOW]
+ * 1. [核心重構] 完整整合「API 自動化」與「手動備援」的混合物流模式於「待出貨」流程中。
+ * 2. [功能整合] 引入並實現了呼叫 `create-tcat-shipment` 函式的邏輯，實現一鍵建立託運單。
+ * 3. [功能整合] 引入並實現了呼叫 `get-tcat-shipment-status` 函式的邏輯，提供即時貨態查詢功能。
+ * 4. [UI/UX] 重構訂單詳情渲染邏輯，根據訂單狀態智慧顯示對應的物流操作介面。
+ * 5. [本地化] 全面正體化：將所有變數、函式名、註解及 UI 字串修正為正體中文。
+ * 6. [日誌] 在所有關鍵的 API 互動中，增加了詳細的操作日誌。
+ */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
 import { showNotification, setFormSubmitting } from '/_shared/js/utils.js';
 import { requireWarehouseLogin, handleWarehouseLogout } from '/warehouse-panel/js/core/warehouseAuth.js';
 import { TABLE_NAMES, FUNCTION_NAMES } from '/warehouse-panel/js/core/constants.js';
 
-let currentUser = null;
-let ordersCache = [];
-let shippingRatesCache = [];
-let cancellationReasonsCache = [];
-let selectedOrderId = null;
-let currentStatusTab = 'pending_payment';
+let 目前使用者 = null;
+let 訂單快取 = [];
+let 運費費率快取 = [];
+let 取消原因快取 = [];
+let 已選訂單ID = null;
+let 目前狀態分頁 = 'pending_payment';
 
-// --- v48.0 DOM 元素獲取 ---
-const logoutBtn = document.getElementById('logout-btn');
-const currentUserEmailEl = document.getElementById('current-user-email');
-const userManagementLink = document.getElementById('user-management-link');
-const tabs = document.querySelectorAll('.tab-link');
-const orderListContainer = document.getElementById('order-list-container');
-const searchFormContainer = document.getElementById('search-form-container');
-const advancedOrderSearchForm = document.getElementById('advanced-order-search-form');
-const orderDetailView = document.getElementById('order-detail-view');
-const searchResultsContainer = document.getElementById('search-results-container');
-const searchResultsList = document.getElementById('search-results-list');
-const emptyView = document.getElementById('empty-view');
-const orderNumberTitle = document.getElementById('order-number-title');
-const pickingListEl = document.getElementById('picking-list');
-const shippingAddressEl = document.getElementById('shipping-address');
-const shippingMethodDetailsEl = document.getElementById('shipping-method-details');
-const paymentDetailsEl = document.getElementById('payment-details');
-const paymentConfirmationSection = document.getElementById('payment-confirmation-section');
-const paymentConfirmationForm = document.getElementById('payment-confirmation-form');
-const paymentMethodSelector = document.getElementById('payment-method-selector');
-const paymentReferenceInput = document.getElementById('payment-reference-input');
-const shippingActionSection = document.getElementById('shipping-action-section');
-const shippingForm = document.getElementById('shipping-form');
-const carrierSelector = document.getElementById('carrier-selector');
-const trackingCodeInput = document.getElementById('tracking-code-input');
-const printBtn = document.getElementById('print-btn');
-const cancellationActionSection = document.getElementById('cancellation-action-section');
-const btnCancelOrder = document.getElementById('btn-cancel-order');
-const cancellationDetailsSection = document.getElementById('cancellation-details-section');
-const cancellationDetailsEl = document.getElementById('cancellation-details');
-const customerProfileContentEl = document.getElementById('customer-profile-content');
-const orderHistoryContentEl = document.getElementById('order-history-content');
-const searchSummaryContainerEl = document.getElementById('search-summary-container');
+// --- DOM 元素獲取 ---
+const 登出按鈕 = document.getElementById('logout-btn');
+const 目前使用者Email標籤 = document.getElementById('current-user-email');
+const 使用者管理連結 = document.getElementById('user-management-link');
+const 分頁標籤群組 = document.querySelectorAll('.tab-link');
+const 訂單列表容器 = document.getElementById('order-list-container');
+const 查詢表單容器 = document.getElementById('search-form-container');
+const 進階訂單查詢表單 = document.getElementById('advanced-order-search-form');
+const 訂單詳情視圖 = document.getElementById('order-detail-view');
+const 查詢結果容器 = document.getElementById('search-results-container');
+const 查詢結果列表 = document.getElementById('search-results-list');
+const 空白視圖 = document.getElementById('empty-view');
+const 訂單編號標題 = document.getElementById('order-number-title');
+const 備貨清單標籤 = document.getElementById('picking-list');
+const 收件地址標籤 = document.getElementById('shipping-address');
+const 配送方式詳情標籤 = document.getElementById('shipping-method-details');
+const 付款詳情標籤 = document.getElementById('payment-details');
+const 付款確認區塊 = document.getElementById('payment-confirmation-section');
+const 付款確認表單 = document.getElementById('payment-confirmation-form');
+const 付款方式選擇器 = document.getElementById('payment-method-selector');
+const 付款參考輸入框 = document.getElementById('payment-reference-input');
+const 列印按鈕 = document.getElementById('print-btn');
+const 取消操作區塊 = document.getElementById('cancellation-action-section');
+const 取消訂單按鈕 = document.getElementById('btn-cancel-order');
+const 取消詳情區塊 = document.getElementById('cancellation-details-section');
+const 取消詳情標籤 = document.getElementById('cancellation-details');
+const 顧客輪廓內容標籤 = document.getElementById('customer-profile-content');
+const 訂單歷史內容標籤 = document.getElementById('order-history-content');
+const 查詢摘要容器標籤 = document.getElementById('search-summary-container');
+const 物流操作區塊 = document.getElementById('logistics-action-section');
+const 物流選項 = document.getElementById('logistics-options');
+const 建立黑貓託運單按鈕 = document.getElementById('btn-create-tcat-shipment');
+const 手動輸入按鈕 = document.getElementById('btn-manual-entry');
+const 手動出貨表單 = document.getElementById('manual-shipping-form');
+const 物流商選擇器 = document.getElementById('carrier-selector');
+const 追蹤單號輸入框 = document.getElementById('tracking-code-input');
+const 確認出貨按鈕 = document.getElementById('mark-as-shipped-btn');
+const 物流結果區塊 = document.getElementById('logistics-result-section');
+const 結果物流商 = document.getElementById('result-carrier');
+const 結果追蹤單號 = document.getElementById('result-tracking-code');
+const 查詢貨態按鈕 = document.getElementById('btn-query-status');
+const 貨態彈出視窗 = document.getElementById('status-modal');
+const 貨態視窗標題 = document.getElementById('modal-title');
+const 貨態視窗內容 = document.getElementById('modal-body');
+const 貨態視窗關閉按鈕 = document.getElementById('modal-close-btn');
 
 /* ------------------------- 格式化輔助函式 ------------------------- */
 function formatCurrency(amount) {
@@ -58,35 +84,35 @@ function formatCurrency(amount) {
 }
 
 /* ------------------------- 核心資料讀取與渲染 ------------------------- */
-async function fetchOrdersByStatus(status) {
-  orderListContainer.innerHTML = '<div class="loading-spinner">載入中...</div>';
+async function fetch訂單依狀態(status) {
+  訂單列表容器.innerHTML = '<div class="loading-spinner">載入中...</div>';
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.GET_PAID_ORDERS, { body: { status } });
     if (error) throw error;
-    ordersCache = data;
-    renderOrderList();
+    訂單快取 = data;
+    render訂單列表();
   } catch (e) {
     console.error(`讀取 status=${status} 的訂單失敗:`, e);
-    orderListContainer.innerHTML = '<p class="error-message">讀取訂單失敗，請稍後再試。</p>';
+    訂單列表容器.innerHTML = '<p class="error-message">讀取訂單失敗，請稍後再試。</p>';
   }
 }
 
-function renderOrderList() {
-  if (ordersCache.length === 0) {
-    let msg = '目前沒有此狀態的待办订单。';
-    if (currentStatusTab === 'paid') {
+function render訂單列表() {
+  if (訂單快取.length === 0) {
+    let msg = '目前沒有此狀態的待辦訂單。';
+    if (目前狀態分頁 === 'paid') {
         msg = '所有訂單皆已出貨，或尚在「待備貨」區。';
-    } else if (currentStatusTab === 'pending_payment') {
+    } else if (目前狀態分頁 === 'pending_payment') {
         msg = '目前沒有待備貨的訂單。';
     }
-    orderListContainer.innerHTML = `<p style="padding:1rem;text-align:center;opacity:.7">${msg}</p>`;
+    訂單列表容器.innerHTML = `<p style="padding:1rem;text-align:center;opacity:.7">${msg}</p>`;
     return;
   }
-  orderListContainer.innerHTML = ordersCache
+  訂單列表容器.innerHTML = 訂單快取
     .map((o) => {
       return `
-        <div class="order-list-item ${o.id === selectedOrderId ? 'active' : ''}" data-order-id="${o.id}">
+        <div class="order-list-item ${o.id === 已選訂單ID ? 'active' : ''}" data-order-id="${o.id}">
           <strong class="order-number">${o.order_number}</strong>
           <span class="recipient-name">${o.shipping_address_snapshot?.recipient_name || 'N/A'}</span>
           <span class="order-date">${new Date(o.created_at).toLocaleDateString()}</span>
@@ -96,10 +122,10 @@ function renderOrderList() {
     .join('');
 }
 
-function renderPickingList(items) {
-  if (!pickingListEl) return;
+function render備貨清單(items) {
+  if (!備貨清單標籤) return;
   if (!items || items.length === 0) {
-    pickingListEl.innerHTML = '<p class="error-message">無法載入此訂單的商品項目。</p>';
+    備貨清單標籤.innerHTML = '<p class="error-message">無法載入此訂單的商品項目。</p>';
     return;
   }
   const rows = items
@@ -112,17 +138,17 @@ function renderPickingList(items) {
     </tr>`
     )
     .join('');
-  pickingListEl.innerHTML = `<table class="picking-table"><thead><tr><th>品名(規格)</th><th class="sku">SKU</th><th class="quantity">數量</th></tr></thead><tbody>${rows}</tbody></table>`;
+  備貨清單標籤.innerHTML = `<table class="picking-table"><thead><tr><th>品名(規格)</th><th class="sku">SKU</th><th class="quantity">數量</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
-function renderCustomerProfile(summary) {
-  if (!customerProfileContentEl) return;
+function render顧客輪廓(summary) {
+  if (!顧客輪廓內容標籤) return;
   if (!summary) {
-    customerProfileContentEl.innerHTML = '<p class="error-message">無法載入顧客資訊。</p>';
+    顧客輪廓內容標籤.innerHTML = '<p class="error-message">無法載入顧客資訊。</p>';
     return;
   }
   const isHighRisk = summary.cancellationCount > 2;
-  customerProfileContentEl.innerHTML = `
+  顧客輪廓內容標籤.innerHTML = `
     <div class="profile-metric">
         <span>首次下單日</span>
         <strong>${summary.firstOrderDate ? new Date(summary.firstOrderDate).toLocaleDateString() : 'N/A'}</strong>
@@ -142,13 +168,13 @@ function renderCustomerProfile(summary) {
   `;
 }
 
-function renderOrderHistory(logs) {
-  if (!orderHistoryContentEl) return;
+function render訂單歷史(logs) {
+  if (!訂單歷史內容標籤) return;
   if (!logs || logs.length === 0) {
-    orderHistoryContentEl.innerHTML = '<p>尚無操作歷史記錄。</p>';
+    訂單歷史內容標籤.innerHTML = '<p>尚無操作歷史記錄。</p>';
     return;
   }
-  orderHistoryContentEl.innerHTML = logs.map(log => {
+  訂單歷史內容標籤.innerHTML = logs.map(log => {
       const detailsHtml = log.details ? `<div class="details">${JSON.stringify(log.details, null, 2)}</div>` : '';
       return `
           <div class="history-item">
@@ -160,8 +186,8 @@ function renderOrderHistory(logs) {
   }).join('');
 }
 
-async function fetchOrderHistory(orderId) {
-    if (!orderHistoryContentEl) return;
+async function fetch訂單歷史(orderId) {
+    if (!訂單歷史內容標籤) return;
     const client = await supabase;
     
     const { data: logs, error: logsError } = await client
@@ -172,12 +198,12 @@ async function fetchOrderHistory(orderId) {
 
     if (logsError) {
         console.error('讀取訂單歷史失敗:', logsError);
-        orderHistoryContentEl.innerHTML = '<p class="error-message">讀取訂單歷史失敗。</p>';
+        訂單歷史內容標籤.innerHTML = '<p class="error-message">讀取訂單歷史失敗。</p>';
         return;
     }
 
     if (logs.length === 0) {
-        renderOrderHistory([]);
+        render訂單歷史([]);
         return;
     }
 
@@ -205,16 +231,16 @@ async function fetchOrderHistory(orderId) {
         operator_email: operatorsMap[log.changed_by_user_id] || log.changed_by_user_id || 'System'
     }));
 
-    renderOrderHistory(formattedLogs);
+    render訂單歷史(formattedLogs);
 }
 
-async function handleOrderSelection(orderId) {
-  selectedOrderId = orderId;
-  const isFromSearch = currentStatusTab === 'search';
-  const sourceCache = isFromSearch ? window.searchResultsCache || [] : ordersCache;
+async function handle訂單選取(orderId) {
+  已選訂單ID = orderId;
+  const isFromSearch = 目前狀態分頁 === 'search';
+  const sourceCache = isFromSearch ? window.searchResultsCache || [] : 訂單快取;
 
   if (!isFromSearch) {
-    renderOrderList();
+    render訂單列表();
   } else {
     document.querySelectorAll('#search-results-list .search-result-item').forEach((item) => {
       item.classList.toggle('active', item.dataset.orderId === orderId);
@@ -227,26 +253,28 @@ async function handleOrderSelection(orderId) {
     return;
   }
 
-  emptyView.classList.add('hidden');
-  if (!isFromSearch) searchResultsContainer.classList.add('hidden');
-  orderDetailView.classList.remove('hidden');
+  空白視圖.classList.add('hidden');
+  if (!isFromSearch) 查詢結果容器.classList.add('hidden');
+  訂單詳情視圖.classList.remove('hidden');
 
   [
-    paymentConfirmationSection,
-    shippingActionSection,
-    cancellationActionSection,
-    cancellationDetailsSection,
+    付款確認區塊,
+    物流操作區塊,
+    物流結果區塊,
+    取消操作區塊,
+    取消詳情區塊,
+    手動出貨表單,
   ].forEach((el) => {
     if (el) el.classList.add('hidden');
   });
 
-  if (trackingCodeInput) trackingCodeInput.value = '';
-  if (paymentReferenceInput) paymentReferenceInput.value = '';
-  orderNumberTitle.textContent = `訂單 #${order.order_number}`;
+  追蹤單號輸入框.value = '';
+  付款參考輸入框.value = '';
+  訂單編號標題.textContent = `訂單 #${order.order_number}`;
 
   const adr = order.shipping_address_snapshot;
-  if (shippingAddressEl) {
-    shippingAddressEl.innerHTML =
+  if (收件地址標籤) {
+    收件地址標籤.innerHTML =
       adr && typeof adr === 'object'
         ? `<p><strong>收件人:</strong> ${adr.recipient_name || 'N/A'}</p>
            <p><strong>手機:</strong> ${adr.phone_number || 'N/A'}</p>
@@ -258,25 +286,31 @@ async function handleOrderSelection(orderId) {
   }
 
   const methodName = order.shipping_rates?.method_name || '未指定';
-  if (shippingMethodDetailsEl) shippingMethodDetailsEl.innerHTML = `<p><strong>配送方式:</strong> ${methodName}</p>`;
+  if (配送方式詳情標籤) 配送方式詳情標籤.innerHTML = `<p><strong>配送方式:</strong> ${methodName}</p>`;
 
   const paymentStatusText = order.payment_status === 'paid' ? '已付款' : '待付款';
-  if (paymentDetailsEl) paymentDetailsEl.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paymentStatusText}</span></p>
+  if (付款詳情標籤) 付款詳情標籤.innerHTML = `<p><strong>付款狀態:</strong> <span class="status-${order.payment_status}">${paymentStatusText}</span></p>
                                 <p><strong>付款參考:</strong> ${order.payment_reference || '無'}</p>`;
 
   switch (order.status) {
     case 'pending_payment':
-      if (paymentConfirmationSection) paymentConfirmationSection.classList.remove('hidden');
-      if (cancellationActionSection) cancellationActionSection.classList.remove('hidden');
+      付款確認區塊?.classList.remove('hidden');
+      取消操作區塊?.classList.remove('hidden');
       break;
     case 'paid':
-      if (shippingActionSection) shippingActionSection.classList.remove('hidden');
-      if (cancellationActionSection) cancellationActionSection.classList.remove('hidden');
+      物流操作區塊?.classList.remove('hidden');
+      物流選項?.classList.remove('hidden');
+      取消操作區塊?.classList.remove('hidden');
+      break;
+    case 'shipped':
+      物流結果區塊?.classList.remove('hidden');
+      結果物流商.textContent = order.carrier || 'N/A';
+      結果追蹤單號.textContent = order.shipping_tracking_code || 'N/A';
       break;
     case 'cancelled':
-      if (cancellationDetailsSection) cancellationDetailsSection.classList.remove('hidden');
-      if (cancellationDetailsEl) {
-        cancellationDetailsEl.innerHTML = `
+      取消詳情區塊?.classList.remove('hidden');
+      if (取消詳情標籤) {
+        取消詳情標籤.innerHTML = `
             <p><strong>取消時間:</strong> ${new Date(order.cancelled_at).toLocaleString('zh-TW')}</p>
             <p><strong>取消原因:</strong> ${order.cancellation_reason || '未提供原因'}</p>
         `;
@@ -284,9 +318,9 @@ async function handleOrderSelection(orderId) {
       break;
   }
 
-  if (pickingListEl) pickingListEl.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
-  if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p class="loading-text">載入顧客輪廓...</p>';
-  if (orderHistoryContentEl) orderHistoryContentEl.innerHTML = '<p class="loading-text">載入操作歷史...</p>';
+  備貨清單標籤.innerHTML = '<div class="loading-spinner">載入商品項目中...</div>';
+  顧客輪廓內容標籤.innerHTML = '<p class="loading-text">載入顧客輪廓...</p>';
+  訂單歷史內容標籤.innerHTML = '<p class="loading-text">載入操作歷史...</p>';
 
   const client = await supabase;
   const [itemsResult, profileResult] = await Promise.all([
@@ -296,104 +330,197 @@ async function handleOrderSelection(orderId) {
 
   if (itemsResult.error) {
     console.error('讀取商品項目失敗:', itemsResult.error);
-    if (pickingListEl) pickingListEl.innerHTML = '<p class="error-message">讀取商品項目失敗。</p>';
+    備貨清單標籤.innerHTML = '<p class="error-message">讀取商品項目失敗。</p>';
   } else {
-    renderPickingList(itemsResult.data);
+    render備貨清單(itemsResult.data);
   }
   
   if (!order.user_id) {
-    if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p>匿名顧客無歷史資料。</p>';
+    顧客輪廓內容標籤.innerHTML = '<p>匿名顧客無歷史資料。</p>';
   } else if (profileResult.error) {
     console.error('讀取顧客輪廓失敗:', profileResult.error);
-    if (customerProfileContentEl) customerProfileContentEl.innerHTML = '<p class="error-message">讀取顧客輪廓失敗。</p>';
+    顧客輪廓內容標籤.innerHTML = '<p class="error-message">讀取顧客輪廓失敗。</p>';
   } else {
-    renderCustomerProfile(profileResult.data);
+    render顧客輪廓(profileResult.data);
   }
 
-  fetchOrderHistory(orderId);
-
-  if (order.status === 'paid') {
-    await populateCarrierSelector(methodName);
-  }
+  fetch訂單歷史(orderId);
 }
 
-async function populateCarrierSelector(defaultCarrier) {
-  if (shippingRatesCache.length === 0) {
+async function populate物流商選擇器(defaultCarrier) {
+  if (運費費率快取.length === 0) {
     try {
       const client = await supabase;
       const { data, error } = await client.from(TABLE_NAMES.SHIPPING_RATES).select('*').eq('is_active', true);
       if (error) throw error;
-      shippingRatesCache = data;
+      運費費率快取 = data;
     } catch (e) {
       console.error('讀取運送方式失敗', e);
       return;
     }
   }
-  if (carrierSelector) {
-    carrierSelector.innerHTML = shippingRatesCache
+  if (物流商選擇器) {
+    物流商選擇器.innerHTML = 運費費率快取
         .map((r) => `<option value="${r.method_name}" ${r.method_name === defaultCarrier ? 'selected' : ''}>${r.method_name}</option>`)
         .join('');
   }
 }
 
-async function handlePaymentConfirmation(e) {
+async function handle確認收款(e) {
   e.preventDefault();
-  if (!paymentConfirmationForm) return;
-  setFormSubmitting(paymentConfirmationForm, true, '確認中...');
+  if (!付款確認表單) return;
+  setFormSubmitting(付款確認表單, true, '確認中...');
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.MARK_ORDER_AS_PAID, {
       body: {
-        orderId: selectedOrderId,
-        paymentMethod: paymentMethodSelector.value,
-        paymentReference: paymentReferenceInput.value.trim(),
+        orderId: 已選訂單ID,
+        paymentMethod: 付款方式選擇器.value,
+        paymentReference: 付款參考輸入框.value.trim(),
       },
     });
     if (error) throw new Error(error.message);
     if (data.error) throw new Error(data.error);
     showNotification('收款確認成功！訂單已移至「待出貨」。', 'success');
-    ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
-    selectedOrderId = null;
-    renderOrderList();
-    orderDetailView.classList.add('hidden');
-    emptyView.classList.remove('hidden');
+    訂單快取 = 訂單快取.filter((o) => o.id !== 已選訂單ID);
+    已選訂單ID = null;
+    render訂單列表();
+    訂單詳情視圖.classList.add('hidden');
+    空白視圖.classList.remove('hidden');
   } catch (e) {
     showNotification(`確認收款失敗：${e.message}`, 'error');
   } finally {
-    setFormSubmitting(paymentConfirmationForm, false, '確認收款');
+    setFormSubmitting(付款確認表單, false, '確認收款');
   }
 }
 
-async function handleShippingFormSubmit(e) {
+async function handle手動出貨表單提交(e) {
   e.preventDefault();
-  if (!shippingForm) return;
-  setFormSubmitting(shippingForm, true, '處理中...');
+  if (!手動出貨表單) return;
+  setFormSubmitting(手動出貨表單, true, '處理中...');
   try {
     const client = await supabase;
     const { data, error } = await client.functions.invoke(FUNCTION_NAMES.MARK_ORDER_AS_SHIPPED, {
       body: {
-        orderId: selectedOrderId,
-        shippingTrackingCode: trackingCodeInput.value.trim(),
-        selectedCarrierMethodName: carrierSelector.value,
+        orderId: 已選訂單ID,
+        shippingTrackingCode: 追蹤單號輸入框.value.trim(),
+        selectedCarrierMethodName: 物流商選擇器.value,
       },
     });
     if (error) throw new Error(error.message);
     if (data.error) throw new Error(data.error);
     showNotification('出貨成功！訂單已更新並已通知顧客。', 'success');
-    ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
-    selectedOrderId = null;
-    renderOrderList();
-    orderDetailView.classList.add('hidden');
-    emptyView.classList.remove('hidden');
+    訂單快取 = 訂單快取.filter((o) => o.id !== 已選訂單ID);
+    已選訂單ID = null;
+    render訂單列表();
+    訂單詳情視圖.classList.add('hidden');
+    空白視圖.classList.remove('hidden');
   } catch (e) {
     showNotification(`出貨失敗：${e.message}`, 'error');
   } finally {
-    setFormSubmitting(shippingForm, false, '確認出貨並通知顧客');
+    setFormSubmitting(手動出貨表單, false, '確認出貨');
   }
 }
 
-async function fetchCancellationReasons() {
-  if (cancellationReasonsCache.length > 0) return;
+async function handle建立黑貓託運單() {
+    if (!已選訂單ID) return;
+    const order = 訂單快取.find(o => o.id === 已選訂單ID);
+    if (!confirm(`您確定要為訂單 ${order.order_number} 建立黑貓託運單嗎？`)) return;
+
+    setFormSubmitting(建立黑貓託運單按鈕, true, '建立中...');
+    console.log(`[T-cat Create] 操作員 ${目前使用者.email} 正在為訂單 ${order.order_number} (ID: ${已選訂單ID}) 建立託運單...`);
+
+    try {
+        const client = await supabase;
+        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.CREATE_TCAT_SHIPMENT, { body: { orderId: 已選訂單ID } });
+
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+        if (!data.success) throw new Error(data.apiResponse?.Message || 'API 未回報成功');
+
+        const tcatOrderData = data.apiResponse.Data.Orders[0];
+        console.log('[T-cat Create] API 成功回應:', tcatOrderData);
+        
+        const { error: shippedError } = await client.functions.invoke(FUNCTION_NAMES.MARK_ORDER_AS_SHIPPED, {
+            body: {
+                orderId: 已選訂單ID,
+                shippingTrackingCode: tcatOrderData.OBTNumber,
+                selectedCarrierMethodName: '黑貓宅急便',
+                shippingTrackingFileNo: tcatOrderData.FileNo,
+            }
+        });
+        if (shippedError) throw shippedError;
+
+        showNotification('黑貓託運單已成功建立並回寫，訂單已出貨！', 'success');
+        await fetch訂單依狀態(目前狀態分頁);
+        訂單詳情視圖.classList.add('hidden');
+        空白視圖.classList.remove('hidden');
+
+    } catch (e) {
+        console.error('[T-cat Create] 建立黑貓託運單失敗:', e);
+        showNotification(`建立託運單失敗: ${e.message}`, 'error');
+    } finally {
+        setFormSubmitting(建立黑貓託運單按鈕, false, '建立黑貓託運單 (API)');
+    }
+}
+
+async function handle查詢貨態() {
+    const order = (window.searchResultsCache || 訂單快取).find(o => o.id === 已選訂單ID);
+    if (!order || !order.shipping_tracking_code) return;
+
+    const trackingNumber = order.shipping_tracking_code;
+    setFormSubmitting(查詢貨態按鈕, true, '查詢中...');
+    console.log(`[T-cat Status] 操作員 ${目前使用者.email} 正在查詢貨態`, { trackingNumber });
+
+    try {
+        const client = await supabase;
+        const { data, error } = await client.functions.invoke(FUNCTION_NAMES.GET_TCAT_SHIPMENT_STATUS, {
+            body: { trackingNumbers: [trackingNumber] }
+        });
+
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+        if (data.IsOK === 'N') throw new Error(`黑貓 API 回報: ${data.Message}`);
+        
+        console.log('[T-cat Status] 成功獲取貨態資料:', data);
+        render貨態彈出視窗(data.Data.OBTs[0]);
+
+    } catch (e) {
+        console.error('[T-cat Status] 查詢貨態失敗:', e);
+        showNotification(`查詢貨態失敗: ${e.message}`, 'error');
+    } finally {
+        setFormSubmitting(查詢貨態按鈕, false, '查詢貨態');
+    }
+}
+
+function render貨態彈出視窗(shipmentStatus) {
+    if (!shipmentStatus || !shipmentStatus.StatusList || shipmentStatus.StatusList.length === 0) {
+        貨態視窗內容.innerHTML = '<p class="empty-message">查無此託運單的貨態詳細資訊。</p>';
+        const order = (window.searchResultsCache || 訂單快取).find(o => o.id === 已選訂單ID);
+        貨態視窗標題.textContent = `貨態歷程 - ${order.shipping_tracking_code}`;
+    } else {
+        貨態視窗標題.textContent = `貨態歷程 - ${shipmentStatus.OBTNumber}`;
+        const timelineHtml = `
+            <div class="status-timeline">
+                ${shipmentStatus.StatusList.map(status => `
+                    <div class="timeline-item">
+                        <div class="timeline-dot"></div>
+                        <div class="timeline-content">
+                            <p class="status-name">${status.StatusName} (${status.StatusId})</p>
+                            <span class="station-name">${status.StationName}</span>
+                            <span class="status-time">${new Date(status.CreateDateTime.replace(/(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, '$1-$2-$3T$4:$5:$6')).toLocaleString('zh-TW')}</span>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        貨態視窗內容.innerHTML = timelineHtml;
+    }
+    貨態彈出視窗.classList.remove('hidden');
+}
+
+async function fetch取消原因() {
+  if (取消原因快取.length > 0) return;
   try {
     const client = await supabase;
     const { data, error } = await client
@@ -402,14 +529,14 @@ async function fetchCancellationReasons() {
       .eq('is_active', true)
       .order('sort_order');
     if (error) throw error;
-    cancellationReasonsCache = data.map((x) => x.reason);
+    取消原因快取 = data.map((x) => x.reason);
   } catch (e) {
     console.error('讀取取消原因失敗:', e);
-    cancellationReasonsCache = ['顧客要求取消', '其他 (請於備註詳述)'];
+    取消原因快取 = ['顧客要求取消', '其他 (請於備註詳述)'];
   }
 }
 
-function buildCancelModal(orderNumber) {
+function build取消彈出視窗(orderNumber) {
   document.getElementById('cancel-order-modal')?.remove();
   const wrapper = document.createElement('div');
   wrapper.id = 'cancel-order-modal';
@@ -461,14 +588,14 @@ function buildCancelModal(orderNumber) {
   };
 }
 
-async function handleCancelOrder() {
-  const order = ordersCache.find((o) => o.id === selectedOrderId);
+async function handle取消訂單() {
+  const order = 訂單快取.find((o) => o.id === 已選訂單ID);
   if (!order) return;
 
-  await fetchCancellationReasons();
-  const modal = buildCancelModal(order.order_number);
+  await fetch取消原因();
+  const modal = build取消彈出視窗(order.order_number);
 
-  modal.reasonSelect.innerHTML = cancellationReasonsCache.map((r) => `<option value="${r}">${r}</option>`).join('');
+  modal.reasonSelect.innerHTML = 取消原因快取.map((r) => `<option value="${r}">${r}</option>`).join('');
 
   modal.confirmBtn.addEventListener('click', async () => {
     const base = modal.reasonSelect.value || '';
@@ -480,42 +607,42 @@ async function handleCancelOrder() {
       return;
     }
 
-    setFormSubmitting(btnCancelOrder, true, '取消中...');
+    setFormSubmitting(取消訂單按鈕, true, '取消中...');
     modal.confirmBtn.disabled = true;
 
     try {
       const client = await supabase;
       const { data, error } = await client.functions.invoke(FUNCTION_NAMES.CANCEL_ORDER, {
-        body: { orderId: selectedOrderId, reason: finalReason },
+        body: { orderId: 已選訂單ID, reason: finalReason },
       });
 
       if (error) throw new Error(error.message);
       if (data?.error) throw new Error(data.error);
 
       showNotification(data?.message || '訂單已成功取消！', 'success');
-      ordersCache = ordersCache.filter((o) => o.id !== selectedOrderId);
-      selectedOrderId = null;
-      renderOrderList();
-      orderDetailView.classList.add('hidden');
-      emptyView.classList.remove('hidden');
+      訂單快取 = 訂單快取.filter((o) => o.id !== 已選訂單ID);
+      已選訂單ID = null;
+      render訂單列表();
+      訂單詳情視圖.classList.add('hidden');
+      空白視圖.classList.remove('hidden');
       modal.close();
     } catch (e) {
       showNotification(`取消訂單失敗：${e.message}`, 'error');
       console.error('[Cancel Order] Error:', e);
     } finally {
-      setFormSubmitting(btnCancelOrder, false, '取消此訂單');
+      setFormSubmitting(取消訂單按鈕, false, '取消此訂單');
       if(modal.confirmBtn) modal.confirmBtn.disabled = false;
     }
   });
 }
 
-function renderSearchSummary(summary) {
-    if (!searchSummaryContainerEl) return;
+function render查詢摘要(summary) {
+    if (!查詢摘要容器標籤) return;
     if (!summary) {
-        searchSummaryContainerEl.innerHTML = '';
+        查詢摘要容器標籤.innerHTML = '';
         return;
     }
-    searchSummaryContainerEl.innerHTML = `
+    查詢摘要容器標籤.innerHTML = `
         <div class="summary-item">
             <span class="value">${summary.new_customers_count}</span>
             <span class="label">區間新客數</span>
@@ -531,12 +658,12 @@ function renderSearchSummary(summary) {
     `;
 }
 
-async function handleAdvancedOrderSearch(e) {
+async function handle進階訂單查詢(e) {
   e.preventDefault();
-  if (!advancedOrderSearchForm) return;
-  setFormSubmitting(advancedOrderSearchForm, true, '查詢中...');
-  if (searchResultsList) searchResultsList.innerHTML = '<div class="loading-spinner">查詢中...</div>';
-  if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
+  if (!進階訂單查詢表單) return;
+  setFormSubmitting(進階訂單查詢表單, true, '查詢中...');
+  查詢結果列表.innerHTML = '<div class="loading-spinner">查詢中...</div>';
+  查詢摘要容器標籤.innerHTML = '';
 
   const params = {
     status: document.getElementById('search-status-selector').value,
@@ -554,29 +681,29 @@ async function handleAdvancedOrderSearch(e) {
     if (results.error) throw new Error(results.error);
 
     window.searchResultsCache = results;
-    renderSearchResults(results);
+    render查詢結果(results);
 
     if (Object.keys(filteredParams).length > 0) {
         client.functions.invoke(FUNCTION_NAMES.GET_ORDERS_SUMMARY, { 
             body: filteredParams 
         }).then(({ data, error }) => {
-            if (error) console.error('读取订单彙總失败:', error);
-            else renderSearchSummary(data);
+            if (error) console.error('讀取訂單彙總失敗:', error);
+            else render查詢摘要(data);
         });
     }
 
   } catch (e) {
     console.error('進階查詢訂單失敗:', e);
-    if (searchResultsList) searchResultsList.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
+    查詢結果列表.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
   } finally {
-    setFormSubmitting(advancedOrderSearchForm, false, '查詢');
+    setFormSubmitting(進階訂單查詢表單, false, '查詢');
   }
 }
 
-function renderSearchResults(results) {
-  if (!searchResultsList) return;
+function render查詢結果(results) {
+  if (!查詢結果列表) return;
   if (!results || results.length === 0) {
-    searchResultsList.innerHTML = '<p>找不到符合條件的訂單。</p>';
+    查詢結果列表.innerHTML = '<p>找不到符合條件的訂單。</p>';
     return;
   }
 
@@ -587,7 +714,7 @@ function renderSearchResults(results) {
     cancelled: { text: '已取消', class: 'cancelled' },
   };
 
-  searchResultsList.innerHTML = results
+  查詢結果列表.innerHTML = results
     .map((order) => {
       const statusInfo = statusMap[order.status] || { text: order.status, class: 'default' };
       const adr = order.shipping_address_snapshot;
@@ -615,7 +742,7 @@ function renderSearchResults(results) {
     .join('');
 }
 
-async function handleResendNotification(orderId, orderNumber) {
+async function handle重寄通知(orderId, orderNumber) {
   if (!confirm(`您確定要重新發送訂單 #${orderNumber} 的出貨通知嗎？`)) return;
   const btn = document.querySelector(`.btn-resend[data-order-id="${orderId}"]`);
   if (btn) {
@@ -644,77 +771,91 @@ function bindEvents() {
     if (element) {
       element.addEventListener(event, handler);
     } else {
-      console.warn(`[bindEvents] 警告：試圖綁定事件的元素不存在。元素 ID 可能有誤或尚未被渲染。`);
+      console.warn(`[bindEvents] 警告：試圖綁定事件的元素不存在。`);
     }
   };
   
-  safeAddEventListener(logoutBtn, 'click', handleWarehouseLogout);
-  safeAddEventListener(orderListContainer, 'click', (e) => {
+  safeAddEventListener(登出按鈕, 'click', handleWarehouseLogout);
+  safeAddEventListener(訂單列表容器, 'click', (e) => {
     const t = e.target.closest('.order-list-item');
-    if (t) handleOrderSelection(t.dataset.orderId);
+    if (t) handle訂單選取(t.dataset.orderId);
   });
-  safeAddEventListener(searchResultsList, 'click', (e) => {
+  safeAddEventListener(查詢結果列表, 'click', (e) => {
     const resendBtn = e.target.closest('.btn-resend');
     if (resendBtn) {
       e.stopPropagation();
-      handleResendNotification(resendBtn.dataset.orderId, resendBtn.dataset.orderNumber);
+      handle重寄通知(resendBtn.dataset.orderId, resendBtn.dataset.orderNumber);
       return;
     }
     const resultItem = e.target.closest('.search-result-item');
     if (resultItem) {
-      handleOrderSelection(resultItem.dataset.orderId);
+      handle訂單選取(resultItem.dataset.orderId);
     }
   });
-  safeAddEventListener(paymentConfirmationForm, 'submit', handlePaymentConfirmation);
-  safeAddEventListener(shippingForm, 'submit', handleShippingFormSubmit);
-  safeAddEventListener(printBtn, 'click', () => window.print());
-  if (tabs) {
-      tabs.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
+  safeAddEventListener(付款確認表單, 'submit', handle確認收款);
+  safeAddEventListener(手動出貨表單, 'submit', handle手動出貨表單提交);
+  safeAddEventListener(列印按鈕, 'click', () => window.print());
+  if (分頁標籤群組) {
+      分頁標籤群組.forEach((tab) => safeAddEventListener(tab, 'click', handleTabClick));
   }
-  safeAddEventListener(advancedOrderSearchForm, 'submit', handleAdvancedOrderSearch);
-  safeAddEventListener(advancedOrderSearchForm, 'reset', () => {
-    if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
-    if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
-    if (orderDetailView) orderDetailView.classList.add('hidden');
-    if (emptyView) emptyView.classList.remove('hidden');
+  safeAddEventListener(進階訂單查詢表單, 'submit', handle進階訂單查詢);
+  safeAddEventListener(進階訂單查詢表單, 'reset', () => {
+    查詢結果列表.innerHTML = '<p>請輸入條件以開始查詢。</p>';
+    查詢摘要容器標籤.innerHTML = '';
+    訂單詳情視圖.classList.add('hidden');
+    空白視圖.classList.remove('hidden');
   });
-  safeAddEventListener(btnCancelOrder, 'click', handleCancelOrder);
+  safeAddEventListener(取消訂單按鈕, 'click', handle取消訂單);
+  
+  // [v49.0] 新物流流程事件綁定
+  safeAddEventListener(建立黑貓託運單按鈕, 'click', handle建立黑貓託運單);
+  safeAddEventListener(手動輸入按鈕, 'click', async () => {
+      物流選項.classList.add('hidden');
+      手動出貨表單.classList.remove('hidden');
+      const order = 訂單快取.find(o => o.id === 已選訂單ID);
+      await populate物流商選擇器(order.shipping_rates?.method_name || '未指定');
+  });
+  safeAddEventListener(查詢貨態按鈕, 'click', handle查詢貨態);
+  safeAddEventListener(貨態視窗關閉按鈕, 'click', () => 貨態彈出視窗.classList.add('hidden'));
+  safeAddEventListener(貨態彈出視窗, 'click', (e) => {
+      if (e.target === 貨態彈出視窗) 貨態彈出視窗.classList.add('hidden');
+  });
 }
 
 function handleTabClick(e) {
   const tab = e.target;
-  if (currentStatusTab === tab.dataset.statusTab) return;
-  currentStatusTab = tab.dataset.statusTab;
-  if (tabs) {
-    tabs.forEach((t) => t.classList.remove('active'));
+  if (目前狀態分頁 === tab.dataset.statusTab) return;
+  目前狀態分頁 = tab.dataset.statusTab;
+  if (分頁標籤群組) {
+    分頁標籤群組.forEach((t) => t.classList.remove('active'));
   }
   tab.classList.add('active');
-  if (orderDetailView) orderDetailView.classList.add('hidden');
-  if (searchResultsContainer) searchResultsContainer.classList.add('hidden');
-  if (emptyView) emptyView.classList.remove('hidden');
+  訂單詳情視圖.classList.add('hidden');
+  查詢結果容器.classList.add('hidden');
+  空白視圖.classList.remove('hidden');
 
-  if (currentStatusTab === 'search') {
-    if (orderListContainer) orderListContainer.classList.add('hidden');
-    if (searchFormContainer) searchFormContainer.classList.remove('hidden');
-    if (searchResultsContainer) searchResultsContainer.classList.remove('hidden');
-    if (searchResultsList) searchResultsList.innerHTML = '<p>請輸入條件以開始查詢。</p>';
-    if (searchSummaryContainerEl) searchSummaryContainerEl.innerHTML = '';
+  if (目前狀態分頁 === 'search') {
+    訂單列表容器.classList.add('hidden');
+    查詢表單容器.classList.remove('hidden');
+    查詢結果容器.classList.remove('hidden');
+    查詢結果列表.innerHTML = '<p>請輸入條件以開始查詢。</p>';
+    查詢摘要容器標籤.innerHTML = '';
   } else {
-    if (orderListContainer) orderListContainer.classList.remove('hidden');
-    if (searchFormContainer) searchFormContainer.classList.add('hidden');
-    if (advancedOrderSearchForm) advancedOrderSearchForm.reset();
-    selectedOrderId = null;
-    ordersCache = [];
-    fetchOrdersByStatus(currentStatusTab);
+    訂單列表容器.classList.remove('hidden');
+    查詢表單容器.classList.add('hidden');
+    if (進階訂單查詢表單) 進階訂單查詢表單.reset();
+    已選訂單ID = null;
+    訂單快取 = [];
+    fetch訂單依狀態(目前狀態分頁);
   }
 }
 
 export async function init() {
-  currentUser = await requireWarehouseLogin();
-  if (!currentUser) return;
-  if (currentUserEmailEl) currentUserEmailEl.textContent = currentUser.email;
-  const roles = currentUser.app_metadata?.roles || [];
-  if (roles.includes('super_admin')) userManagementLink?.classList.remove('hidden');
+  目前使用者 = await requireWarehouseLogin();
+  if (!目前使用者) return;
+  if (目前使用者Email標籤) 目前使用者Email標籤.textContent = 目前使用者.email;
+  const roles = 目前使用者.app_metadata?.roles || [];
+  if (roles.includes('super_admin')) 使用者管理連結?.classList.remove('hidden');
   bindEvents();
-  await fetchOrdersByStatus(currentStatusTab);
+  await fetch訂單依狀態(目前狀態分頁);
 }

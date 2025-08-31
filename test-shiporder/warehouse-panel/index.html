@@ -1,12 +1,20 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
-  <head>
+<head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>出貨管理儀表板 - Green Health</title>
     <link rel="stylesheet" href="/warehouse-panel/css/warehouse-style.css" />
-  </head>
-  <body id="shipping-dashboard">
+    <!-- 
+      版本: v46.0
+      更新日誌: [REFACTOR: INTEGRATED LOGISTICS]
+      1. [核心重構] 移除舊的出貨表單 (`shipping-form`)。
+      2. [UI] 新增整合式物流作業區塊 (`logistics-action-section`)，包含 API 建立與手動輸入兩種模式的按鈕。
+      3. [UI] 新增物流結果展示區塊 (`logistics-result-section`)，用於顯示已產生的託運單號與貨態查詢按鈕。
+      4. [UI] 移植並整合先前已驗證成功的貨態查詢彈出視窗 (Modal) 結構。
+    -->
+</head>
+<body id="shipping-dashboard">
     <header class="main-header">
       <div class="header-left">
         <a href="/admin/launcher.html" class="back-to-launcher" title="返回應用程式啟動台">
@@ -40,7 +48,6 @@
         <div class="tabs">
           <button class="tab-link active" data-status-tab="pending_payment">待備貨</button>
           <button class="tab-link" data-status-tab="paid">待出貨</button>
-          <!-- v4.2 核心修正：移除“已取消”页籤，统一由“订单查询”处理 -->
           <button class="tab-link" data-status-tab="search">訂單查詢</button>
         </div>
         <div id="order-list-container">
@@ -140,9 +147,18 @@
                 <button type="submit" class="btn-submit">確認收款</button>
             </form>
           </div>
-          <div id="shipping-action-section" class="detail-section action-section hidden">
+
+          <!-- [v46.0] 核心重構：全新的整合式物流作業區塊 -->
+          <div id="logistics-action-section" class="detail-section action-section hidden">
             <h3>出貨作業</h3>
-            <form id="shipping-form">
+            <div id="logistics-options">
+                <p>請選擇此訂單的出貨方式：</p>
+                <div class="btn-group">
+                    <button id="btn-create-tcat-shipment" class="btn-primary">建立黑貓託運單 (API)</button>
+                    <button id="btn-manual-entry" class="btn-secondary">手動輸入物流單號</button>
+                </div>
+            </div>
+            <form id="manual-shipping-form" class="hidden">
                 <div class="form-group">
                     <label for="carrier-selector">配送服務</label>
                     <select id="carrier-selector" required></select>
@@ -151,9 +167,20 @@
                     <label for="tracking-code-input">物流追蹤單號</label>
                     <input type="text" id="tracking-code-input" required>
                 </div>
-                <button type="submit" id="mark-as-shipped-btn" class="btn-submit">確認出貨並通知顧客</button>
+                <button type="submit" id="mark-as-shipped-btn" class="btn-submit">確認出貨</button>
             </form>
           </div>
+
+          <!-- [v46.0] 新增：物流結果展示區塊 -->
+          <div id="logistics-result-section" class="detail-section hidden">
+            <h3>出貨資訊</h3>
+            <p><strong>物流服務：</strong><span id="result-carrier"></span></p>
+            <p><strong>追蹤單號：</strong><strong id="result-tracking-code" class="highlight-text"></strong></p>
+            <div class="btn-group">
+                <button id="btn-query-status" class="btn-secondary">查詢貨態</button>
+            </div>
+          </div>
+          
           <div id="cancellation-action-section" class="detail-section action-section hidden">
             <h3>訂單取消作業</h3>
             <p class="warning-text">注意：取消訂單將會自動回補商品庫存。此操作無法復原。</p>
@@ -179,6 +206,19 @@
         </div>
       </section>
     </main>
+
+    <!-- [v46.0] 新增：貨態查詢 Modal -->
+    <div id="status-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">貨態歷程</h3>
+                <button id="modal-close-btn" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- 貨態時間軸將動態插入此處 -->
+            </div>
+        </div>
+    </div>
 
     <script type="module" src="/warehouse-panel/js/core/app.js"></script>
   </body>
