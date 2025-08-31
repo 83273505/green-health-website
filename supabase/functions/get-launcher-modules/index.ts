@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-launcher-modules/index.ts
-// 版本: v29.2 - 權限校準勝利收官版
+// 版本: v30.0 - 整合式物流流程重構版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,13 +8,12 @@
 /**
  * @file Get Launcher Modules Function (獲取啟動台模組函式)
  * @description 根據使用者權限，動態建構並回傳其可存取的後台模組列表。
- * @version v29.2
+ * @version v30.0
  *
- * @update v29.2 - [PERMISSION CALIBRATION]
- * 1. [核心修正] 重新校準 `ALL_MODULES` 與 `MODULE_VIEW_PERMISSIONS` 的定義，
- *          使其與資料庫中實際存在的權限完全匹配。
- * 2. [錯誤解決] 此修改恢復了「使用者權限管理」和「權限設定」模組的可見性，
- *          並確保「物流託運管理」模組能被正確授權並顯示。
+ * @update v30.0 - [REFACTOR: INTEGRATED LOGISTICS]
+ * 1. [核心重構] 移除獨立的 `tcat_shipment` (物流託運管理) 模組入口。
+ * 2. [流程統一] 所有物流相關操作，現已全部整合至 `shipping` (出貨管理系統) 模組中，
+ *          遵循單一入口與統一體驗的設計原則。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -22,7 +21,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-launcher-modules';
-const FUNCTION_VERSION = 'v29.2';
+const FUNCTION_VERSION = 'v30.0';
 
 const ALL_MODULES = [
   {
@@ -40,13 +39,6 @@ const ALL_MODULES = [
     badgeQuery: { table: 'invoices', filter: { column: 'status', value: 'failed' } },
   },
   {
-    id: 'tcat_shipment',
-    name: '物流託運管理',
-    description: '批次建立黑貓宅急便託運單，並自動回填追蹤碼。',
-    url: '/tcatshipment-panel/index.html',
-    badgeQuery: { table: 'orders', filter: { column: 'status', value: 'paid' } },
-  },
-  {
     id: 'user_management',
     name: '使用者權限管理',
     description: '管理後台人員的角色與存取權限。',
@@ -62,11 +54,10 @@ const ALL_MODULES = [
   },
 ];
 
-// [v29.2] 核心修正：與資料庫實際權限校準
+// 權限對應表 (tcat_shipment 已移除)
 const MODULE_VIEW_PERMISSIONS: Record<string, string> = {
   shipping: 'module:shipping:view',
   invoicing: 'module:invoicing:view',
-  tcat_shipment: 'module:shipping:tcat', 
   user_management: 'module:users:manage', 
   permission_management: 'module:rbac:manage', 
 };
