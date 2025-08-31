@@ -1,23 +1,22 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/adapters/TCatShipmentAdapter.ts
-// 版本: v1.3 - 支援動態物流參數
+// 版本: v1.4 - 整合物流資料覆寫層
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file T-cat Shipment Adapter (黑貓託運單適配器)
- * @description 扮演「翻譯官」的角色，負責將我們系統內部的訂單資料模型，
- *              轉換為黑貓宅急便 API 所需的特定請求格式，並處理 API 呼叫。
- * @version v1.3
+ * @description 負責資料轉換與呼叫底層 API Client。
+ * @version v1.4
+ * 
+ * @update v1.4 - [FEATURE: LOGISTICS_OVERRIDE]
+ * 1. [核心升級] `_transformOrderToTcatFormat` 現在會動態合併原始快照與覆寫資料，
+ *          以產生最終的託運單資訊。
+ * 2. [功能新增] 新增了對 `IsFreight` (運費到付) 參數的處理。
  * 
  * @update v1.3 - [FEATURE: DYNAMIC_PARAMS]
- * 1. [核心升級] `_transformOrderToTcatFormat` 函式現在能夠接收並應用
- *          來自前端的動態物流參數 (溫層、尺寸、代收貨款等)。
- * 2. [流程適配] `createShipmentFromOrder` 函式簽章已更新，以接收動態參數。
- * 
- * @update v1.2 - [FEATURE: SHIPMENT DOWNLOAD]
- * 1. [核心新增] 新增 downloadShipmentPDF 方法，用於呼叫底層 Client 下載 PDF。
+ * 1. [核心升級] `_transformOrderToTcatFormat` 能夠接收並應用動態物流參數。
  */
 
 import { TcatAPIClient, TcatOrder, TcatStatusResponse } from '../clients/TCatAPIClient.ts';
@@ -102,15 +101,20 @@ export class TcatShipmentAdapter {
   }
 
   /**
-   * [v1.3 核心升級] 核心轉換邏輯
-   * @param order - 我們系統的訂單物件
+   * [v1.4 核心升級] 核心轉換邏輯
+   * @param order - 我們系統的訂單物件 (包含原始快照與覆寫層)
    * @param params - 前端傳入的動態物流參數
    * @returns {TcatOrder} 準備好發送給黑貓 API 的參數物件
    */
   private _transformOrderToTcatFormat(order: any, params: any): TcatOrder {
-    const address = order.shipping_address_snapshot;
-    if (!address) {
-      throw new Error(`訂單 #${order.order_number} 缺少必要的收件地址快照資訊。`);
+    const originalAddress = order.shipping_address_snapshot || {};
+    const overrideAddress = order.shipping_details_override || {};
+    
+    // 將原始資料與覆寫資料合併，覆寫層優先
+    const finalAddress = { ...originalAddress, ...overrideAddress };
+
+    if (!finalAddress.recipient_name) {
+      throw new Error(`訂單 #${order.order_number} 缺少最終的收件人姓名資訊。`);
     }
 
     const productName = (order.order_items || [])
@@ -127,14 +131,13 @@ export class TcatShipmentAdapter {
     return {
       OBTNumber: '',
       OrderId: order.order_number,
-      // 使用前端傳入的參數，若無則使用預設值
       Thermosphere: params.thermosphere || '0001',
       Spec: params.spec || '0002',
-      ReceiptLocation: '01',
-      RecipientName: address.recipient_name,
-      RecipientTel: address.tel_number || address.phone_number,
-      RecipientMobile: address.phone_number,
-      RecipientAddress: `${address.city || ''}${address.district || ''}${address.street_address || ''}`,
+      ReceiptLocation: '01', // 到宅
+      RecipientName: finalAddress.recipient_name,
+      RecipientTel: finalAddress.tel_number || finalAddress.phone_number,
+      RecipientMobile: finalAddress.phone_number,
+      RecipientAddress: `${finalAddress.city || ''}${finalAddress.district || ''}${finalAddress.street_address || ''}`,
       SenderName: Deno.env.get('TCAT_SENDER_NAME') || '綠健有限公司',
       SenderTel: Deno.env.get('TCAT_SENDER_PHONE') || '02-12345678',
       SenderMobile: Deno.env.get('TCAT_SENDER_MOBILE') || '0912345678',
@@ -143,6 +146,7 @@ export class TcatShipmentAdapter {
       ShipmentDate: shipmentDate,
       DeliveryDate: deliveryDateStr,
       DeliveryTime: '04', // 不指定
+      IsFreight: params.isFreight || 'N', // [v1.4] 新增運費到付處理
       IsCollection: params.isCollection || 'N',
       CollectionAmount: params.collectionAmount || 0,
       ProductName: productName,

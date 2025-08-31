@@ -1,20 +1,19 @@
-// ==============================================================================
+//// ==============================================================================
 // 檔案路徑: supabase/functions/create-tcat-shipment/index.ts
-// 版本: v1.1 - 支援動態物流參數
+// 版本: v1.2 - 整合物流資料覆寫層
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Create T-cat Shipment Function (建立黑貓託運單函式)
- * @description 作為安全的 API 閘道，接收來自後台的請求，初始化日誌服務，
- *              並呼叫 TcatService 來執行建立黑貓託運單的核心業務邏輯。
- * @version v1.1
+ * @description 接收前端請求，儲存操作員的物流資料修改，並呼叫核心服務建立託運單。
+ * @version v1.2
  * 
- * @update v1.1 - [FEATURE: DYNAMIC_PARAMS]
- * 1. [核心升級] 能夠接收並處理來自前端的 logisticsParams 物件，
- *          包含溫層、尺寸、是否代收貨款等動態參數。
- * 2. [參數透傳] 將動態參數完整傳遞給 TcatService，取代原有的寫死邏輯。
+ * @update v1.2 - [FEATURE: LOGISTICS_OVERRIDE]
+ * 1. [核心升級] 能夠接收前端傳遞的 `overrideData` 物件。
+ * 2. [資料庫整合] 在建立託運單前，會先將 `overrideData` 儲存至
+ *          `orders` 表的 `shipping_details_override` 欄位，確保修改被永久記錄。
  */
 
 import { createClient, crypto } from '../_shared/deps.ts';
@@ -48,16 +47,28 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: '權限不足，無法建立託運單。' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // [v1.1] 核心升級: 接收完整的物流參數
-    const { orderId, logisticsParams } = await req.json();
+    const { orderId, logisticsParams, overrideData } = await req.json();
     if (!orderId || !logisticsParams) {
       throw new Error('缺少必要的 orderId 或 logisticsParams 參數。');
+    }
+
+    // [v1.2] 核心步驟：儲存操作員的修改
+    if (overrideData && Object.keys(overrideData).length > 0) {
+        await logger.info(`偵測到物流資料覆寫，正在更新資料庫`, correlationId, { orderId, overrideData });
+        const { error: updateError } = await supabaseAdmin
+            .from('orders')
+            .update({ shipping_details_override: overrideData })
+            .eq('id', orderId);
+        
+        if (updateError) {
+            await logger.critical(`更新物流覆寫資料失敗`, correlationId, updateError, { orderId });
+            throw new Error(`儲存物流修改失敗: ${updateError.message}`);
+        }
     }
 
     await logger.info(`已授權使用者 ${user.email} 開始建立託運單`, correlationId, { orderId, logisticsParams });
 
     const tcatService = new TcatService(supabaseAdmin, logger);
-    // [v1.1] 參數透傳
     const result = await tcatService.createShipment(orderId, logisticsParams, correlationId);
 
     return new Response(JSON.stringify(result), {
