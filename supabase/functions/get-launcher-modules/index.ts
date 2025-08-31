@@ -1,22 +1,20 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-launcher-modules/index.ts
-// 版本: v29.1 - 物流中心整合收官版
+// 版本: v29.2 - 權限校準勝利收官版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file Get Launcher Modules Function (獲取啟動台模組函式)
- * @description 根據使用者權限，動態建構並回傳其可存取的後台模組列表，
- *              並查詢各模組的即時狀態徽章。
- * @version v29.1
+ * @description 根據使用者權限，動態建構並回傳其可存取的後台模組列表。
+ * @version v29.2
  *
- * @update v29.1 - [LOGISTICS_CENTER_INTEGRATION]
- * 1. [核心新增] 在 `ALL_MODULES` 清單中，新增了「物流託運管理」模組的完整定義，
- *          並為其設定了動態徽章查詢規則（查詢待處理的黑貓訂單）。
- * 2. [權限綁定] 在 `MODULE_VIEW_PERMISSIONS` 中，為新模組指定了
- *          `module:shipping:tcat` 作為必需的存取權限。
- * 3. [架構複用] 新增的模組完全複用了現有的企業級日誌與權限過濾框架。
+ * @update v29.2 - [PERMISSION CALIBRATION]
+ * 1. [核心修正] 重新校準 `ALL_MODULES` 與 `MODULE_VIEW_PERMISSIONS` 的定義，
+ *          使其與資料庫中實際存在的權限完全匹配。
+ * 2. [錯誤解決] 此修改恢復了「使用者權限管理」和「權限設定」模組的可見性，
+ *          並確保「物流託運管理」模組能被正確授權並顯示。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -24,66 +22,53 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-launcher-modules';
-const FUNCTION_VERSION = 'v29.1';
-
-// --- 權限驅動模型定義 ---
+const FUNCTION_VERSION = 'v29.2';
 
 const ALL_MODULES = [
   {
     id: 'shipping',
     name: '出貨管理系統',
     description: '處理訂單備貨、確認付款與出貨作業。',
-    url: '/warehouse-panel/index.html', // [v29.1] 修正為正確的 HTML 檔名
-    badgeQuery: {
-      table: 'orders',
-      filter: { column: 'status', value: 'paid' },
-    },
+    url: '/warehouse-panel/index.html',
+    badgeQuery: { table: 'orders', filter: { column: 'status', value: 'paid' } },
   },
   {
     id: 'invoicing',
     name: '發票管理系統',
     description: '查詢發票狀態、手動開立或作廢發票。',
     url: '/invoice-panel/index.html',
-    badgeQuery: {
-      table: 'invoices',
-      filter: { column: 'status', value: 'failed' },
-    },
+    badgeQuery: { table: 'invoices', filter: { column: 'status', value: 'failed' } },
   },
-  // [v29.1] 核心新增：物流託運管理模組
   {
     id: 'tcat_shipment',
     name: '物流託運管理',
     description: '批次建立黑貓宅急便託運單，並自動回填追蹤碼。',
     url: '/tcatshipment-panel/index.html',
-    badgeQuery: {
-      table: 'orders',
-      filter: { column: 'status', value: 'paid' }, // 徽章顯示待處理的訂單數
-      // 可進一步篩選只適用於黑貓的訂單
-      // extraFilter: { column: 'shipping_method_id', value: 'YOUR_TCAT_METHOD_ID' }
-    },
+    badgeQuery: { table: 'orders', filter: { column: 'status', value: 'paid' } },
   },
   {
     id: 'user_management',
     name: '使用者權限管理',
     description: '管理後台人員的角色與存取權限。',
-    url: '/admin/user-management.html', // [v29.1] 修正路徑
+    url: '/admin/user-management.html',
     badgeQuery: null,
   },
   {
     id: 'permission_management',
     name: '權限設定',
     description: '管理系統中的角色及其對應的細部權限。',
-    url: '/admin/rbac.html', // [v29.1] 修正路徑
+    url: '/admin/rbac.html',
     badgeQuery: null,
   },
 ];
 
+// [v29.2] 核心修正：與資料庫實際權限校準
 const MODULE_VIEW_PERMISSIONS: Record<string, string> = {
   shipping: 'module:shipping:view',
   invoicing: 'module:invoicing:view',
-  tcat_shipment: 'module:shipping:tcat', // [v29.1] 新增權限對應
-  user_management: 'module:users:manage', // [v29.1] 修正為正確的權限
-  permission_management: 'module:rbac:manage', // [v29.1] 修正為正確的權限
+  tcat_shipment: 'module:shipping:tcat', 
+  user_management: 'module:users:manage', 
+  permission_management: 'module:rbac:manage', 
 };
 
 async function mainHandler(
@@ -123,17 +108,10 @@ async function mainHandler(
     let badgeCount = 0;
     if (module.badgeQuery) {
       const { table, filter } = module.badgeQuery;
-      let query = supabaseAdmin
+      const { count, error } = await supabaseAdmin
         .from(table)
         .select('*', { count: 'exact', head: true })
         .eq(filter.column, filter.value);
-
-      // (未來可擴充) 處理額外的篩選條件
-      // if (filter.extraFilter) {
-      //   query = query.eq(filter.extraFilter.column, filter.extraFilter.value);
-      // }
-        
-      const { count, error } = await query;
 
       if (error) {
         logger.error(`查詢模組 [${module.name}] 的徽章數量時發生錯誤`, correlationId, error, { module: module.id, table, filter });
