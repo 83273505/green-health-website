@@ -6,10 +6,12 @@
     <title>出貨管理儀表板 - Green Health</title>
     <link rel="stylesheet" href="/warehouse-panel/css/warehouse-style.css" />
     <!-- 
-      版本: v46.1
-      更新日誌: [FEATURE: LOGISTICS_CONFIRMATION_MODAL]
-      1. [UI] 新增「黑貓託運單參數確認」彈出視窗 (`logistics-modal`) 的完整 HTML 骨架，
-               為新的操作流程提供介面基礎。
+      版本: v47.0
+      更新日誌: [REFACTOR: DYNAMIC_STRATEGIES]
+      1. [UI] 移除靜態的物流選項按鈕容器 (`logistics-options`)。
+               按鈕現在將由 shipping.js 主控制器根據可用的策略動態生成，
+               為未來的擴充提供了極大的靈活性。
+      2. [UI] 保持 v46.2 中引入的可編輯物流參數確認 Modal 結構不變。
     -->
 </head>
 <body id="shipping-dashboard">
@@ -126,13 +128,9 @@
           </div>
           <div id="logistics-action-section" class="detail-section action-section hidden">
             <h3>出貨作業</h3>
-            <div id="logistics-options">
-              <p>請選擇此訂單的出貨方式：</p>
-              <div class="btn-group">
-                <button id="btn-create-tcat-shipment" class="btn-primary">建立黑貓託運單 (API)</button>
-                <button id="btn-manual-entry" class="btn-secondary">手動輸入物流單號</button>
-              </div>
-            </div>
+            <!-- [v47.0] 核心修改：此容器將由 JS 根據可用的物流策略動態填充按鈕 -->
+            <div id="logistics-strategy-buttons"></div>
+            
             <form id="manual-shipping-form" class="hidden">
               <div class="form-group">
                 <label for="carrier-selector">配送服務</label>
@@ -187,57 +185,65 @@
     </div>
     
     <div id="logistics-modal" class="modal-overlay hidden">
-        <div class="modal-content" role="dialog" aria-modal="true">
-            <div class="modal-header">
-                <h3 id="logistics-modal-title" class="modal-title">黑貓託運單參數確認</h3>
+      <div class="modal-content" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <h3 id="logistics-modal-title" class="modal-title">黑貓託運單參數確認</h3>
+        </div>
+        <div class="modal-body">
+          <form id="logistics-confirmation-form">
+            <div class="detail-section">
+              <h4>收件資訊 (可修改)</h4>
+              <div class="form-grid-col-2">
+                <div class="form-group">
+                  <label for="logistics-recipient-name">收件人姓名</label>
+                  <input type="text" id="logistics-recipient-name" required>
+                </div>
+                <div class="form-group">
+                  <label for="logistics-recipient-mobile">手機</label>
+                  <input type="text" id="logistics-recipient-mobile" required>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="logistics-recipient-address">地址</label>
+                <textarea id="logistics-recipient-address" rows="2" required></textarea>
+              </div>
             </div>
-            <div class="modal-body">
-                <form id="logistics-confirmation-form">
-                    <div class="detail-section">
-                        <h4>收件資訊 (最終確認)</h4>
-                        <div id="logistics-modal-recipient-info"></div>
-                    </div>
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="logistics-thermosphere">溫層</label>
-                            <select id="logistics-thermosphere">
-                                <option value="0001">常溫</option>
-                                <option value="0002">冷藏</option>
-                                <option value="0003">冷凍</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="logistics-spec">包裹尺寸</label>
-                            <select id="logistics-spec">
-                                <option value="0001">60cm</option>
-                                <option value="0002" selected>90cm</option>
-                                <option value="0003">120cm</option>
-                                <option value="0004">150cm</option>
-                            </select>
-                        </div>
+            <div class="detail-section">
+                <h4>物流參數</h4>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="logistics-thermosphere">溫層</label>
+                        <select id="logistics-thermosphere"><option value="0001">常溫</option><option value="0002">冷藏</option><option value="0003">冷凍</option></select>
                     </div>
                     <div class="form-group">
-                        <label for="logistics-is-collection">是否代收貨款</label>
-                        <select id="logistics-is-collection">
-                            <option value="N">否</option>
-                            <option value="Y">是</option>
-                        </select>
+                        <label for="logistics-spec">包裹尺寸</label>
+                        <select id="logistics-spec"><option value="0001">60cm</option><option value="0002" selected>90cm</option><option value="0003">120cm</option><option value="0004">150cm</option></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="logistics-is-collection">代收貨款</label>
+                        <select id="logistics-is-collection"><option value="N">否</option><option value="Y">是</option></select>
                     </div>
                     <div id="collection-amount-group" class="form-group hidden">
                         <label for="logistics-collection-amount">代收金額</label>
                         <input type="number" id="logistics-collection-amount" min="1">
                     </div>
-                    <div class="form-group">
-                        <label for="logistics-memo">備註 (選填)</label>
-                        <textarea id="logistics-memo" rows="2"></textarea>
-                    </div>
-                </form>
+                </div>
+                <div class="form-group checkbox-group">
+                    <input type="checkbox" id="logistics-is-freight">
+                    <label for="logistics-is-freight">運費到付 (由收件人支付運費)</label>
+                </div>
+                <div class="form-group">
+                    <label for="logistics-memo">備註 (選填)</label>
+                    <textarea id="logistics-memo" rows="2"></textarea>
+                </div>
             </div>
-            <div class="modal-footer">
-                <button id="logistics-modal-close" type="button" class="btn-secondary">取消</button>
-                <button id="logistics-modal-confirm" type="button" class="btn-primary">確認建立並送出</button>
-            </div>
+          </form>
         </div>
+        <div class="modal-footer">
+          <button id="logistics-modal-close" type="button" class="btn-secondary">取消</button>
+          <button id="logistics-modal-confirm" type="button" class="btn-primary">確認建立並送出</button>
+        </div>
+      </div>
     </div>
 
     <script type="module" src="/warehouse-panel/js/core/app.js"></script>
