@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v50.1 - DOM 元素宣告修正版
+// 版本: v50.1 - 共享函式庫引用修正版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -10,18 +10,18 @@
  * @description 作為主控制器，管理整體UI流程，並根據情境載入並執行對應的物流策略。
  * @version v50.1
  *
- * @update v50.1 - [BUGFIX: DOM_REFERENCE]
- * 1. [錯誤修正] 在檔案頂部重新宣告了被誤刪的 Modal 相關 DOM 元素
- *          (`貨態彈出視窗`, `貨態視窗關閉按鈕` 等)。
- * 2. [問題解決] 此修改解決了在 `bindEvents` 函式中因找不到元素而導致的
- *          `ReferenceError`，使應用程式能正常初始化。
+ * @update v50.1 - [BUGFIX: MISSING_IMPORT]
+ * 1. [錯誤修正] 在檔案頂部重新加入了對 `/_shared/js/utils.js` 的 `import` 語句。
+ * 2. [問題解決] 此修改解決了在 `handle進階訂單查詢` 等函式中，因找不到
+ *          `setFormSubmitting` 而導致的 `ReferenceError`，恢復了系統的正常功能。
  *
  * @update v50.0 - [REFACTOR: STRATEGY_PATTERN]
  * 1. [核心架構] 引入「策略模式」，將具體物流操作邏輯剝離至獨立模組。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
-import { showNotification } from '/_shared/js/utils.js';
+// [v50.1] 核心修正：重新加入對共享輔助函式庫的引用
+import { showNotification, setFormSubmitting } from '/_shared/js/utils.js';
 import { requireWarehouseLogin, handleWarehouseLogout } from '/warehouse-panel/js/core/warehouseAuth.js';
 import { TABLE_NAMES, FUNCTION_NAMES } from '../../core/constants.js';
 
@@ -67,7 +67,6 @@ const 物流結果區塊 = document.getElementById('logistics-result-section');
 const 結果物流商 = document.getElementById('result-carrier');
 const 結果追蹤單號 = document.getElementById('result-tracking-code');
 const 查詢貨態按鈕 = document.getElementById('btn-query-status');
-// [v50.1] 核心修正：重新加入被誤刪的 Modal DOM 元素宣告
 const 貨態彈出視窗 = document.getElementById('status-modal');
 const 貨態視窗關閉按鈕 = document.getElementById('modal-close-btn');
 
@@ -127,7 +126,6 @@ function handle策略選擇(e) {
 
 function onShipmentSuccess() {
     showNotification('出貨成功！訂單已更新。', 'success');
-    // 刷新當前分頁的列表
     const currentTabElement = document.querySelector(`.tab-link[data-status-tab="${目前狀態分頁}"]`);
     if (currentTabElement) {
         handleTabClick({ target: currentTabElement });
@@ -465,9 +463,9 @@ async function handle進階訂單查詢(e) {
             else render查詢摘要(data);
         });
     }
-  } catch (e) {
-    console.error('進階查詢訂單失敗:', e);
-    查詢結果列表.innerHTML = `<p class="error-message">查詢失敗：${e.message}</p>`;
+  } catch (err) {
+    console.error('進階查詢訂單失敗:', err);
+    查詢結果列表.innerHTML = `<p class="error-message">查詢失敗：${err.message}</p>`;
   } finally {
     setFormSubmitting(進階訂單查詢表單, false, '查詢');
   }
