@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>黑貓託運單列印 - Green Health</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- [v1.1] 核心修正: 引用專屬於此模組的 CSS 檔案 -->
+    <link rel="stylesheet" href="/tcatshipment-panel/css/tcat-style.css">
+    <style>
+        /* 針對此頁面的微調 */
+        .shipment-details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+        }
+        .detail-block {
+            background-color: #f9f9f9;
+            padding: 1rem;
+            border-radius: 8px;
+        }
+        .detail-block h4 {
+            margin-top: 0;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 0.5rem;
+        }
+    </style>
+</head>
+<body id="tcat-shipment-dashboard">
+
+    <header class="main-header">
+        <div class="header-left">
+            <a href="/admin/launcher.html" class="back-to-launcher" title="返回後台首頁">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </a>
+            <h1>黑貓託運單作業</h1>
+        </div>
+        <div class="header-actions">
+            <span id="current-user-email"></span>
+            <button id="logout-btn">登出</button>
+        </div>
+    </header>
+
+    <main class="dashboard-container">
+        <!-- 左側訂單列表 -->
+        <aside class="order-list-panel">
+            <div class="tabs">
+                <button class="tab-link active" data-tab="pending">待處理託運單</button>
+                <button class="tab-link" data-tab="processed">已處理查詢</button>
+            </div>
+            <div class="table-actions" style="padding: 10px;">
+                <button id="btn-batch-create-shipment" class="btn-primary" disabled>批次建立所選託運單</button>
+            </div>
+            <div id="order-list-container">
+                <div class="loading-spinner">載入中...</div>
+            </div>
+        </aside>
+
+        <!-- 右側詳情與操作面板 -->
+        <section class="order-detail-panel">
+            <div id="detail-view" class="hidden">
+                <h2 id="order-number-title">訂單 #</h2>
+                
+                <div id="shipment-details-grid" class="shipment-details-grid">
+                    <div class="detail-block">
+                        <h4>寄件人資訊 (預設)</h4>
+                        <p><strong>姓名:</strong> <span id="sender-name"></span></p>
+                        <p><strong>電話:</strong> <span id="sender-phone"></span></p>
+                        <p><strong>地址:</strong> <span id="sender-address"></span></p>
+                    </div>
+                    <div class="detail-block">
+                        <h4>收件人資訊</h4>
+                        <p><strong>姓名:</strong> <span id="recipient-name"></span></p>
+                        <p><strong>電話:</strong> <span id="recipient-phone"></span></p>
+                        <p><strong>地址:</strong> <span id="recipient-address"></span></p>
+                    </div>
+                    <div class="detail-block">
+                        <h4>貨物資訊</h4>
+                        <p><strong>溫層:</strong> <span id="thermosphere">常溫</span></p>
+                        <p><strong>尺寸:</strong> <span id="spec">90cm</span></p>
+                        <p><strong>品名:</strong> <span id="product-name"></span></p>
+                        <p><strong>代收貨款:</strong> <span id="collection-status">否</span></p>
+                    </div>
+                     <div class="detail-block">
+                        <h4>日期資訊</h4>
+                        <p><strong>出貨日期:</strong> <span id="shipment-date"></span></p>
+                        <p><strong>希望配達日:</strong> <span id="delivery-date"></span></p>
+                        <p><strong>希望配達時段:</strong> <span id="delivery-time">不指定</span></p>
+                    </div>
+                </div>
+
+                <div id="action-section" class="detail-section action-section">
+                    <h3>操作</h3>
+                    <div id="create-shipment-section">
+                        <p>請確認以上資訊無誤後，即可建立託運單。</p>
+                        <button id="btn-create-single-shipment" class="btn-submit">建立此筆託運單</button>
+                    </div>
+                    <div id="result-section" class="hidden">
+                        <h4>託運單已建立</h4>
+                        <p><strong>託運單號 (OBTNumber):</strong> <strong id="obt-number" style="color: var(--brand); font-size: 1.2em;"></strong></p>
+                        <p><strong>下載檔案編號 (FileNo):</strong> <span id="file-no"></span></p>
+                        <a id="btn-download-shipment" href="#" class="btn-secondary" target="_blank">下載託運單 (PDF)</a>
+                    </div>
+                </div>
+
+                <div id="notification-message" style="display: none; margin-top: 1rem;"></div>
+
+            </div>
+            <div id="empty-view">
+                <p>請從左側選擇一筆待處理的訂單。</p>
+            </div>
+        </section>
+    </main>
+
+    <script type="module">
+        async function initializeApp() {
+            const authCheckView = document.getElementById('auth-check-view');
+            const mainContent = document.querySelector('.dashboard-container');
+            const fatalErrorView = document.createElement('div');
+            fatalErrorView.style.padding = '2rem';
+            fatalErrorView.style.textAlign = 'center';
+            if (mainContent) mainContent.parentNode.insertBefore(fatalErrorView, mainContent);
+
+            try {
+                const app = await import('/tcatshipment-panel/js/app.js');
+                await app.init();
+            } catch (error) {
+                console.error('[tcatshipment-panel/index.html] 應用程式初始化時發生致命錯誤:', error);
+                if (authCheckView) authCheckView.style.display = 'none';
+                if (mainContent) mainContent.style.display = 'none';
+                
+                fatalErrorView.innerHTML = `
+                    <div class="error-message large">
+                        <h4>應用程式載入失敗</h4>
+                        <p>儀表板無法正常啟動。這通常是程式碼更新後發生了語法錯誤。</p>
+                        <p><strong>錯誤詳情：</strong> ${error.message}</p>
+                        <pre style="text-align: left; background-color: #f0f0f0; padding: 1rem; border-radius: 4px; white-space: pre-wrap; word-wrap: break-word;">${error.stack}</pre>
+                        <button onclick="window.location.reload()">重新載入頁面</button>
+                    </div>
+                `;
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>
