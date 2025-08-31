@@ -1,14 +1,20 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/_shared/services/TcatService.ts
-// 版本: v1.0 - 企業級日誌框架整合
+// 版本: v1.2 - 整合託運單下載功能
 // ------------------------------------------------------------------------------
-// 【此為全新檔案，可直接使用】
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * @file T-cat Service (黑貓物流服務)
  * @description 封裝所有與黑貓宅急便相關的核心業務邏輯，並整合企業級日誌框架。
- * @version v1.0
+ * @version v1.2
+ * 
+ * @update v1.2 - [FEATURE: SHIPMENT DOWNLOAD]
+ * 1. [核心新增] 新增 downloadShipmentPDF 方法，用於處理下載託運單的業務流程。
+ * 
+ * @update v1.1 - [FEATURE: SHIPMENT STATUS]
+ * 1. [核心新增] 新增 getShipmentStatus 方法，用於處理獲取託運單貨態的業務邏輯。
  */
 
 import { createClient } from '../deps.ts';
@@ -34,7 +40,6 @@ export class TcatService {
     this.logger.info(`開始處理建立黑貓託運單的請求`, correlationId, { orderId });
 
     try {
-      // 步驟 1: 從我們的資料庫中獲取建立託運單所需的完整訂單資料
       const { data: orderData, error: orderError } = await this.supabaseAdmin
         .from('orders')
         .select(`
@@ -52,15 +57,11 @@ export class TcatService {
         this.logger.error('查詢訂單資料以建立託運單時失敗', correlationId, orderError, { orderId });
         throw new Error(`查詢訂單資料失敗: ${orderError.message}`);
       }
-
       if (!orderData) {
         throw new Error(`在資料庫中找不到指定的訂單 (ID: ${orderId})`);
       }
 
-      // 步驟 2: 初始化 Adapter，並將 logger 和 correlationId 注入
       const tcatAdapter = new TcatShipmentAdapter(this.logger, correlationId);
-
-      // 步驟 3: 呼叫 Adapter 進行資料轉換並透過 Client 發送 API 請求
       const result = await tcatAdapter.createShipmentFromOrder(orderData);
 
       this.logger.info(`成功建立黑貓託運單並取得追蹤號碼`, correlationId, { 
@@ -68,14 +69,51 @@ export class TcatService {
         trackingNumber: result.trackingNumber 
       });
 
-      // 步驟 4: (可選) 將取得的託運單號回寫至 orders 表
-      // await this.supabaseAdmin.from('orders').update({ shipping_tracking_code: result.trackingNumber }).eq('id', orderId);
-
       return result;
-
     } catch (error) {
       this.logger.error('建立黑貓託運單的整體流程失敗', correlationId, error, { orderId });
-      throw error; // 將錯誤向上層拋出，由最外層的 Edge Function 統一處理
+      throw error;
+    }
+  }
+
+  /**
+   * 獲取指定託運單號的最新貨態
+   * @param trackingNumbers - 一個或多個託運單號的陣列
+   * @param correlationId - 用於端到端追蹤的關聯 ID
+   * @returns {Promise<object>} 包含 API 回應的物件
+   */
+  async getShipmentStatus(trackingNumbers: string[], correlationId: string): Promise<any> {
+    this.logger.info(`開始處理查詢黑貓貨態的請求`, correlationId, { trackingNumbers });
+    try {
+      const tcatAdapter = new TcatShipmentAdapter(this.logger, correlationId);
+      const result = await tcatAdapter.fetchShipmentStatus(trackingNumbers);
+      
+      this.logger.info(`成功從黑貓 API 獲取貨態資訊`, correlationId, { trackingNumbers });
+      return result;
+    } catch (error) {
+      this.logger.error('查詢黑貓貨態的整體流程失敗', correlationId, error, { trackingNumbers });
+      throw error;
+    }
+  }
+
+  /**
+   * [v1.2 新增] 下載指定託運單的 PDF 檔案
+   * @param fileNo - 從建立託運單 API 取得的檔案編號
+   * @param trackingNumber - 託運單號，主要用於日誌與檔名
+   * @param correlationId - 用於端到端追蹤的關聯 ID
+   * @returns {Promise<Blob>} PDF 檔案的二進位資料
+   */
+  async downloadShipmentPDF(fileNo: string, trackingNumber: string, correlationId: string): Promise<Blob> {
+    this.logger.info(`開始處理下載黑貓託運單的請求`, correlationId, { fileNo, trackingNumber });
+    try {
+      const tcatAdapter = new TcatShipmentAdapter(this.logger, correlationId);
+      const result = await tcatAdapter.downloadShipmentPDF(fileNo, trackingNumber);
+      
+      this.logger.info(`成功從黑貓 API 獲取託運單 PDF 資料流`, correlationId, { fileNo });
+      return result;
+    } catch (error) {
+      this.logger.error('下載黑貓託運單的整體流程失敗', correlationId, error, { fileNo, trackingNumber });
+      throw error;
     }
   }
 }
