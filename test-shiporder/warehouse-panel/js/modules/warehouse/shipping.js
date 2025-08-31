@@ -1,6 +1,6 @@
 // ==============================================================================
 // 檔案路徑: warehouse-panel/js/modules/warehouse/shipping.js
-// 版本: v49.0 - 整合式物流流程最終版
+// 版本: v49.1 - 整合式物流流程最終版
 // ------------------------------------------------------------------------------
 // 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
@@ -8,21 +8,25 @@
 /**
  * @file Warehouse Panel - Shipping Module (出貨管理儀表板 - 核心業務模組)
  * @description 處理待備貨、待出貨及訂單查詢的所有前端業務邏輯，並整合全新物流作業流程。
- * @version v49.0
+ * @version v49.1
+ *
+ * @update v49.1 - [BUGFIX: CONSTANTS_PATH]
+ * 1. [錯誤修正] 修正了 `constants.js` 的 import 路徑，確保 `FUNCTION_NAMES` 
+ *          等常數能夠被正確載入，解決了呼叫後端函式時因名稱為 `undefined` 
+ *          而導致的 CORS 與 net::ERR_FAILED 錯誤。
  *
  * @update v49.0 - [REFACTOR: INTEGRATED LOGISTICS WORKFLOW]
- * 1. [核心重構] 完整整合「API 自動化」與「手動備援」的混合物流模式於「待出貨」流程中。
- * 2. [功能整合] 引入並實現了呼叫 `create-tcat-shipment` 函式的邏輯，實現一鍵建立託運單。
- * 3. [功能整合] 引入並實現了呼叫 `get-tcat-shipment-status` 函式的邏輯，提供即時貨態查詢功能。
- * 4. [UI/UX] 重構訂單詳情渲染邏輯，根據訂單狀態智慧顯示對應的物流操作介面。
- * 5. [本地化] 全面正體化：將所有變數、函式名、註解及 UI 字串修正為正體中文。
- * 6. [日誌] 在所有關鍵的 API 互動中，增加了詳細的操作日誌。
+ * 1. [核心重構] 完整整合「API 自動化」與「手動備援」的混合物流模式。
+ * 2. [功能整合] 實現一鍵建立黑貓託運單與即時貨態查詢功能。
+ * 3. [UI/UX] 重構訂單詳情渲染邏輯。
+ * 4. [本地化] 全面正體化。
  */
 
 import { supabase } from '/_shared/js/supabaseClient.js';
 import { showNotification, setFormSubmitting } from '/_shared/js/utils.js';
 import { requireWarehouseLogin, handleWarehouseLogout } from '/warehouse-panel/js/core/warehouseAuth.js';
-import { TABLE_NAMES, FUNCTION_NAMES } from '/warehouse-panel/js/core/constants.js';
+// [v49.1] 核心修正：使用正確的相對路徑引入擴充後的 constants.js
+import { TABLE_NAMES, FUNCTION_NAMES } from '../../core/constants.js';
 
 let 目前使用者 = null;
 let 訂單快取 = [];
@@ -191,7 +195,7 @@ async function fetch訂單歷史(orderId) {
     const client = await supabase;
     
     const { data: logs, error: logsError } = await client
-        .from('order_history_logs')
+        .from(TABLE_NAMES.ORDER_HISTORY_LOGS)
         .select('changed_at, changed_by_user_id, event_type, details')
         .eq('order_id', orderId)
         .order('changed_at', { ascending: false });
@@ -212,7 +216,7 @@ async function fetch訂單歷史(orderId) {
 
     if (operatorIds.length > 0) {
         const { data: profiles, error: profilesError } = await client
-            .from('profiles')
+            .from(TABLE_NAMES.PROFILES)
             .select('id, email')
             .in('id', operatorIds);
 
@@ -524,7 +528,7 @@ async function fetch取消原因() {
   try {
     const client = await supabase;
     const { data, error } = await client
-      .from('order_cancellation_reasons')
+      .from(TABLE_NAMES.ORDER_CANCELLATION_REASONS)
       .select('reason')
       .eq('is_active', true)
       .order('sort_order');
