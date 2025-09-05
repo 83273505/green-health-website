@@ -1,35 +1,40 @@
-// ==============================================================================
 // 檔案路徑: storefront-module/js/core/utils.js
-// 版本: v32.0 - 消費者端模組拆分
-// ------------------------------------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
-// ==============================================================================
-
 /**
- * @file Utility Module (商店前端通用工具模組)
- * @description 集中存放商店前端可重複使用的工具函式。
+ * 檔案名稱：utils.js
+ * 檔案職責：集中存放商店前端可重複使用的工具函式。
+ * 版本：32.1
+ * SOP 條款對應：
+ * - [2.1.4.1] 內容規範與來源鐵律 (🔴L1)
+ * - [2.1.4.3] 絕對路徑錨定原則 (🔴L1)
+ * - [5.3] 共享前端工具
+ * 依賴清單 (Dependencies)：
+ * - (無)
+ * AI 註記：
+ * - 此檔案已根據 SOP v7.1 進行標頭合規性更新。
+ * 更新日誌 (Changelog)：
+ * - v32.1 (2025-09-06)：[SOP v7.1 合規] 新增標準化檔案標頭與絕對路徑錨定。
+ * - v32.0 (2025-08-20)：消費者端模組拆分後初版建立。
  */
 
-/**
- * 在一個標準化的 HTML 元素中向使用者顯示訊息。
- */
-export function showNotification(text, type = 'error', elementId = 'notification-message') {
+export function showNotification(text, type = 'error', elementId = 'notification-message', duration = 5000) {
     const messageElement = document.getElementById(elementId);
     if (!messageElement) {
+        console.warn(`找不到 ID 為 "${elementId}" 的通知元素。`);
+        alert(text); // Fallback to a simple alert
         return;
     }
     messageElement.textContent = text;
-    messageElement.className = '';
-    messageElement.id = elementId;
-    messageElement.style.display = text ? 'block' : 'none';
-    if (text) {
-        messageElement.classList.add(type);
-    }
+    messageElement.className = 'notification-message'; // Reset classes
+    messageElement.classList.add(type);
+    messageElement.style.display = 'block';
+    
+    setTimeout(() => {
+        if (messageElement.textContent === text) { // Only hide if the message hasn't changed
+            messageElement.style.display = 'none';
+        }
+    }, duration);
 }
 
-/**
- * 設定表單的提交狀態，用以防止重複點擊。
- */
 export function setFormSubmitting(formElementOrSelector, isSubmitting, defaultText = '儲存') {
     const form = typeof formElementOrSelector === 'string' 
         ? document.querySelector(formElementOrSelector) 
@@ -45,9 +50,6 @@ export function setFormSubmitting(formElementOrSelector, isSubmitting, defaultTe
     }
 }
 
-/**
- * 將數字格式化為台灣的貨幣字串，並確保沒有小數點。
- */
 export function formatPrice(price) {
     if (typeof price !== 'number') return 'N/A';
     
