@@ -11,6 +11,7 @@
  * 依賴清單 (Dependencies)：
  * - 共享服務: ../_shared/services/loggingService.ts (v2.1)
  * - 共享工具: ../_shared/cors.ts
+<<<<<<< Updated upstream
  * - 外部函式庫: supabase-js (via ../_shared/deps.ts)
  * AI 註記：
  * - 此檔案已根據 SOP v7.1 最新修訂版進行更新，確保檔案標頭的絕對正確性。
@@ -18,14 +19,43 @@
  * - v48.1 (2025-09-06)：[SOP v7.1 合規] 遵循 [2.1.4.1] 來源鐵律，修正 `檔案名稱` 欄位與實際檔名 `index.ts` 一致。
  * - v48.0 (2025-09-05)：[SOP v7.1 合規重構] 更新錯誤格式、日誌記錄與檔案標頭。
  * - v47.0 (2025-09-04)：[庫存控制整合] 引入庫存預留機制。
+=======
+ * - 外部函式庫: supabase-js (via// 檔案路徑: supabase/functions/recalculate-cart/index.ts
+/**
+ * 檔案名稱：index.ts
+ * 檔案職責：處理購物車的增刪改，並在操作前進行權威的庫存預留與檢查。
+ * 版本：48.2
+ * SOP 條款對應：
+ * - [2.2.2] 非破壞性整合
+ * - [1.1] 操作同理心
+ * - [2.1.4.1] 內容規範與來源鐵律 (🔴L1)
+ * - [2.1.4.3] 絕對路徑錨定原則 (🔴L1)
+ * 依賴清單 (Dependencies)：
+ * - 共享服務: ../_shared/services/loggingService.ts (v2.2)
+ * - 共享工具: ../_shared/cors.ts
+ * - 外部函式庫: supabase-js (via ../_shared/deps.ts)
+ * AI 註記：
+ * - 此版本為修正版，修正了對 `loggingService.ts` 的錯誤引用方式，使其完全遵循既有的設計模式。
+ * 更新日誌 (Changelog)：
+ * - v48.2 (2025-09-06)：[BUG FIX] 修正對 LoggingService 的引用與實例化方式，解決函式啟動失敗的根本問題。
+ * - v48.1 (2025-09-06)：[SOP v7.1 合規] 修正檔案標頭。
+ * - v48.0 (2025-09-05)：[SOP v7.1 合規重構] 更新錯誤格式、日誌記錄。
+>>>>>>> Stashed changes
  */
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
+<<<<<<< Updated upstream
 import LoggingService, { withErrorLogging, generateCorrelationId } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
 const FUNCTION_VERSION = 'v48.1';
+=======
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
+
+const FUNCTION_NAME = 'recalculate-cart';
+const FUNCTION_VERSION = 'v48.2';
+>>>>>>> Stashed changes
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -41,7 +71,11 @@ async function _processStockReservations(
   { supabaseAdmin, cartId, actions, logger, correlationId }:
   { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; actions: CartAction[]; logger: LoggingService; correlationId: string; }
 ) {
+<<<<<<< Updated upstream
   logger.info(`啟動庫存預留處理流程`, { cartId, actionCount: actions.length });
+=======
+  logger.info(`啟動庫存預留處理流程`, correlationId, { cartId, actionCount: actions.length });
+>>>>>>> Stashed changes
 
   for (const action of actions) {
     const { type, payload } = action;
@@ -71,7 +105,11 @@ async function _processStockReservations(
         const totalReserved = reservations.reduce((sum, r) => sum + r.reserved_quantity, 0);
         const availableStock = variant.stock - totalReserved;
 
+<<<<<<< Updated upstream
         logger.info(`[預留檢查]`, { variant: variant.name, physicalStock: variant.stock, totalReserved, availableStock, requestedChange: quantityChange });
+=======
+        logger.info(`[預留檢查]`, correlationId, { variant: variant.name, physicalStock: variant.stock, totalReserved, availableStock, requestedChange: quantityChange });
+>>>>>>> Stashed changes
 
         if (availableStock < quantityChange) {
             throw {
@@ -88,7 +126,11 @@ async function _processCartActions(
     { supabaseAdmin, cartId, actions, logger, correlationId }:
     { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; actions: CartAction[]; logger: LoggingService; correlationId: string; }
 ) {
+<<<<<<< Updated upstream
     logger.info(`開始處理 ${actions.length} 個購物車資料庫操作`, { cartId });
+=======
+    logger.info(`開始處理 ${actions.length} 個購物車資料庫操作`, correlationId, { cartId });
+>>>>>>> Stashed changes
     for (const action of actions) {
         try {
             switch (action.type) {
@@ -104,7 +146,11 @@ async function _processCartActions(
                     if (upsertError) throw upsertError;
                     
                     await supabaseAdmin.from('cart_stock_reservations').upsert({ cart_item_id: upsertedItem!.id, product_variant_id: variantId, reserved_quantity: quantity, status: 'active', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: 'cart_item_id' });
+<<<<<<< Updated upstream
                     logger.audit(`成功新增商品並建立庫存預留`, { cartId, variantId, quantity, cartItemId: upsertedItem!.id });
+=======
+                    logger.audit(`成功新增商品並建立庫存預留`, correlationId, { cartId, variantId, quantity, cartItemId: upsertedItem!.id });
+>>>>>>> Stashed changes
                     break;
                 }
                 case 'UPDATE_ITEM_QUANTITY': {
@@ -117,12 +163,20 @@ async function _processCartActions(
                         
                         const {data: item} = await supabaseAdmin.from('cart_items').select('product_variant_id').eq('id', itemId).single();
                         await supabaseAdmin.from('cart_stock_reservations').upsert({ cart_item_id: itemId, product_variant_id: item!.product_variant_id, reserved_quantity: newQuantity, status: 'active', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: 'cart_item_id' });
+<<<<<<< Updated upstream
                         logger.audit(`成功更新商品數量並更新庫存預留`, { cartId, itemId, newQuantity });
+=======
+                        logger.audit(`成功更新商品數量並更新庫存預留`, correlationId, { cartId, itemId, newQuantity });
+>>>>>>> Stashed changes
                     } else {
                         await supabaseAdmin.from('cart_stock_reservations').delete().eq('cart_item_id', itemId);
                         const { error } = await supabaseAdmin.from('cart_items').delete().eq('id', itemId);
                         if (error) throw error;
+<<<<<<< Updated upstream
                         logger.audit(`成功因數量為0而移除商品及庫存預留`, { cartId, itemId });
+=======
+                        logger.audit(`成功因數量為0而移除商品及庫存預留`, correlationId, { cartId, itemId });
+>>>>>>> Stashed changes
                     }
                     break;
                 }
@@ -132,6 +186,7 @@ async function _processCartActions(
                     await supabaseAdmin.from('cart_stock_reservations').delete().eq('cart_item_id', itemId);
                     const { error } = await supabaseAdmin.from('cart_items').delete().eq('id', itemId);
                     if (error) throw error;
+<<<<<<< Updated upstream
                     logger.audit(`成功移除商品及庫存預留`, { cartId, itemId });
                     break;
                 }
@@ -140,6 +195,16 @@ async function _processCartActions(
             }
         } catch (actionError) {
             logger.error(`購物車操作 ${action.type} 執行失敗`, actionError, { cartId, payload: action.payload });
+=======
+                    logger.audit(`成功移除商品及庫存預留`, correlationId, { cartId, itemId });
+                    break;
+                }
+                default:
+                    logger.warn(`偵測到未知的操作類型`, correlationId, { type: (action as any).type });
+            }
+        } catch (actionError) {
+            logger.error(`購物車操作 ${action.type} 執行失敗`, correlationId, actionError, { cartId, payload: action.payload });
+>>>>>>> Stashed changes
             throw actionError;
         }
     }
@@ -161,7 +226,11 @@ async function _calculateCartSummary(
 
   const { data: cartItems, error: cartItemsError } = await supabaseUserClient.from('cart_items').select(`*, product_variants(name, price, sale_price, stock, products(image_url))`).eq('cart_id', cartId);
   if (cartItemsError) {
+<<<<<<< Updated upstream
     logger.error('[RLS Check] calculateCartSummary 查詢失敗', cartItemsError, { cartId });
+=======
+    logger.error('[RLS Check] calculateCartSummary 查詢失敗', correlationId, cartItemsError, { cartId });
+>>>>>>> Stashed changes
     throw new Error(`無法讀取購物車項目：${cartItemsError.message}`);
   }
 
@@ -214,15 +283,23 @@ async function _calculateCartSummary(
     shippingInfo: { freeShippingThreshold, amountNeededForFreeShipping }
   };
   
+<<<<<<< Updated upstream
   logger.info('購物車摘要計算完成', { cartId, total: result.summary.total, itemCount: result.itemCount });
   return result;
 }
 
 
+=======
+  logger.info('購物車摘要計算完成', correlationId, { cartId, total: result.summary.total, itemCount: result.itemCount });
+  return result;
+}
+
+>>>>>>> Stashed changes
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, couponCode, shippingMethodId, actions } = await req.json().catch(() => ({}));
 
     if (!cartId) {
+<<<<<<< Updated upstream
         logger.warn('請求中缺少必要的 cartId 參數', { body: req.body });
         return new Response(JSON.stringify({
             success: false,
@@ -231,6 +308,12 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
                 code: 'INVALID_REQUEST',
                 correlationId: correlationId
             }
+=======
+        logger.warn('請求中缺少必要的 cartId 參數', correlationId, { body: req.body });
+        return new Response(JSON.stringify({
+            success: false,
+            error: { message: '缺少必要參數: cartId', code: 'INVALID_REQUEST', correlationId: correlationId }
+>>>>>>> Stashed changes
         }), { status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -241,6 +324,7 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         const { data: { user } } = await supabaseUserClient.auth.getUser();
 
         if (!user) {
+<<<<<<< Updated upstream
             logger.warn('使用者未授權，嘗試修改購物車遭拒', { cartId });
             return new Response(JSON.stringify({
                 success: false,
@@ -249,11 +333,18 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
                     code: 'UNAUTHORIZED',
                     correlationId: correlationId
                 }
+=======
+            logger.warn('使用者未授權，嘗試修改購物車遭拒', correlationId, { cartId });
+            return new Response(JSON.stringify({
+                success: false,
+                error: { message: '使用者未授權', code: 'UNAUTHORIZED', correlationId: correlationId }
+>>>>>>> Stashed changes
             }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
         const { error: ownerCheckError } = await supabaseUserClient.from('carts').select('id').eq('id', cartId).eq('user_id', user.id).single();
         if (ownerCheckError) {
+<<<<<<< Updated upstream
             logger.warn('購物車所有權驗證失敗', { operatorId: user.id, cartId });
             return new Response(JSON.stringify({
                 success: false,
@@ -265,10 +356,20 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
             }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
         logger.info('購物車所有權驗證通過', { operatorId: user.id, cartId });
+=======
+            logger.warn('購物車所有權驗證失敗', correlationId, { operatorId: user.id, cartId });
+            return new Response(JSON.stringify({
+                success: false,
+                error: { message: '權限不足或購物車不存在', code: 'FORBIDDEN', correlationId: correlationId }
+            }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+        logger.info('購物車所有權驗證通過', correlationId, { operatorId: user.id, cartId });
+>>>>>>> Stashed changes
         
         try {
             await _processStockReservations({ supabaseAdmin, cartId, actions, logger, correlationId });
             await _processCartActions({ supabaseAdmin, cartId, actions, logger, correlationId });
+<<<<<<< Updated upstream
 
         } catch (err) {
             if (err.name === 'InsufficientStockError') {
@@ -280,6 +381,14 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
                         code: 'INSUFFICIENT_STOCK',
                         correlationId: correlationId
                      }
+=======
+        } catch (err) {
+            if (err.name === 'InsufficientStockError') {
+                 logger.warn(`[庫存預留失敗] ${err.message}`, correlationId, { details: err.details });
+                 return new Response(JSON.stringify({
+                     success: false,
+                     error: { message: err.message, code: 'INSUFFICIENT_STOCK', correlationId: correlationId }
+>>>>>>> Stashed changes
                  }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
             throw err;
@@ -298,8 +407,14 @@ Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
+<<<<<<< Updated upstream
     const correlationId = generateCorrelationId();
     const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION, correlationId);
     const wrappedHandler = withErrorLogging(mainHandler, logger);
     return await wrappedHandler(req, logger, correlationId);
+=======
+    const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+    const wrappedHandler = withErrorLogging(mainHandler, logger);
+    return await wrappedHandler(req);
+>>>>>>> Stashed changes
 });
