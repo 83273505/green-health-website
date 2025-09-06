@@ -2,15 +2,14 @@
 /**
  * 檔案名稱：index.ts
  * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
- * 版本：48.5
+ * 版本：48.7
  * SOP 條款對應：
- * - [3.2.6] 跨層依賴完整性原則
- * - [4.0] 系統化診斷與迴歸性錯誤處理協議
+ * - [0.4] 零信任輸出驗證原則 (🔴L1)
  * AI 註記：
- * - 此版本為關鍵修正，補上了缺失的資料庫函式 `get_reservations_for_variant_batch` 的依賴，並修正了 `_calculateCartSummary` 中對其的呼叫，解決了導致 500 錯誤的根本原因。
+ * - 此版本為緊急修正，修復了因複製貼上錯誤導致的致命語法問題 (SyntaxError)。
  * 更新日誌 (Changelog)：
- * - v48.5 (2025-09-07)：[BUG FIX] 修正 `_calculateCartSummary` 中對一個不存在的 RPC (`get_reservations_for_variant_batch`) 的呼叫，並提供了對應的 SQL 建立腳本，解決 500 內部伺服器錯誤。
- * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 的庫存校驗邏輯。
+ * - v48.7 (2025-09-08)：[CRITICAL BUG FIX] 修正了因檔案標頭被錯誤地插入到 import 語句中間而導致的致命語法錯誤，解決了所有函式無法部署的問題。
+ * - v48.6 (2025-09-08)：[CRITICAL BUG FIX] 重構 `_processStockReservations` 函式以正確校驗庫存總量。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -18,36 +17,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.5';
-
-interface CartAction {
-  type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
-  payload: {
-    variantId?: string;
-    quantity?: number;
-    itemId?: string;
-    newQuantity?: num// 檔案路徑: supabase/functions/recalculate-cart/index.ts
-/**
- * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
- * 版本：48.6
- * SOP 條款對應：
- * - [1.1] 操作同理心
- * - [4.0] 系統化診斷與迴歸性錯誤處理協議
- * AI 註記：
- * - 此版本為關鍵修正，解決了庫存檢查只校驗增量而非總量的致命邏輯缺陷。
- * 更新日誌 (Changelog)：
- * - v48.6 (2025-09-08)：[CRITICAL BUG FIX] 重構 `_processStockReservations` 函式，確保庫存檢查是基於使用者購物車中該商品的「最終總量」，而非「本次操作的增量」，從根源上杜絕超賣商品被加入購物車的問題。
- * - v48.5 (2025-09-07)：[BUG FIX] 修正了對不存在的 RPC 的呼叫。
- * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 的庫存校驗邏輯。
- */
-
-import { createClient } from '../_shared/deps.ts';
-import { corsHeaders } from '../_shared/cors.ts';
-import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
-
-const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.6';
+const FUNCTION_VERSION = 'v48.7';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -72,10 +42,8 @@ async function _processStockReservations(
     let targetVariantId: string | undefined;
     let finalQuantity = 0;
 
-    // [BUG FIX v48.6] 核心修正：正確計算最終總量
     if (type === 'ADD_ITEM') {
         targetVariantId = payload.variantId;
-        // 當從商品頁加入購物車時，payload.quantity 代表的是該商品的最終目標數量，而非增量。
         finalQuantity = payload.quantity ?? 0;
     } else if (type === 'UPDATE_ITEM_QUANTITY') {
         if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
@@ -85,7 +53,7 @@ async function _processStockReservations(
         finalQuantity = payload.newQuantity ?? 0;
     }
 
-    if (!targetVariantId || finalQuantity < 0) continue; // 小於等於0的情況由 processCartActions 處理刪除
+    if (!targetVariantId || finalQuantity < 0) continue;
 
     const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
     if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
