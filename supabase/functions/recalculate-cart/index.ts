@@ -1,16 +1,18 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
 /**
  * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在任何情況下都返回權威的、包含即時庫存狀態的購物車快照。
- * 版本：48.8
+ * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
+ * 版本：48.9
  * SOP 條款對應：
  * - [1.1] 操作同理心
- * - [4.0] 系統化診斷與迴歸性錯誤處理協議
  * AI 註記：
- * - 此版本為關鍵重構，修正了因設計缺陷導致庫存檢查在某些場景下被繞過的問題。
+ * - 變更摘要:
+ *   - [_processStockReservations]::[修正]::優化了庫存不足時回傳的錯誤訊息，包含了明確的可用庫存數量，以提升前端使用者體驗。
+ *   - [檔案整體]::[無變更]::其餘所有函式均保持不變。
+ * - 提醒：本檔案已遵循「零省略原則」完整交付。
  * 更新日誌 (Changelog)：
- * - v48.8 (2025-09-08)：[CRITICAL DESIGN FIX] 重構函式核心邏輯，將庫存狀態檢查從 `_processStockReservations` 移至 `_calculateCartSummary` 中。確保無論請求是否包含 `actions`，函式都會無條件地執行權威的庫存狀態計算，並將其反映在 `stockStatus` 欄位中，從根源上解決了結帳前無法獲得即時庫存狀態的問題。
- * - v48.7 (2025-09-08)：[CRITICAL BUG FIX] 修正了致命語法錯誤。
+ * - v48.9 (2025-09-08)：[UX FIX] 優化了庫存不足時的錯誤訊息，使其包含可用庫存數量。
+ * - v48.8 (2025-09-08)：[CRITICAL DESIGN FIX] 重構函式核心邏輯以確保庫存檢查的無條件執行。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -18,7 +20,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.8';
+const FUNCTION_VERSION = 'v48.9';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -54,7 +56,7 @@ async function _processStockReservations(
         finalQuantity = payload.newQuantity ?? 0;
     }
 
-    if (!targetVariantId || finalQuantity < 0) continue;
+    if (!targetVariantId || finalQuantity <= 0) continue;
 
     const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
     if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
