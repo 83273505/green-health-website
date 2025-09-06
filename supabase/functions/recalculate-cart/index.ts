@@ -1,14 +1,15 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
 /**
  * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在回傳結果中增加即時的庫存狀態。
- * 版本：48.3
+ * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
+ * 版本：48.4
  * SOP 條款對應：
  * - [1.1] 操作同理心
- * - [2.2.2] 非破壞性整合
+ * - [4.0] 系統化診斷與迴歸性錯誤處理協議
  * AI 註記：
- * - 此版本為 `TASK-INV-004` 的一部分，旨在增強 API 回傳契約以支持前端 UI 顯示。
+ * - 此版本為關鍵修正，解決了庫存檢查只校驗增量而非總量的致命邏輯缺陷。
  * 更新日誌 (Changelog)：
+ * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 函式，確保庫存檢查是基於使用者購物車中該商品的「最終總量」，而非「本次操作的增量」，從根源上杜絕超賣商品被加入購物車的問題。
  * - v48.3 (2025-09-07)：[TASK-INV-004] 在 `_calculateCartSummary` 的回傳項目中，為每個購物車項目新增 `stockStatus` 欄位 ('AVAILABLE' 或 'INSUFFICIENT')。
  * - v48.2 (2025-09-06)：[BUG FIX] 修正對 LoggingService 的引用與實例化方式。
  */
@@ -18,7 +19,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.3';
+const FUNCTION_VERSION = 'v48.4';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -34,46 +35,58 @@ async function _processStockReservations(
   { supabaseAdmin, cartId, actions, logger, correlationId }:
   { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; actions: CartAction[]; logger: LoggingService; correlationId: string; }
 ) {
-    logger.info(`啟動庫存預留處理流程`, correlationId, { cartId, actionCount: actions.length });
+  logger.info(`啟動庫存預留處理流程`, correlationId, { cartId, actionCount: actions.length });
 
-    for (const action of actions) {
-        const { type, payload } = action;
-        let targetVariantId: string | undefined;
-        let quantityChange = 0;
+  for (const action of actions) {
+    const { type, payload } = action;
+    if (type === 'REMOVE_ITEM') continue;
 
-        if (type === 'ADD_ITEM') {
-            targetVariantId = payload.variantId;
-            quantityChange = payload.quantity ?? 0;
-        } else if (type === 'UPDATE_ITEM_QUANTITY') {
-            if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
-            const { data: item, error } = await supabaseAdmin.from('cart_items').select('product_variant_id, quantity').eq('id', payload.itemId).single();
-            if (error || !item) throw new Error(`找不到購物車項目: ${payload.itemId}`);
-            targetVariantId = item.product_variant_id;
-            quantityChange = (payload.newQuantity ?? 0) - item.quantity;
-        }
+    let targetVariantId: string | undefined;
+    let finalQuantity = 0;
 
-        if (quantityChange > 0) {
-            if (!targetVariantId) continue;
-            const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
-            if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
-
-            const { data: reservations, error: reservationError } = await supabaseAdmin.from('cart_stock_reservations').select('reserved_quantity').eq('product_variant_id', targetVariantId).eq('status', 'active');
-            if (reservationError) throw new Error(`查詢庫存預留失敗: ${reservationError.message}`);
-
-            const totalReserved = reservations.reduce((sum, r) => sum + r.reserved_quantity, 0);
-            const availableStock = variant.stock - totalReserved;
-
-            logger.info(`[預留檢查]`, correlationId, { variant: variant.name, physicalStock: variant.stock, totalReserved, availableStock, requestedChange: quantityChange });
-
-            if (availableStock < quantityChange) {
-                throw {
-                    name: 'InsufficientStockError',
-                    message: `商品 "${variant.name}" 庫存不足。`,
-                    details: { available: availableStock, requested: quantityChange }
-                };
-            }
-        }
+    if (type === 'ADD_ITEM') {
+        targetVariantId = payload.variantId;
+        if (!targetVariantId) continue;
+        const { data: existingItem } = await supabaseAdmin.from('cart_items').select('quantity').eq('cart_id', cartId).eq('product_variant_id', targetVariantId).single();
+        finalQuantity = (existingItem?.quantity || 0) + (payload.quantity ?? 0);
+    } else if (type === 'UPDATE_ITEM_QUANTITY') {
+        if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
+        const { data: item, error } = await supabaseAdmin.from('cart_items').select('product_variant_id').eq('id', payload.itemId).single();
+        if (error || !item) throw new Error(`找不到購物車項目: ${payload.itemId}`);
+        targetVariantId = item.product_variant_id;
+        finalQuantity = payload.newQuantity ?? 0;
     }
+
+    if (!targetVariantId || finalQuantity <= 0) continue;
+
+    const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
+    if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
+
+    const { data: otherReservations, error: rpcError } = await supabaseAdmin.rpc('get_reservations_for_variant', {
+        p_variant_id: targetVariantId,
+        p_exclude_cart_id: cartId
+    });
+    if (rpcError) throw new Error(`查詢其他預留失敗: ${rpcError.message}`);
+
+    const totalOtherReserved = otherReservations?.[0]?.total_reserved_quantity || 0;
+    const availableStock = variant.stock - totalOtherReserved;
+
+    logger.info(`[總量預留檢查]`, correlationId, {
+        variant: variant.name,
+        physicalStock: variant.stock,
+        totalOtherReserved,
+        availableStock,
+        requestedFinalQuantity: finalQuantity
+    });
+
+    if (availableStock < finalQuantity) {
+        throw {
+            name: 'InsufficientStockError',
+            message: `商品 "${variant.name}" 庫存不足，剩餘 ${availableStock} 件可購買。`,
+            details: { available: availableStock, requested: finalQuantity }
+        };
+    }
+  }
 }
 
 async function _processCartActions(
@@ -92,7 +105,7 @@ async function _processCartActions(
                     if (vError || !variant) throw new Error(`找不到商品規格 ${variantId}: ${vError?.message || '不存在'}`);
                     const price_snapshot = variant.sale_price ?? variant.price;
 
-                    const { data: upsertedItem, error: upsertError } = await supabaseAdmin.from('cart_items').upsert({ cart_id: cartId, product_variant_id: variantId, quantity: quantity, price_snapshot: price_snapshot }, { onConflict: 'cart_id,product_variant_id' }).select('id').single();
+                    const { data: upsertedItem, error: upsertError } = await supabaseAdmin.from('cart_items').upsert({ cart_id: cartId, product_variant_id: variantId, quantity: quantity }, { onConflict: 'cart_id,product_variant_id', ignoreDuplicates: false }).select('id').single();
                     if (upsertError) throw upsertError;
                     
                     await supabaseAdmin.from('cart_stock_reservations').upsert({ cart_item_id: upsertedItem!.id, product_variant_id: variantId, reserved_quantity: quantity, status: 'active', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: 'cart_item_id' });
@@ -161,19 +174,15 @@ async function _calculateCartSummary(
     return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0, couponCode: null }, appliedCoupon: null, shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } };
   }
 
-  // [TASK-INV-004] 增強回傳項目，增加 stockStatus
-  const { data: allReservations } = await supabaseAdmin.from('cart_stock_reservations').select('product_variant_id, reserved_quantity').eq('status', 'active');
-  const reservationMap = (allReservations || []).reduce((acc, res) => {
-    acc[res.product_variant_id] = (acc[res.product_variant_id] || 0) + res.reserved_quantity;
-    return acc;
-  }, {});
-  
+  const { data: allReservations } = await supabaseAdmin.rpc('get_reservations_for_variant_batch', { p_cart_id: cartId });
+  const reservationMap = new Map(allReservations.map(r => [r.variant_id, r.total_reserved_quantity]));
+
   const enhancedItems = cartItems.map(item => {
     const variant = item.product_variants;
     if (!variant) return { ...item, stockStatus: 'UNAVAILABLE' };
     
-    const totalReserved = reservationMap[item.product_variant_id] || 0;
-    const availableStock = variant.stock - totalReserved;
+    const totalOtherReserved = reservationMap.get(item.product_variant_id) || 0;
+    const availableStock = variant.stock - totalOtherReserved;
     
     return {
       ...item,
@@ -276,12 +285,11 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         } catch (err) {
             if (err.name === 'InsufficientStockError') {
                  logger.warn(`[庫存預留失敗] ${err.message}`, correlationId, { details: err.details });
-                 // 即使預留失敗，也回傳一次最新的購物車狀態，讓前端能同步
                  const cartSnapshotOnFailure = await _calculateCartSummary({ req, supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId });
                  return new Response(JSON.stringify({
                      success: false,
                      error: { message: err.message, code: 'INSUFFICIENT_STOCK', correlationId: correlationId },
-                     data: cartSnapshotOnFailure // 附帶最新的購物車狀態
+                     data: cartSnapshotOnFailure
                  }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
             throw err;
