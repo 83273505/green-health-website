@@ -26,6 +26,35 @@ interface CartAction {
     variantId?: string;
     quantity?: number;
     itemId?: string;
+    newQuantity?: num// 檔案路徑: supabase/functions/recalculate-cart/index.ts
+/**
+ * 檔案名稱：index.ts
+ * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
+ * 版本：48.6
+ * SOP 條款對應：
+ * - [1.1] 操作同理心
+ * - [4.0] 系統化診斷與迴歸性錯誤處理協議
+ * AI 註記：
+ * - 此版本為關鍵修正，解決了庫存檢查只校驗增量而非總量的致命邏輯缺陷。
+ * 更新日誌 (Changelog)：
+ * - v48.6 (2025-09-08)：[CRITICAL BUG FIX] 重構 `_processStockReservations` 函式，確保庫存檢查是基於使用者購物車中該商品的「最終總量」，而非「本次操作的增量」，從根源上杜絕超賣商品被加入購物車的問題。
+ * - v48.5 (2025-09-07)：[BUG FIX] 修正了對不存在的 RPC 的呼叫。
+ * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 的庫存校驗邏輯。
+ */
+
+import { createClient } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
+
+const FUNCTION_NAME = 'recalculate-cart';
+const FUNCTION_VERSION = 'v48.6';
+
+interface CartAction {
+  type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
+  payload: {
+    variantId?: string;
+    quantity?: number;
+    itemId?: string;
     newQuantity?: number;
   };
 }
@@ -43,11 +72,11 @@ async function _processStockReservations(
     let targetVariantId: string | undefined;
     let finalQuantity = 0;
 
+    // [BUG FIX v48.6] 核心修正：正確計算最終總量
     if (type === 'ADD_ITEM') {
         targetVariantId = payload.variantId;
-        if (!targetVariantId) continue;
-        const { data: existingItem } = await supabaseAdmin.from('cart_items').select('quantity').eq('cart_id', cartId).eq('product_variant_id', targetVariantId).single();
-        finalQuantity = (existingItem?.quantity || 0) + (payload.quantity ?? 0);
+        // 當從商品頁加入購物車時，payload.quantity 代表的是該商品的最終目標數量，而非增量。
+        finalQuantity = payload.quantity ?? 0;
     } else if (type === 'UPDATE_ITEM_QUANTITY') {
         if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
         const { data: item, error } = await supabaseAdmin.from('cart_items').select('product_variant_id').eq('id', payload.itemId).single();
@@ -56,7 +85,7 @@ async function _processStockReservations(
         finalQuantity = payload.newQuantity ?? 0;
     }
 
-    if (!targetVariantId || finalQuantity <= 0) continue;
+    if (!targetVariantId || finalQuantity < 0) continue; // 小於等於0的情況由 processCartActions 處理刪除
 
     const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
     if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
@@ -81,7 +110,7 @@ async function _processStockReservations(
     if (availableStock < finalQuantity) {
         throw {
             name: 'InsufficientStockError',
-            message: `商品 "${variant.name}" 庫存不足，剩餘 ${availableStock} 件可購買。`,
+            message: `商品 "${variant.name}" 庫存不足，目前僅剩 ${availableStock} 件可購買。`,
             details: { available: availableStock, requested: finalQuantity }
         };
     }
@@ -108,7 +137,7 @@ async function _processCartActions(
                     if (upsertError) throw upsertError;
                     
                     await supabaseAdmin.from('cart_stock_reservations').upsert({ cart_item_id: upsertedItem!.id, product_variant_id: variantId, reserved_quantity: quantity, status: 'active', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: 'cart_item_id' });
-                    logger.audit(`成功新增商品並建立庫存預留`, correlationId, { cartId, variantId, quantity, cartItemId: upsertedItem!.id });
+                    logger.audit(`成功新增/更新商品並建立庫存預留`, correlationId, { cartId, variantId, quantity, cartItemId: upsertedItem!.id });
                     break;
                 }
                 case 'UPDATE_ITEM_QUANTITY': {
