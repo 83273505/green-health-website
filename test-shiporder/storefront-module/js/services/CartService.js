@@ -2,22 +2,16 @@
 /**
  * 檔案名稱：CartService.js
  * 檔案職責：採用單例模式 (Singleton Pattern) 的購物車核心服務，處理所有購物車狀態管理與後端互動。
- * 版本：43.0
+ * 版本：44.0
  * SOP 條款對應：
  * - [1.1] 操作同理心
- * - [2.1.4.1] 內容規範與來源鐵律 (🔴L1)
- * - [2.1.4.3] 絕對路徑錨定原則 (🔴L1)
- * - [2.3.3] 錯誤處理策略 (前端消費端)
- * 依賴清單 (Dependencies)：
- * - 核心服務: ../core/supabaseClient.js
- * - 共享工具: ../core/utils.js
  * AI 註記：
- * - 此版本整合了後端庫存系統的錯誤處理，是 TASK-INV-002 的核心交付物之一。
+ * - 此版本為 `TASK-INV-004` 的一部分，旨在增強前端服務以處理和儲存後端提供的即時庫存狀態。
  * 更新日誌 (Changelog)：
- * - v43.0 (2025-09-06)：[TASK-INV-002] 庫存錯誤處理整合
- *   - [🔴L1] `_recalculateCart` 的 `catch` 區塊已重構，能解析後端回傳的標準化錯誤。
- *   - [🔴L1] 新增對 `INSUFFICIENT_STOCK` 錯誤碼的專門處理，會向使用者顯示清晰的庫存不足訊息。
- * - v42.3 (2025-08-25)：新增 `addItem` 統一動作介面。
+ * - v44.0 (2025-09-07)：[TASK-INV-004] 庫存狀態整合
+ *   - `_updateStateFromSnapshot` 函式現在能夠處理並儲存每個購物車項目的 `stockStatus`。
+ *   - `_recalculateCart` 在處理 `INSUFFICIENT_STOCK` 錯誤時，能利用附帶的 `data` 更新 UI，顯示最新的庫存狀態。
+ * - v43.0 (2025-09-06)：[TASK-INV-002] 整合後端庫存錯誤處理。
  */
 
 import { supabase } from '../core/supabaseClient.js';
@@ -109,23 +103,19 @@ async function _recalculateCart(payload) {
         const { data: response, error } = await invokeWithTimeout('recalculate-cart', { body: { cartId: _state.cartId, ...payload } });
         if (error) throw error;
         
-        // [TASK-INV-002] 遵循 SOP [2.3.3] 錯誤處理策略，解析後端回傳
         if (response.success === false) {
             const backendError = response.error;
-            // 專門處理庫存不足的情況
             if (backendError.code === 'INSUFFICIENT_STOCK') {
                 console.warn(`庫存不足: ${backendError.message}`);
-                showNotification(backendError.message, 'warning'); // 使用 warning 樣式
-                // 後端可能已自動修正購物車，直接使用回傳的快照更新UI
+                showNotification(backendError.message, 'warning');
+                // [TASK-INV-004] 利用後端附帶的最新狀態更新UI
                 if (response.data) {
                     _updateStateFromSnapshot(response.data);
                 }
             } else {
-                // 其他後端定義的業務錯誤
                 throw new Error(backendError.message || '後端回傳未知的業務錯誤。');
             }
         } else {
-            // 成功路徑
             if (payload.shippingMethodId !== undefined) { 
                 _state.selectedShippingMethodId = payload.shippingMethodId; 
             }
@@ -134,10 +124,8 @@ async function _recalculateCart(payload) {
 
     } catch (error) {
         console.error('更新購物車失敗:', error);
-        // 保持現有的通用錯誤處理，但優先處理已解析的後端錯誤
         const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : (error.message || '購物車更新失敗，請重試。');
         showNotification(userMessage, 'error');
-        // 為了讓呼叫者知道失敗，重新拋出錯誤
         throw error;
     } finally {
         _state.isLoading = false;
@@ -146,10 +134,6 @@ async function _recalculateCart(payload) {
 }
 
 export const CartService = {
-    // init, isReady, fetchShippingMethods, addItem, addToCart, updateItemQuantity,
-    // removeItem, applyCoupon, selectShippingMethod, refreshWithSnapshot,
-    // getState, subscribe, clearCartAndState, isLoading, forceReinit
-    // 這些方法的內部邏輯保持不變，因為它們都最終呼叫 _recalculateCart
     init() {
         if (_state.isReadyForRender) return Promise.resolve();
         if (_initPromise) return _initPromise;
@@ -228,11 +212,9 @@ export const CartService = {
             });
             showNotification('商品已加入購物車！', 'success');
         } catch (error) {
-            // 錯誤已在 _recalculateCart 中處理並顯示，此處無需重複操作
             console.log("addItem 捕捉到來自 _recalculateCart 的錯誤，已處理。");
         }
     },
-    /** @deprecated Will be removed in v43. Use addItem instead. */
     async addToCart(variantId, quantity) {
         console.warn('addToCart() is deprecated. Please use addItem() instead.');
         return this.addItem({ variantId, quantity });
