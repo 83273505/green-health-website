@@ -1,36 +1,16 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
 /**
  * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在操作前進行權威的庫存預留與檢查。
- * 版本：48.1
+ * 檔案職責：處理購物車的增刪改，並在回傳結果中增加即時的庫存狀態。
+ * 版本：48.3
  * SOP 條款對應：
- * - [2.1.4.1] 內容規範與來源鐵律 (🔴L1)
- * - [2.1.4.3] 絕對路徑錨定原則 (🔴L1)
- * - [2.3.3] 錯誤處理策略
- * - [2.3.2] 統一日誌策略
- * 依賴清單 (Dependencies)：
- * - 共享服務: ../_shared/services/loggingService.ts (v2.1)
- * - 共享工具: ../_shared/cors.ts
- * - 外部函式庫: supabase-js (via// 檔案路徑: supabase/functions/recalculate-cart/index.ts
-/**
- * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在操作前進行權威的庫存預留與檢查。
- * 版本：48.2
- * SOP 條款對應：
- * - [2.2.2] 非破壞性整合
  * - [1.1] 操作同理心
- * - [2.1.4.1] 內容規範與來源鐵律 (🔴L1)
- * - [2.1.4.3] 絕對路徑錨定原則 (🔴L1)
- * 依賴清單 (Dependencies)：
- * - 共享服務: ../_shared/services/loggingService.ts (v2.2)
- * - 共享工具: ../_shared/cors.ts
- * - 外部函式庫: supabase-js (via ../_shared/deps.ts)
+ * - [2.2.2] 非破壞性整合
  * AI 註記：
- * - 此版本為修正版，修正了對 `loggingService.ts` 的錯誤引用方式，使其完全遵循既有的設計模式。
+ * - 此版本為 `TASK-INV-004` 的一部分，旨在增強 API 回傳契約以支持前端 UI 顯示。
  * 更新日誌 (Changelog)：
- * - v48.2 (2025-09-06)：[BUG FIX] 修正對 LoggingService 的引用與實例化方式，解決函式啟動失敗的根本問題。
- * - v48.1 (2025-09-06)：[SOP v7.1 合規] 修正檔案標頭。
- * - v48.0 (2025-09-05)：[SOP v7.1 合規重構] 更新錯誤格式、日誌記錄。
+ * - v48.3 (2025-09-07)：[TASK-INV-004] 在 `_calculateCartSummary` 的回傳項目中，為每個購物車項目新增 `stockStatus` 欄位 ('AVAILABLE' 或 'INSUFFICIENT')。
+ * - v48.2 (2025-09-06)：[BUG FIX] 修正對 LoggingService 的引用與實例化方式。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -38,7 +18,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.2';
+const FUNCTION_VERSION = 'v48.3';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -54,47 +34,46 @@ async function _processStockReservations(
   { supabaseAdmin, cartId, actions, logger, correlationId }:
   { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; actions: CartAction[]; logger: LoggingService; correlationId: string; }
 ) {
-  logger.info(`啟動庫存預留處理流程`, correlationId, { cartId, actionCount: actions.length });
+    logger.info(`啟動庫存預留處理流程`, correlationId, { cartId, actionCount: actions.length });
 
-  for (const action of actions) {
-    const { type, payload } = action;
+    for (const action of actions) {
+        const { type, payload } = action;
+        let targetVariantId: string | undefined;
+        let quantityChange = 0;
 
-    let targetVariantId: string | undefined;
-    let quantityChange = 0;
+        if (type === 'ADD_ITEM') {
+            targetVariantId = payload.variantId;
+            quantityChange = payload.quantity ?? 0;
+        } else if (type === 'UPDATE_ITEM_QUANTITY') {
+            if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
+            const { data: item, error } = await supabaseAdmin.from('cart_items').select('product_variant_id, quantity').eq('id', payload.itemId).single();
+            if (error || !item) throw new Error(`找不到購物車項目: ${payload.itemId}`);
+            targetVariantId = item.product_variant_id;
+            quantityChange = (payload.newQuantity ?? 0) - item.quantity;
+        }
 
-    if (type === 'ADD_ITEM') {
-        targetVariantId = payload.variantId;
-        quantityChange = payload.quantity ?? 0;
-    } else if (type === 'UPDATE_ITEM_QUANTITY') {
-        if (!payload.itemId) throw new Error('UPDATE_ITEM_QUANTITY 缺少 itemId');
-        const { data: item, error } = await supabaseAdmin.from('cart_items').select('product_variant_id, quantity').eq('id', payload.itemId).single();
-        if (error || !item) throw new Error(`找不到購物車項目: ${payload.itemId}`);
-        targetVariantId = item.product_variant_id;
-        quantityChange = (payload.newQuantity ?? 0) - item.quantity;
-    }
+        if (quantityChange > 0) {
+            if (!targetVariantId) continue;
+            const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
+            if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
 
-    if (quantityChange > 0) {
-        if (!targetVariantId) continue;
-        const { data: variant, error: variantError } = await supabaseAdmin.from('product_variants').select('stock, name').eq('id', targetVariantId).single();
-        if (variantError || !variant) throw new Error(`找不到商品規格: ${targetVariantId}`);
+            const { data: reservations, error: reservationError } = await supabaseAdmin.from('cart_stock_reservations').select('reserved_quantity').eq('product_variant_id', targetVariantId).eq('status', 'active');
+            if (reservationError) throw new Error(`查詢庫存預留失敗: ${reservationError.message}`);
 
-        const { data: reservations, error: reservationError } = await supabaseAdmin.from('cart_stock_reservations').select('reserved_quantity').eq('product_variant_id', targetVariantId).eq('status', 'active');
-        if (reservationError) throw new Error(`查詢庫存預留失敗: ${reservationError.message}`);
+            const totalReserved = reservations.reduce((sum, r) => sum + r.reserved_quantity, 0);
+            const availableStock = variant.stock - totalReserved;
 
-        const totalReserved = reservations.reduce((sum, r) => sum + r.reserved_quantity, 0);
-        const availableStock = variant.stock - totalReserved;
+            logger.info(`[預留檢查]`, correlationId, { variant: variant.name, physicalStock: variant.stock, totalReserved, availableStock, requestedChange: quantityChange });
 
-        logger.info(`[預留檢查]`, correlationId, { variant: variant.name, physicalStock: variant.stock, totalReserved, availableStock, requestedChange: quantityChange });
-
-        if (availableStock < quantityChange) {
-            throw {
-                name: 'InsufficientStockError',
-                message: `商品 "${variant.name}" 庫存不足。`,
-                details: { available: availableStock, requested: quantityChange }
-            };
+            if (availableStock < quantityChange) {
+                throw {
+                    name: 'InsufficientStockError',
+                    message: `商品 "${variant.name}" 庫存不足。`,
+                    details: { available: availableStock, requested: quantityChange }
+                };
+            }
         }
     }
-  }
 }
 
 async function _processCartActions(
@@ -172,7 +151,7 @@ async function _calculateCartSummary(
 
   const supabaseUserClient = createClient(supabaseUrl, supabaseAnonKey, clientOptions);
 
-  const { data: cartItems, error: cartItemsError } = await supabaseUserClient.from('cart_items').select(`*, product_variants(name, price, sale_price, stock, products(image_url))`).eq('cart_id', cartId);
+  const { data: cartItems, error: cartItemsError } = await supabaseUserClient.from('cart_items').select(`id, quantity, product_variant_id, product_variants(name, price, sale_price, stock, products(image_url))`).eq('cart_id', cartId);
   if (cartItemsError) {
     logger.error('[RLS Check] calculateCartSummary 查詢失敗', correlationId, cartItemsError, { cartId });
     throw new Error(`無法讀取購物車項目：${cartItemsError.message}`);
@@ -182,7 +161,32 @@ async function _calculateCartSummary(
     return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0, couponCode: null }, appliedCoupon: null, shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } };
   }
 
-  const subtotal = cartItems.reduce((sum, item) => sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity), 0);
+  // [TASK-INV-004] 增強回傳項目，增加 stockStatus
+  const { data: allReservations } = await supabaseAdmin.from('cart_stock_reservations').select('product_variant_id, reserved_quantity').eq('status', 'active');
+  const reservationMap = (allReservations || []).reduce((acc, res) => {
+    acc[res.product_variant_id] = (acc[res.product_variant_id] || 0) + res.reserved_quantity;
+    return acc;
+  }, {});
+  
+  const enhancedItems = cartItems.map(item => {
+    const variant = item.product_variants;
+    if (!variant) return { ...item, stockStatus: 'UNAVAILABLE' };
+    
+    const totalReserved = reservationMap[item.product_variant_id] || 0;
+    const availableStock = variant.stock - totalReserved;
+    
+    return {
+      ...item,
+      stockStatus: item.quantity <= availableStock ? 'AVAILABLE' : 'INSUFFICIENT'
+    };
+  });
+
+  const subtotal = enhancedItems.reduce((sum, item) => {
+      if(item.stockStatus === 'AVAILABLE') {
+          return sum + Math.round((item.product_variants.sale_price ?? item.product_variants.price) * item.quantity)
+      }
+      return sum;
+  }, 0);
 
   let couponDiscount = 0;
   let appliedCoupon = null;
@@ -220,8 +224,8 @@ async function _calculateCartSummary(
   const total = subtotal - couponDiscount + shippingFee;
 
   const result = {
-    items: cartItems,
-    itemCount: cartItems.reduce((sum, item) => sum + item.quantity, 0),
+    items: enhancedItems,
+    itemCount: enhancedItems.reduce((sum, item) => item.stockStatus === 'AVAILABLE' ? sum + item.quantity : sum, 0),
     summary: { subtotal, couponDiscount, shippingFee, total: total < 0 ? 0 : total, couponCode: appliedCoupon ? couponCode : null },
     appliedCoupon,
     shippingInfo: { freeShippingThreshold, amountNeededForFreeShipping }
@@ -272,9 +276,12 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         } catch (err) {
             if (err.name === 'InsufficientStockError') {
                  logger.warn(`[庫存預留失敗] ${err.message}`, correlationId, { details: err.details });
+                 // 即使預留失敗，也回傳一次最新的購物車狀態，讓前端能同步
+                 const cartSnapshotOnFailure = await _calculateCartSummary({ req, supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId });
                  return new Response(JSON.stringify({
                      success: false,
-                     error: { message: err.message, code: 'INSUFFICIENT_STOCK', correlationId: correlationId }
+                     error: { message: err.message, code: 'INSUFFICIENT_STOCK', correlationId: correlationId },
+                     data: cartSnapshotOnFailure // 附帶最新的購物車狀態
                  }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
             throw err;
