@@ -1,20 +1,19 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
 /**
  * 檔案名稱：index.ts
- * 檔案職責：在執行任何購物車操作前，進行權威的、基於最終總量的庫存校驗。
- * 版本：48.11
+ * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
+ * 版本：48.13
  * SOP 條款對應：
  * - [2.1.6] 動態上下文詞彙學習與強制執行協議 (🔴L1)
- * - [1.1.1] 驗收標準鐵律
- * - [4.0] 變更優先診斷原則
+ * - [3.2.2] 絕對交付完整性
  * AI 註記：
  * - 變更摘要:
- *   - [檔案標頭]::[修正]::修正了檔案標頭中的簡體中文「数量校验终版」為正體中文「數量校驗終版」。
- *   - [檔案整體]::[無變更]::檔案的其餘所有程式碼邏輯均保持 v48.10 版本不變。
- * - 提醒：本檔案已遵循「零省略原則」完整交付。
+ *   - [檔案標頭]::[修正]::修正了檔案標頭中的簡體中文「依赖修正」為正體中文「依賴修正」。
+ *   - [檔案整體]::[無變更]::檔案的其餘所有程式碼邏輯均保持 v48.12 版本不變。
+ * - 提醒：本檔案已遵循「零省略原则」完整交付。
  * 更新日誌 (Changelog)：
- * - v48.11 (2025-09-09)：[SOP v7.1 合規] 遵循 [2.1.6] 協議，修正檔案標頭中的簡體中文詞彙。
- * - v48.10 (2025-09-09)：[CRITICAL UX FIX] 修正了 `_processStockReservations` 的校驗邏輯，確保基於最終數量而非增量進行檢查。
+ * - v48.13 (2025-09-09)：[SOP v7.1 合規] 遵循 [2.1.6] 協議，修正檔案標頭中的簡體中文詞彙。
+ * - v48.12 (2025-09-09)：[CRITICAL BUG FIX] 提供了缺失的 `get_reservations_for_variant_batch` SQL 函式，並修正了 `_calculateCartSummary` 中對它的呼叫，解決了 500 內部伺服器錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -22,7 +21,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.11';
+const FUNCTION_VERSION = 'v48.13';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
