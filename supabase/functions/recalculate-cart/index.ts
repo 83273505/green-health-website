@@ -2,16 +2,15 @@
 /**
  * 檔案名稱：index.ts
  * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
- * 版本：48.4
+ * 版本：48.5
  * SOP 條款對應：
- * - [1.1] 操作同理心
+ * - [3.2.6] 跨層依賴完整性原則
  * - [4.0] 系統化診斷與迴歸性錯誤處理協議
  * AI 註記：
- * - 此版本為關鍵修正，解決了庫存檢查只校驗增量而非總量的致命邏輯缺陷。
+ * - 此版本為關鍵修正，補上了缺失的資料庫函式 `get_reservations_for_variant_batch` 的依賴，並修正了 `_calculateCartSummary` 中對其的呼叫，解決了導致 500 錯誤的根本原因。
  * 更新日誌 (Changelog)：
- * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 函式，確保庫存檢查是基於使用者購物車中該商品的「最終總量」，而非「本次操作的增量」，從根源上杜絕超賣商品被加入購物車的問題。
- * - v48.3 (2025-09-07)：[TASK-INV-004] 在 `_calculateCartSummary` 的回傳項目中，為每個購物車項目新增 `stockStatus` 欄位 ('AVAILABLE' 或 'INSUFFICIENT')。
- * - v48.2 (2025-09-06)：[BUG FIX] 修正對 LoggingService 的引用與實例化方式。
+ * - v48.5 (2025-09-07)：[BUG FIX] 修正 `_calculateCartSummary` 中對一個不存在的 RPC (`get_reservations_for_variant_batch`) 的呼叫，並提供了對應的 SQL 建立腳本，解決 500 內部伺服器錯誤。
+ * - v48.4 (2025-09-07)：[BUG FIX] 重構 `_processStockReservations` 的庫存校驗邏輯。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -19,7 +18,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.4';
+const FUNCTION_VERSION = 'v48.5';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -105,7 +104,7 @@ async function _processCartActions(
                     if (vError || !variant) throw new Error(`找不到商品規格 ${variantId}: ${vError?.message || '不存在'}`);
                     const price_snapshot = variant.sale_price ?? variant.price;
 
-                    const { data: upsertedItem, error: upsertError } = await supabaseAdmin.from('cart_items').upsert({ cart_id: cartId, product_variant_id: variantId, quantity: quantity }, { onConflict: 'cart_id,product_variant_id', ignoreDuplicates: false }).select('id').single();
+                    const { data: upsertedItem, error: upsertError } = await supabaseAdmin.from('cart_items').upsert({ cart_id: cartId, product_variant_id: variantId, quantity: quantity, price_snapshot: price_snapshot }, { onConflict: 'cart_id,product_variant_id' }).select('id').single();
                     if (upsertError) throw upsertError;
                     
                     await supabaseAdmin.from('cart_stock_reservations').upsert({ cart_item_id: upsertedItem!.id, product_variant_id: variantId, reserved_quantity: quantity, status: 'active', expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }, { onConflict: 'cart_item_id' });
@@ -174,8 +173,10 @@ async function _calculateCartSummary(
     return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0, couponCode: null }, appliedCoupon: null, shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } };
   }
 
-  const { data: allReservations } = await supabaseAdmin.rpc('get_reservations_for_variant_batch', { p_cart_id: cartId });
-  const reservationMap = new Map(allReservations.map(r => [r.variant_id, r.total_reserved_quantity]));
+  const { data: allReservations, error: rpcError } = await supabaseAdmin.rpc('get_reservations_for_variant_batch', { p_cart_id: cartId });
+  if(rpcError) throw new Error(`查詢批次預留失敗: ${rpcError.message}`);
+
+  const reservationMap = new Map((allReservations || []).map(r => [r.variant_id, r.total_reserved_quantity]));
 
   const enhancedItems = cartItems.map(item => {
     const variant = item.product_variants;
