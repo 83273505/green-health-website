@@ -1,15 +1,16 @@
 // 檔案路徑: supabase/functions/recalculate-cart/index.ts
 /**
  * 檔案名稱：index.ts
- * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
- * 版本：48.7
+ * 檔案職責：處理購物車的增刪改，並在任何情況下都返回權威的、包含即時庫存狀態的購物車快照。
+ * 版本：48.8
  * SOP 條款對應：
- * - [0.4] 零信任輸出驗證原則 (🔴L1)
+ * - [1.1] 操作同理心
+ * - [4.0] 系統化診斷與迴歸性錯誤處理協議
  * AI 註記：
- * - 此版本為緊急修正，修復了因複製貼上錯誤導致的致命語法問題 (SyntaxError)。
+ * - 此版本為關鍵重構，修正了因設計缺陷導致庫存檢查在某些場景下被繞過的問題。
  * 更新日誌 (Changelog)：
- * - v48.7 (2025-09-08)：[CRITICAL BUG FIX] 修正了因檔案標頭被錯誤地插入到 import 語句中間而導致的致命語法錯誤，解決了所有函式無法部署的問題。
- * - v48.6 (2025-09-08)：[CRITICAL BUG FIX] 重構 `_processStockReservations` 函式以正確校驗庫存總量。
+ * - v48.8 (2025-09-08)：[CRITICAL DESIGN FIX] 重構函式核心邏輯，將庫存狀態檢查從 `_processStockReservations` 移至 `_calculateCartSummary` 中。確保無論請求是否包含 `actions`，函式都會無條件地執行權威的庫存狀態計算，並將其反映在 `stockStatus` 欄位中，從根源上解決了結帳前無法獲得即時庫存狀態的問題。
+ * - v48.7 (2025-09-08)：[CRITICAL BUG FIX] 修正了致命語法錯誤。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -17,7 +18,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.7';
+const FUNCTION_VERSION = 'v48.8';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -167,7 +168,7 @@ async function _calculateCartSummary(
   }
 
   if (!cartItems || cartItems.length === 0) {
-    return { items: [], itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0, couponCode: null }, appliedCoupon: null, shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } };
+    return { items: [], hasInsufficientItems: false, itemCount: 0, summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0, couponCode: null }, appliedCoupon: null, shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 } };
   }
 
   const { data: allReservations, error: rpcError } = await supabaseAdmin.rpc('get_reservations_for_variant_batch', { p_cart_id: cartId });
@@ -187,6 +188,8 @@ async function _calculateCartSummary(
       stockStatus: item.quantity <= availableStock ? 'AVAILABLE' : 'INSUFFICIENT'
     };
   });
+  
+  const hasInsufficientItems = enhancedItems.some(item => item.stockStatus === 'INSUFFICIENT');
 
   const subtotal = enhancedItems.reduce((sum, item) => {
       if(item.stockStatus === 'AVAILABLE') {
@@ -232,13 +235,14 @@ async function _calculateCartSummary(
 
   const result = {
     items: enhancedItems,
+    hasInsufficientItems: hasInsufficientItems,
     itemCount: enhancedItems.reduce((sum, item) => item.stockStatus === 'AVAILABLE' ? sum + item.quantity : sum, 0),
     summary: { subtotal, couponDiscount, shippingFee, total: total < 0 ? 0 : total, couponCode: appliedCoupon ? couponCode : null },
     appliedCoupon,
     shippingInfo: { freeShippingThreshold, amountNeededForFreeShipping }
   };
   
-  logger.info('購物車摘要計算完成', correlationId, { cartId, total: result.summary.total, itemCount: result.itemCount });
+  logger.info('購物車摘要計算完成', correlationId, { cartId, total: result.summary.total, itemCount: result.itemCount, hasInsufficientItems });
   return result;
 }
 
@@ -295,6 +299,15 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     }
     
     const cartSnapshot = await _calculateCartSummary({ req, supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId });
+
+    if ((!actions || actions.length === 0) && cartSnapshot.hasInsufficientItems) {
+        logger.warn('結帳前預計算發現庫存不足', correlationId, { cartId });
+        return new Response(JSON.stringify({
+            success: false,
+            error: { message: '您的購物車中部分商品庫存已不足，請返回購物車調整。', code: 'INSUFFICIENT_STOCK_PRECHECK', correlationId: correlationId },
+            data: cartSnapshot
+        }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     return new Response(JSON.stringify({ success: true, data: cartSnapshot }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
