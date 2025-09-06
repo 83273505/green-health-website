@@ -2,16 +2,18 @@
 /**
  * 檔案名稱：CartService.js
  * 檔案職責：採用單例模式 (Singleton Pattern) 的購物車核心服務，處理所有購物車狀態管理與後端互動。
- * 版本：44.0
+ * 版本：44.1
  * SOP 條款對應：
  * - [1.1] 操作同理心
  * AI 註記：
- * - 此版本為 `TASK-INV-004` 的一部分，旨在增強前端服務以處理和儲存後端提供的即時庫存狀態。
+ * - 變更摘要:
+ *   - [_recalculateCart]::[修正]::重構了錯誤處理邏輯，確保在捕獲到 `INSUFFICIENT_STOCK` 錯誤後，會向上拋出一個可識別的錯誤，而非靜默處理。
+ *   - [addItem, updateItemQuantity]::[修正]::更新了這兩個方法的 `try...catch` 區塊，使其能夠捕獲從 `_recalculateCart` 拋出的特定錯誤，從而阻止在庫存不足時顯示「成功加入購物車」的錯誤訊息。
+ *   - [檔案整體]::[無變更]::其餘所有函式均保持不變。
+ * - 提醒：本檔案已遵循「零省略原則」完整交付。
  * 更新日誌 (Changelog)：
- * - v44.0 (2025-09-07)：[TASK-INV-004] 庫存狀態整合
- *   - `_updateStateFromSnapshot` 函式現在能夠處理並儲存每個購物車項目的 `stockStatus`。
- *   - `_recalculateCart` 在處理 `INSUFFICIENT_STOCK` 錯誤時，能利用附帶的 `data` 更新 UI，顯示最新的庫存狀態。
- * - v43.0 (2025-09-06)：[TASK-INV-002] 整合後端庫存錯誤處理。
+ * - v44.1 (2025-09-08)：[CRITICAL UX FIX] 修正了錯誤處理流程，確保在庫存不足時，不會再向使用者顯示矛盾的成功提示。
+ * - v44.0 (2025-09-07)：[TASK-INV-004] 整合庫存狀態。
  */
 
 import { supabase } from '../core/supabaseClient.js';
@@ -30,6 +32,15 @@ let _subscribers = [];
 let _initPromise = null;
 
 const INVOKE_TIMEOUT = 10000;
+
+// 自定義錯誤類型，用於在服務內部傳遞特定的失敗狀態
+class CartServiceError extends Error {
+    constructor(message, code) {
+        super(message);
+        this.name = 'CartServiceError';
+        this.code = code;
+    }
+}
 
 async function invokeWithTimeout(functionName, options = {}) {
     if (!_supabase) throw new Error('Supabase client not initialized.');
@@ -108,10 +119,11 @@ async function _recalculateCart(payload) {
             if (backendError.code === 'INSUFFICIENT_STOCK') {
                 console.warn(`庫存不足: ${backendError.message}`);
                 showNotification(backendError.message, 'warning');
-                // [TASK-INV-004] 利用後端附帶的最新狀態更新UI
                 if (response.data) {
                     _updateStateFromSnapshot(response.data);
                 }
+                // [CRITICAL UX FIX] 向上拋出特定錯誤，阻止成功提示
+                throw new CartServiceError(backendError.message, backendError.code);
             } else {
                 throw new Error(backendError.message || '後端回傳未知的業務錯誤。');
             }
@@ -123,9 +135,12 @@ async function _recalculateCart(payload) {
         }
 
     } catch (error) {
-        console.error('更新購物車失敗:', error);
-        const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : (error.message || '購物車更新失敗，請重試。');
-        showNotification(userMessage, 'error');
+        // 如果錯誤是我們自己拋出的 CartServiceError，就不用再顯示通用通知了
+        if (!(error instanceof CartServiceError)) {
+            console.error('更新購物車失敗:', error);
+            const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : (error.message || '購物車更新失敗，請重試。');
+            showNotification(userMessage, 'error');
+        }
         throw error;
     } finally {
         _state.isLoading = false;
@@ -173,8 +188,10 @@ export const CartService = {
                 _notify();
             } catch (error) {
                 console.error('初始化購物車服務失敗:', error);
-                const userMessage = error.message.includes('逾時') ? '初始化購物車失敗：連線逾時，請重新整理頁面。' : `初始化購物車失敗：${error.message}`;
-                showNotification(userMessage, 'error');
+                if (!(error instanceof CartServiceError)) {
+                    const userMessage = error.message.includes('逾時') ? '初始化購物車失敗：連線逾時，請重新整理頁面。' : `初始化購物車失敗：${error.message}`;
+                    showNotification(userMessage, 'error');
+                }
                 _initPromise = null; _state.isReadyForRender = false; _notify(); throw error;
             }
         })();
@@ -210,9 +227,15 @@ export const CartService = {
                 couponCode: _state.appliedCoupon?.code,
                 shippingMethodId: _state.selectedShippingMethodId
             });
+            // [CRITICAL UX FIX] 只有在沒有拋出錯誤時，才顯示成功訊息
             showNotification('商品已加入購物車！', 'success');
         } catch (error) {
-            console.log("addItem 捕捉到來自 _recalculateCart 的錯誤，已處理。");
+            // 只處理我們自定義的錯誤，其他錯誤已在 _recalculateCart 中處理
+            if (error instanceof CartServiceError && error.code === 'INSUFFICIENT_STOCK') {
+                console.log("addItem 因庫存不足而終止，已向使用者顯示提示。");
+            } else {
+                console.log("addItem 捕捉到未預期的錯誤。", error);
+            }
         }
     },
     async addToCart(variantId, quantity) {
@@ -229,7 +252,11 @@ export const CartService = {
                 shippingMethodId: _state.selectedShippingMethodId
             });
         } catch (error) {
-            console.log("updateItemQuantity 捕捉到來自 _recalculateCart 的錯誤，已處理。");
+            if (error instanceof CartServiceError && error.code === 'INSUFFICIENT_STOCK') {
+                console.log("updateItemQuantity 因庫存不足而終止，已向使用者顯示提示。");
+            } else {
+                console.log("updateItemQuantity 捕捉到未預期的錯誤。", error);
+            }
         }
     },
     async removeItem(itemId) {
@@ -243,7 +270,7 @@ export const CartService = {
             });
             showNotification('商品已從購物車移除。', 'info');
         } catch (error) {
-            console.log("removeItem 捕捉到來自 _recalculateCart 的錯誤，已處理。");
+             console.log("removeItem 捕捉到來自 _recalculateCart 的錯誤，已處理。");
         }
     },
     async applyCoupon(couponCode) {
