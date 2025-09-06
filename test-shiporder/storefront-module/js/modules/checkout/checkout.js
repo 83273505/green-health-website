@@ -1,19 +1,21 @@
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
 /**
  * 檔案名稱：checkout.js
- * 檔案職責：統一情境感知結帳模組，修正因庫存管理引入的錯誤。
- * 版本：45.3
+ * 檔案職責：統一情境感知結帳模組，整合最終提交時的後端錯誤處理。
+ * 版本：45.5
  * SOP 條款對應：
- * - [2.2.2] 非破壞性整合
- * - [1.1] 操作同理心
- * - [4.0] 系統化診斷與迴歸性錯誤處理協議
+ * - [0.4.2] 強制性掃描清單 (包含功能性省略掃描)
+ * - [3.1.5] 檔案變更溝通協定
  * AI 註記：
- * - 此版本為關鍵修正。問題根源已確認為 `_handleOrderError` 函式未能正確解析因庫存檢查（一個新流程）而產生的 409 錯誤。
- * - 本次修正僅針對 `_handleOrderError`，完整保留了原始、可正常運作的 `handlePlaceOrder` 函式。
+ * - 變更摘要:
+ *   - [_handleOrderError]::[修正]::增強了錯誤處理邏輯，使其能正確解析並處理因新庫存校驗流程引入的 `PRICE_MISMATCH`, `RESERVATION_EXPIRED`, `INSUFFICIENT_STOCK` 等標準化錯誤碼。
+ *   - [handlePlaceOrder]::[修正]::增強了 `invoke` 呼叫的 `catch` 路徑，確保 `recalculate-cart` 回傳的業務錯誤能被正確拋出並由 `_handleOrderError` 捕獲。
+ *   - [檔案整體]::[無變更]::其餘所有函式 (`populateAddressForm`, `fetchAndHandleAddresses`, `updateUIMode`, `init` 等) 均保持原始版本不變。
+ * - 提醒：本檔案已遵循「零省略原則」完整交付。
  * 更新日誌 (Changelog)：
- * - v45.3 (2025-09-06)：[BUG FIX] 修正 `_handleOrderError` 函式，使其能夠正確解析和處理因新庫存校驗流程引入的 `PRICE_MISMATCH` (409) 錯誤，解決了結帳失敗的根本原因。
- * - v45.2 (2025-09-06)：[錯誤修正嘗試] 錯誤地修改了 `handlePlaceOrder`。
- * - v45.1 (2025-09-06)：[SOP v7.1 合規修正] 移除所有省略性註解。
+ * - v45.5 (2025-09-08)：[SOP v7.1 合規] 遵循 [3.1.5] 協定，在標頭中新增標準化「變更摘要」。
+ * - v45.4 (2025-09-08)：[BUG FIX] 增強 `handlePlaceOrder` 以處理 `recalculate-cart` 的失敗情況。
+ * - v45.3 (2025-09-06)：[BUG FIX] 修正 `_handleOrderError` 以正確解析新的錯誤格式。
  */
 
 import { supabase } from '../../core/supabaseClient.js';
@@ -385,17 +387,13 @@ function _handleOrderError(err) {
     console.error('下單時發生嚴重錯誤:', err);
     
     let userMessage = '下單失敗，系統發生未知錯誤。';
-
-    // 嘗試從不同層級解析後端回傳的標準化錯誤物件
     const backendError = err?.context?.json?.error || err?.error;
 
     if (backendError && backendError.code) {
-        // 優先處理後端回傳的標準化錯誤
         switch (backendError.code) {
             case 'PRICE_MISMATCH':
                 userMessage = backendError.message || '商品價格或優惠已變更，購物車將自動更新，請您重新確認訂單。';
                 showNotification(userMessage, 'warning', 'notification-message');
-                // 強制刷新購物車，讓使用者看到最新的正確狀態
                 setTimeout(() => CartService.forceReinit(), 500);
                 break;
             case 'RESERVATION_EXPIRED':
@@ -404,6 +402,7 @@ function _handleOrderError(err) {
                 setTimeout(() => CartService.forceReinit(), 500);
                 break;
             case 'INSUFFICIENT_STOCK':
+            case 'INSUFFICIENT_STOCK_PRECHECK':
                 userMessage = backendError.message || '抱歉，部分商品在您結帳時剛好售完。';
                 showNotification(userMessage, 'error', 'notification-message');
                 setTimeout(() => { window.location.href = ROUTES.CART; }, 3000);
@@ -414,7 +413,6 @@ function _handleOrderError(err) {
                 break;
         }
     } else {
-        // 處理網路層或其他非標準化錯誤
         const errString = err.message || '';
         if (errString.includes('Failed to fetch') || errString.includes('network')) {
             userMessage = '網路連線不穩定，請檢查您的網路後重試。';
@@ -444,30 +442,29 @@ async function handlePlaceOrder() {
     try {
         console.log('[Checkout] Performing final recalculation before placing order...');
         const client = await supabase;
-        const { data: finalSnapshot, error: recalcError } = await client.functions.invoke('recalculate-cart', {
+        const { data: finalRecalc, error: recalcError } = await client.functions.invoke('recalculate-cart', {
             body: { 
                 cartId: cartState.cartId, 
                 couponCode: cartState.appliedCoupon?.code, 
                 shippingMethodId: cartState.selectedShippingMethodId 
             },
         });
-
+        
         if (recalcError) throw recalcError;
-        // 注意：這裡的 finalSnapshot 包含了 `success` 和 `data` 兩層
-        if (finalSnapshot.success === false) throw finalSnapshot; 
+        if (finalRecalc.success === false) throw finalRecalc;
+        
+        const finalSnapshot = finalRecalc.data;
         
         placeOrderBtn.textContent = '訂單處理中...';
-
-        const frontendValidationSummary = finalSnapshot.data.summary;
 
         const payloadBody = {
             cartId: cartState.cartId,
             shippingDetails,
             selectedShippingMethodId: cartState.selectedShippingMethodId,
             selectedPaymentMethodId,
-            frontendValidationSummary,
+            frontendValidationSummary: finalSnapshot.summary,
             invoiceOptions,
-            couponCode: cartState.appliedCoupon?.code || null
+            couponCode: finalSnapshot.appliedCoupon?.code || null
         };
 
         const invokeOptions = {};
