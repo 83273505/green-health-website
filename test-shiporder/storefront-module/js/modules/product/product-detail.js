@@ -36,12 +36,10 @@ const quantityInput = document.getElementById('quantity');
 const stockStatusContainerEl = document.getElementById('stock-status-container');
 const addToCartBtn = document.getElementById('add-to-cart-btn');
 const requestNotificationBtn = document.getElementById('request-notification-btn');
-// [v34.0 新增] 數量驗證提示訊息的容器
 const quantityWarningEl = document.getElementById('quantity-warning');
 
 
 let currentProduct = null;
-// [v34.0 新增] 用於儲存當前選中規格的可用庫存
 let _currentAvailableStock = 0;
 
 async function fetchProductByHandle(handle) {
@@ -128,7 +126,7 @@ async function displayStockStatus(variantId) {
     addToCartBtn.classList.remove('hidden');
     requestNotificationBtn.classList.add('hidden');
     if (quantityInput) quantityInput.disabled = true;
-    _currentAvailableStock = 0; // 重置庫存
+    _currentAvailableStock = 0;
 
     try {
         const client = await supabase;
@@ -156,7 +154,7 @@ async function displayStockStatus(variantId) {
                 break;
             case 'LOW_STOCK':
                 statusClass = 'status-low-stock';
-                statusHtml = '庫存緊張'; // 依然不顯示數字，保持商業機密
+                statusHtml = '庫存緊張';
                 addToCartBtn.disabled = false;
                 if (quantityInput) quantityInput.disabled = false;
                 break;
@@ -173,7 +171,6 @@ async function displayStockStatus(variantId) {
         }
 
         stockStatusContainerEl.innerHTML = `<span class="${statusClass}">${statusHtml}</span>`;
-        // [v34.0] 觸發一次數量檢查，以防預設數量就超過庫存
         handleQuantityChange(); 
 
     } catch (error) {
@@ -182,9 +179,6 @@ async function displayStockStatus(variantId) {
     }
 }
 
-/**
- * [v34.0 新增] 處理數量輸入的即時驗證
- */
 function handleQuantityChange() {
     if (!quantityInput || quantityWarningEl === null) return;
 
@@ -195,9 +189,8 @@ function handleQuantityChange() {
         currentQuantity = 1;
     }
     
-    // 核心驗證邏輯
     if (_currentAvailableStock > 0 && currentQuantity > _currentAvailableStock) {
-        quantityInput.value = _currentAvailableStock; // 自動校正
+        quantityInput.value = _currentAvailableStock;
         quantityWarningEl.textContent = `此商品最多只能購買 ${_currentAvailableStock} 件。`;
         quantityWarningEl.classList.remove('hidden');
     } else {
@@ -207,7 +200,7 @@ function handleQuantityChange() {
 
 async function handleAddToCart(event) {
     event.preventDefault();
-    handleQuantityChange(); // 提交前最後再驗證一次
+    handleQuantityChange();
 
     if (!variantSelectorEl || !quantityInput) return;
     const selectedVariantId = variantSelectorEl.value;
@@ -222,7 +215,6 @@ async function handleAddToCart(event) {
 }
 
 async function handleRequestNotification() {
-    // ... 此函式邏輯與 v33.0 保持不變 ...
     if (!variantSelectorEl) return;
     const variantId = variantSelectorEl.value;
     if (!variantId) return;
@@ -280,7 +272,6 @@ export async function init() {
     if (requestNotificationBtn) {
         requestNotificationBtn.addEventListener('click', handleRequestNotification);
     }
-    // [v34.0 新增] 為數量輸入框綁定事件
     if (quantityInput) {
         quantityInput.addEventListener('input', handleQuantityChange);
     }

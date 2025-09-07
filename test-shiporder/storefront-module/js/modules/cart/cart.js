@@ -1,18 +1,22 @@
 // 檔案路徑: storefront-module/js/modules/cart/cart.js
 /**
  * 檔案名稱：cart.js
- * 檔案職責：處理獨立的、跨裝置的購物車頁面邏輯，並根據庫存狀態渲染 UI。
- * 版本：34.0
+ * 檔案職責：處理購物車頁面的 UI 渲染與使用者互動，並整合即時庫存驗證反饋。
+ * 版本：35.0 (UI 即時反饋修正版)
  * SOP 條款對應：
- * - [1.1] 操作同理心
+ * - [法案 KB-UPGRADE-20250909-04]
+ * 判例關聯 (Case References):
+ * - [CASE-20250909-005]
  * AI 註記：
- * - 此版本為 `TASK-INV-004` 的一部分，旨在將庫存狀態可視化，提升使用者體驗。
+ * - [核心除錯]: 此版本為緊急修正版，旨在修復購物車庫存驗證失效的 UI 顯示問題。
+ *   - `handleCartInteractions`: 對 `CartService.updateItemQuantity` 的呼叫，現在被 `try...catch` 
+ *     區塊包裹。當捕獲到來自核心服務的庫存不足錯誤時，它會中止操作，並觸發一個短暫的
+ *     視覺提示 (紅色閃爍邊框)，而不會再錯誤地更新 UI。
+ * - [操作指示]: 請完整覆蓋原檔案。
  * 更新日誌 (Changelog)：
- * - v34.0 (2025-09-07)：[TASK-INV-004] 庫存狀態渲染
- *   - `render` 函式已增強，能夠讀取每個購物車項目的 `stockStatus` 屬性。
- *   - 當 `stockStatus` 為 `INSUFFICIENT` 時，會顯示「庫存不足」標籤，禁用數量控制器，並在視覺上灰化該項目。
- *   - 結帳按鈕的可用性現在也會考慮所有商品是否均有足夠庫存。
- * - v33.0 (2025-08-22)：初版建立，作為統一的購物車模組。
+ * - v35.0 (2025-09-09)：[CRITICAL BUG FIX] 新增了對 `updateItemQuantity` 失敗的捕獲與處理，
+ *   修復了前端 UI 會超出實際庫存的問題。
+ * - v34.0 (2025-09-07)：新增庫存狀態渲染。
  */
 
 import { supabase } from '../../core/supabaseClient.js';
@@ -48,7 +52,6 @@ function render(state) {
             const variantName = variant?.name || '未知規格';
             const itemTotal = item.quantity * (variant?.sale_price ?? variant?.price ?? 0);
             
-            // [TASK-INV-004] 根據 stockStatus 決定 UI 狀態
             const isInsufficient = item.stockStatus === 'INSUFFICIENT';
             const itemClasses = `cart-item ${isInsufficient ? 'insufficient-stock' : ''}`;
             const controlsDisabled = isInsufficient ? 'disabled' : '';
@@ -117,9 +120,8 @@ function render(state) {
     }
 
     if (checkoutButton) {
-        // [TASK-INV-004] 結帳按鈕的可用性現在也檢查庫存狀態
         const hasInsufficientItems = items.some(item => item.stockStatus === 'INSUFFICIENT');
-        const isReadyForCheckout = state.items.length > 0 && selectedShippingMethodId && !hasInsufficientItems;
+        const isReadyForCheckout = state.items.length > 0 && !!selectedShippingMethodId && !hasInsufficientItems;
         checkoutButton.classList.toggle('disabled', !isReadyForCheckout);
         if (hasInsufficientItems) {
             checkoutButton.title = "您的購物車中部分商品庫存不足，請先調整後再結帳。";
@@ -139,12 +141,30 @@ function render(state) {
     }
 }
 
-function handleCartInteractions(event) {
+async function handleCartInteractions(event) {
     const target = event.target;
+    
     if (target.matches('.quantity-btn')) {
         const itemId = target.dataset.itemId;
         const newQuantity = parseInt(target.dataset.quantity, 10);
-        if (itemId) CartService.updateItemQuantity(itemId, newQuantity);
+        
+        if (!itemId) return;
+
+        const itemElement = target.closest('.cart-item');
+        if(itemElement) itemElement.style.opacity = '0.7';
+
+        try {
+            await CartService.updateItemQuantity(itemId, newQuantity);
+        } catch (error) {
+            console.warn(`[cart.js] 捕獲到庫存操作失敗信號:`, error);
+            if(itemElement) {
+                itemElement.classList.add('item-error-flash');
+                setTimeout(() => itemElement.classList.remove('item-error-flash'), 600);
+            }
+        } finally {
+            if(itemElement) itemElement.style.opacity = '1';
+        }
+
     } else if (target.matches('.remove-item-btn')) {
         const itemId = target.dataset.itemId;
         if (itemId && confirm('您確定要從購物車中移除這個商品嗎？')) {
@@ -166,8 +186,16 @@ function handleShippingChange(event) {
 }
 
 export async function init() {
-    const client = await supabase;
-    await CartService.init(client); 
+    const style = document.createElement('style');
+    style.textContent = `
+        .item-error-flash {
+            transition: box-shadow 0.3s ease-in-out;
+            box-shadow: 0 0 0 2px rgba(217, 83, 79, 0.7);
+        }
+    `;
+    document.head.appendChild(style);
+    
+    await CartService.init(); 
     
     CartService.subscribe(render);
     render(CartService.getState());
