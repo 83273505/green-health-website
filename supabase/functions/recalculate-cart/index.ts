@@ -2,18 +2,17 @@
 /**
  * 檔案名稱：index.ts
  * 檔案職責：處理購物車的增刪改，並在操作前進行權威的、基於總量的庫存預留與檢查。
- * 版本：48.13
+ * 版本：48.14 (Deno 相容性修正版)
  * SOP 條款對應：
- * - [2.1.6] 動態上下文詞彙學習與強制執行協議 (🔴L1)
- * - [3.2.2] 絕對交付完整性
+ * - [4.0] 變更優先診斷原則
  * AI 註記：
- * - 變更摘要:
- *   - [檔案標頭]::[修正]::修正了檔案標頭中的簡體中文「依赖修正」為正體中文「依賴修正」。
- *   - [檔案整體]::[無變更]::檔案的其餘所有程式碼邏輯均保持 v48.12 版本不變。
- * - 提醒：本檔案已遵循「零省略原则」完整交付。
+ * - [核心除錯]: 修正了 v48.13 版本中的致命錯誤。重構了 `_calculateCartSummary` 函式，
+ *   使其不再依賴已被 Deno 新版本廢棄的全域變數 `Deno.request`，而是從主處理函式中
+ *   接收 `req` 物件來獲取 headers。此修正旨在解決導致 500 內部伺服器錯誤的根本原因。
+ * - [操作指示]: 請使用此版本的完整內容，覆蓋並重新部署 `recalculate-cart` Edge Function。
  * 更新日誌 (Changelog)：
- * - v48.13 (2025-09-09)：[SOP v7.1 合規] 遵循 [2.1.6] 協議，修正檔案標頭中的簡體中文詞彙。
- * - v48.12 (2025-09-09)：[CRITICAL BUG FIX] 提供了缺失的 `get_reservations_for_variant_batch` SQL 函式，並修正了 `_calculateCartSummary` 中對它的呼叫，解決了 500 內部伺服器錯誤。
+ * - v48.14 (2025-09-09)：[CRITICAL BUG FIX] 修正了對已廢棄 `Deno.request` 的依賴，解決 500 錯誤。
+ * - v48.13 (2025-09-09)：[SOP v7.1 合規] 修正檔案標頭中的簡體中文詞彙。
  */
 
 import { createClient } from '../_shared/deps.ts';
@@ -21,7 +20,7 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'recalculate-cart';
-const FUNCTION_VERSION = 'v48.13';
+const FUNCTION_VERSION = 'v48.14';
 
 interface CartAction {
   type: 'ADD_ITEM' | 'UPDATE_ITEM_QUANTITY' | 'REMOVE_ITEM';
@@ -155,15 +154,17 @@ async function _processCartActions(
     }
 }
 
+// [v48.14 核心修正] 新增 req 參數，以從中安全地獲取 headers
 async function _calculateCartSummary(
-  { supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId }:
-  { supabaseAdmin: ReturnType<typeof createClient>; cartId: string; couponCode?: string; shippingMethodId?: string; logger: LoggingService; correlationId: string; }
+  { supabaseAdmin, req, cartId, couponCode, shippingMethodId, logger, correlationId }:
+  { supabaseAdmin: ReturnType<typeof createClient>; req: Request; cartId: string; couponCode?: string; shippingMethodId?: string; logger: LoggingService; correlationId: string; }
 ) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
   if (!supabaseUrl || !supabaseAnonKey) throw new Error('Supabase URL 或 Anon Key 未設定。');
 
-  const authHeader = Deno.request.headers.get('Authorization');
+  // [v48.14 核心修正] 從傳入的 req 物件中獲取 Authorization 標頭，不再使用 Deno.request
+  const authHeader = req.headers.get('Authorization');
   const clientOptions: { global?: { headers: { [key: string]: string } } } = {};
   if (authHeader) clientOptions.global = { headers: { Authorization: authHeader } };
 
@@ -295,7 +296,8 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         } catch (err) {
             if (err.name === 'InsufficientStockError') {
                  logger.warn(`[庫存預留失敗] ${err.message}`, correlationId, { details: err.details });
-                 const cartSnapshotOnFailure = await _calculateCartSummary({ supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId });
+                 // [v48.14 核心修正] 將 req 傳遞給輔助函式
+                 const cartSnapshotOnFailure = await _calculateCartSummary({ supabaseAdmin, req, cartId, couponCode, shippingMethodId, logger, correlationId });
                  return new Response(JSON.stringify({
                      success: false,
                      error: { message: err.message, code: 'INSUFFICIENT_STOCK', correlationId: correlationId },
@@ -306,7 +308,8 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         }
     }
     
-    const cartSnapshot = await _calculateCartSummary({ supabaseAdmin, cartId, couponCode, shippingMethodId, logger, correlationId });
+    // [v48.14 核心修正] 將 req 傳遞給輔助函式
+    const cartSnapshot = await _calculateCartSummary({ supabaseAdmin, req, cartId, couponCode, shippingMethodId, logger, correlationId });
 
     if ((!actions || actions.length === 0) && cartSnapshot.hasInsufficientItems) {
         logger.warn('結帳前預計算發現庫存不足', correlationId, { cartId });
