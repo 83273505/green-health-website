@@ -1,3 +1,6 @@
+<!-- 檔案路徑: storefront-module/product-detail.html -->
+<!-- 版本：2.0 (庫存體驗昇華版) -->
+<!-- 核心修正：新增了用於顯示庫存狀態的 HTML 結構，以匹配 product-detail.js (v33.0) 的功能需求 -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -5,11 +8,7 @@
     <title>商品詳情 - Green Health 綠健</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow" />
-
-    <!-- 【核心修正】將 JS 路徑指向新的 storefront-module -->
-    <script src="/storefront-module/js/core/config.js"></script>
     <script type="module" src="/storefront-module/js/core/app.js"></script>
-
     <style>
         :root { 
             --primary-color: #5E8C61; 
@@ -20,6 +19,7 @@
             --background-color: #f8f9fa; 
             --sale-color: #D9534F;
             --cta-color: #B12704;
+            --warning-color: #f59e0b; /* 橘色，用於低庫存 */
         }
         body { 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
@@ -43,7 +43,6 @@
             text-decoration: none; 
             font-weight: 500; 
         }
-        
         .product-layout { 
             display: grid;
             grid-template-columns: 1fr;
@@ -55,7 +54,6 @@
                 gap: 3rem;
             }
         }
-
         .product-gallery .main-image { 
             width: 100%; 
             padding-top: 100%; 
@@ -74,7 +72,6 @@
             line-height: 1.7; 
             color: var(--light-text-color); 
         }
-
         .price-display { 
             display: flex;
             align-items: baseline;
@@ -90,8 +87,7 @@
             font-size: 1.25rem; 
             color: #999;
         }
-        
-        .product-form { margin-top: 2rem; }
+        .product-form { margin-top: 1.5rem; }
         .form-group { margin-bottom: 1.5rem; }
         .form-group label { 
             display: block; 
@@ -116,70 +112,92 @@
             background-size: .65em auto;
             padding-right: 2.5rem;
         }
-        
-        .add-to-cart-btn { 
+        .add-to-cart-btn, .request-notification-btn { 
             width: 100%; 
             padding: 1rem; 
             font-size: 1.1rem; 
             font-weight: 600; 
             color: white; 
-            background-color: var(--cta-color); 
             border: none; 
             border-radius: 8px; 
             cursor: pointer; 
             transition: background-color 0.2s, transform 0.2s;
         }
-        .add-to-cart-btn:hover:not(:disabled) {
-            background-color: #9a2103;
+        .add-to-cart-btn { background-color: var(--cta-color); }
+        .request-notification-btn { background-color: var(--secondary-color); }
+        .add-to-cart-btn:hover:not(:disabled), .request-notification-btn:hover:not(:disabled) {
+            opacity: 0.9;
             transform: translateY(-2px);
         }
-        .add-to-cart-btn:disabled {
+        .add-to-cart-btn:disabled, .request-notification-btn:disabled {
             background-color: #ccc;
             cursor: not-allowed;
+            transform: none;
         }
-        
         .loading-view { text-align: center; padding: 4rem; }
         .hidden { display: none; }
         #notification-message { padding: 1rem; margin-bottom: 1.5rem; border-radius: 8px; text-align: center; font-weight: 500; display: none; }
-        #notification-message.success { background-color: #e8f5e9; color: #5E8C61; display: block; }
-        #notification-message.error { background-color: #fce4e4; color: #D9534F; display: block; }
-        #notification-message.info { background-color: #e7f3fe; color: #0056b3; display: block; }
+        #notification-message.success { background-color: #e8f5e9; color: var(--primary-color); }
+        #notification-message.error { background-color: #fce4e4; color: var(--sale-color); }
+        #notification-message.info { background-color: #e7f3fe; color: #0056b3; }
+        /* --- [v33.0 新增] 庫存狀態顯示樣式 --- */
+        #stock-status-container {
+            margin-top: 1rem;
+            font-weight: 500;
+            height: 24px; /* 給定固定高度防止內容跳動 */
+        }
+        .status-in-stock { color: var(--primary-color); }
+        .status-low-stock { color: var(--warning-color); }
+        .status-out-of-stock { color: var(--sale-color); }
+        .skeleton-loader {
+            display: inline-block;
+            height: 20px;
+            width: 80px;
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite linear;
+            border-radius: 4px;
+        }
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
     </style>
 </head>
 <body id="product-detail">
     <div class="container">
         <div id="cart-widget-container" style="position: absolute; top: 2rem; right: 2rem; z-index: 1000;"></div>
-
-        <!-- 【核心修正】將連結路徑指向新的 storefront-module -->
         <a href="/storefront-module/products.html" class="back-link">← 返回所有商品</a>
-
         <div id="loading-view"><h2>載入商品資料中...</h2></div>
-
         <div id="product-detail-container" class="product-layout hidden">
             <div class="product-gallery">
                 <div id="product-image" class="main-image"></div>
             </div>
             <div class="product-details">
                 <h1 id="product-name"></h1>
-                
                 <div id="price" class="price-display"></div>
-                
                 <div id="product-description" class="description"></div>
-
                 <form id="add-to-cart-form" class="product-form">
                     <div class="form-group">
                         <label for="variant-selector">選擇規格</label>
                         <select id="variant-selector" name="variantId"></select>
                     </div>
+                    <!-- [v33.0 核心新增] 庫存狀態容器 -->
+                    <div id="stock-status-container">
+                        <div class="skeleton-loader"></div>
+                    </div>
                     <div class="form-group">
                         <label for="quantity">選擇數量</label>
                         <input type="number" id="quantity" name="quantity" value="1" min="1">
                     </div>
-                    <button type="submit" class="add-to-cart-btn">加入購物車</button>
+                    <!-- [v33.0 核心新增] 按鈕容器，用於切換顯示 -->
+                    <div id="action-buttons-container">
+                        <button type="submit" id="add-to-cart-btn" class="add-to-cart-btn">加入購物車</button>
+                        <button type="button" id="request-notification-btn" class="request-notification-btn hidden">貨到通知我</button>
+                    </div>
                 </form>
             </div>
         </div>
-        
         <div id="notification-message"></div>
     </div>
 </body>
