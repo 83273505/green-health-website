@@ -1,27 +1,28 @@
 // 檔案路徑: storefront-module/js/modules/cart/cart.js
 /**
  * 檔案名稱：cart.js
- * 檔案職責：處理購物車頁面的 UI 渲染與使用者互動，並整合即時庫存驗證反饋。
- * 版本：35.0 (UI 即時反饋修正版)
+ * 檔案職責：處理購物車頁面的 UI 渲染與使用者互動，並整合「樂觀更新」與中央狀態管理。
+ * 版本：36.0 (架構重構與樂觀更新版)
  * SOP 條款對應：
- * - [法案 KB-UPGRADE-20250909-04]
- * 判例關聯 (Case References):
- * - [CASE-20250909-005]
+ * - [附加價值提案] 購物車的「樂觀更新」體驗
+ * - [附加價值提案] 購物車 CTA 優化
  * AI 註記：
- * - [核心除錯]: 此版本為緊急修正版，旨在修復購物車庫存驗證失效的 UI 顯示問題。
- *   - `handleCartInteractions`: 對 `CartService.updateItemQuantity` 的呼叫，現在被 `try...catch` 
- *     區塊包裹。當捕獲到來自核心服務的庫存不足錯誤時，它會中止操作，並觸發一個短暫的
- *     視覺提示 (紅色閃爍邊框)，而不會再錯誤地更新 UI。
+ * - [核心架構重構]:
+ *   - 此版本已完全與新的「星型架構」對齊。它不再直接依賴 `cartService`，
+ *     而是從唯一的、權威的 `cartStore` 導入並訂閱狀態。
+ *   - 所有觸發後端 API 的操作，都被委派給了新的 `cartService`。
+ * - [UX 昇華 - 樂觀更新]:
+ *   - `handleCartInteractions` 函式現在採用了「樂觀更新」模式。當使用者點擊 +/- 按鈕時，
+ *     UI 會立即更新，然後才在背景發送 API 請求。如果請求失敗，UI 會被自動回滾。
+ * - [UX 昇華 - CTA 優化]:
+ *   - `render` 函式新增了對 `#checkout-hint` 元素的處理，當結帳按鈕被禁用時，
+ *     會清晰地告知使用者原因。
  * - [操作指示]: 請完整覆蓋原檔案。
- * 更新日誌 (Changelog)：
- * - v35.0 (2025-09-09)：[CRITICAL BUG FIX] 新增了對 `updateItemQuantity` 失敗的捕獲與處理，
- *   修復了前端 UI 會超出實際庫存的問題。
- * - v34.0 (2025-09-07)：新增庫存狀態渲染。
  */
 
-import { supabase } from '../../core/supabaseClient.js';
-import { CartService } from '../../services/CartService.js';
-import { formatPrice, showNotification } from '../../core/utils.js';
+import { cartStore } from '../../stores/cartStore.js';
+import { cartService } from '../../services/cartService.js';
+import { formatPrice } from '../../core/utils.js';
 
 const itemListElement = document.getElementById('cart-item-list');
 const summarySubtotalEl = document.getElementById('summary-subtotal');
@@ -33,6 +34,8 @@ const couponInputElement = document.getElementById('coupon-code-input');
 const applyCouponButton = document.getElementById('apply-coupon-btn');
 const shippingSelectorContainer = document.getElementById('shipping-selector-container');
 const shippingPromoBanner = document.getElementById('shipping-promo-banner');
+// [v36.0] 新增 CTA 提示元素的獲取
+const checkoutHintEl = document.getElementById('checkout-hint');
 
 function render(state) {
     if (!itemListElement) return;
@@ -123,10 +126,14 @@ function render(state) {
         const hasInsufficientItems = items.some(item => item.stockStatus === 'INSUFFICIENT');
         const isReadyForCheckout = state.items.length > 0 && !!selectedShippingMethodId && !hasInsufficientItems;
         checkoutButton.classList.toggle('disabled', !isReadyForCheckout);
-        if (hasInsufficientItems) {
-            checkoutButton.title = "您的購物車中部分商品庫存不足，請先調整後再結帳。";
-        } else {
-            checkoutButton.title = "";
+
+        if (checkoutHintEl) {
+            if (!isReadyForCheckout && state.items.length > 0) {
+                checkoutHintEl.textContent = hasInsufficientItems ? "請先調整庫存不足的商品。" : "請先選擇運送方式。";
+                checkoutHintEl.classList.remove('hidden');
+            } else {
+                checkoutHintEl.classList.add('hidden');
+            }
         }
     }
 
@@ -152,11 +159,25 @@ async function handleCartInteractions(event) {
 
         const itemElement = target.closest('.cart-item');
         if(itemElement) itemElement.style.opacity = '0.7';
+        
+        // [v36.0 核心昇華] 樂觀更新 UI
+        const originalState = cartStore.get();
+        const optimisticState = JSON.parse(JSON.stringify(originalState)); // 深拷貝
+        const itemToUpdate = optimisticState.items.find(i => i.id === itemId);
+        if (itemToUpdate) {
+            itemToUpdate.quantity = newQuantity;
+            // 重新計算摘要 (簡易版，正式版應更精確)
+            optimisticState.summary.subtotal += (newQuantity - originalState.items.find(i=>i.id===itemId).quantity) * (itemToUpdate.product_variants.sale_price || itemToUpdate.product_variants.price);
+            optimisticState.summary.total = optimisticState.summary.subtotal - optimisticState.summary.couponDiscount + optimisticState.summary.shippingFee;
+            render(optimisticState); // 立即用樂觀狀態渲染 UI
+        }
 
         try {
-            await CartService.updateItemQuantity(itemId, newQuantity);
+            await cartService.updateItemQuantity(itemId, newQuantity);
         } catch (error) {
-            console.warn(`[cart.js] 捕獲到庫存操作失敗信號:`, error);
+            console.warn(`[cart.js] 樂觀更新失敗，回滾 UI:`, error);
+            // [v36.0] 如果後端驗證失敗，則用原始狀態重新渲染，實現 UI 回滾
+            render(originalState); 
             if(itemElement) {
                 itemElement.classList.add('item-error-flash');
                 setTimeout(() => itemElement.classList.remove('item-error-flash'), 600);
@@ -168,12 +189,12 @@ async function handleCartInteractions(event) {
     } else if (target.matches('.remove-item-btn')) {
         const itemId = target.dataset.itemId;
         if (itemId && confirm('您確定要從購物車中移除這個商品嗎？')) {
-            CartService.removeItem(itemId);
+            cartService.removeItem(itemId);
         }
     } else if (target.id === 'apply-coupon-btn') {
         if (couponInputElement) {
             const couponCode = couponInputElement.value.trim().toUpperCase();
-            CartService.applyCoupon(couponCode || null);
+            cartService.applyCoupon(couponCode || null);
         }
     }
 }
@@ -181,7 +202,7 @@ async function handleCartInteractions(event) {
 function handleShippingChange(event) {
     if (event.target.id === 'shipping-method-select') {
         const selectedId = event.target.value;
-        CartService.selectShippingMethod(selectedId);
+        cartService.selectShippingMethod(selectedId);
     }
 }
 
@@ -192,14 +213,13 @@ export async function init() {
             transition: box-shadow 0.3s ease-in-out;
             box-shadow: 0 0 0 2px rgba(217, 83, 79, 0.7);
         }
+        .continue-shopping-btn, .empty-cart-message { margin-top: 1rem; }
     `;
     document.head.appendChild(style);
     
-    await CartService.init(); 
+    // [v36.0 核心架構] 不再呼叫 CartService.init()，改為訂閱 cartStore
+    cartStore.subscribe(render);
     
-    CartService.subscribe(render);
-    render(CartService.getState());
-
     document.querySelector('.cart-items-section')?.addEventListener('click', handleCartInteractions);
     document.querySelector('.cart-summary')?.addEventListener('click', handleCartInteractions);
     document.querySelector('.cart-summary')?.addEventListener('change', handleShippingChange);
