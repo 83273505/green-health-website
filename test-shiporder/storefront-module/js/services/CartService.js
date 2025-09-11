@@ -5,12 +5,8 @@
  * 版本：1.0 (重構版)
  * AI 註記：
  * - 此檔案是舊 `CartService.js` 經過「職責分離」重構後的產物。
- * - 它不再管理任何內部狀態 (_state)，其唯一職責是作為一個純粹的「API 信差」。
- * - 所有方法現在都在操作成功後，呼叫 `cartStore.set()` 來更新全局狀態。
  * - [操作指示]: 請用此檔案的內容，完整覆蓋您現有的 `storefront-module/js/services/CartService.js` 檔案。
- *   (檔名 cartService.js vs. CartService.js 在多數系統中被視為相同，直接覆蓋即可)
  */
-
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 import { cartStore } from '../stores/cartStore.js';
@@ -66,14 +62,11 @@ async function _recalculateCart(payload) {
         if (response.success === false) {
             const backendError = response.error;
             const apiError = new CartAPIError(backendError.message, backendError.code);
-            
             console.warn(`後端業務錯誤: ${backendError.message}`);
             showNotification(backendError.message, 'warning');
-            
             if (response.data) {
                 _updateStateFromSnapshot(response.data);
             }
-            
             throw apiError;
         } else {
             if (payload.shippingMethodId !== undefined) {
@@ -96,9 +89,6 @@ async function _recalculateCart(payload) {
 }
 
 export const cartService = {
-    async init() {
-        // ... 此處省略初始化邏輯，將在後續的 `app.js` 整合中實現 ...
-    },
     async addItem({ variantId, quantity }) {
         if (!variantId || !(quantity > 0)) {
             showNotification('無效的商品或數量。', 'error');
@@ -149,6 +139,24 @@ export const cartService = {
             await _recalculateCart({ shippingMethodId, couponCode: cartStore.get().appliedCoupon?.code });
         } catch(error) {
              console.log("selectShippingMethod 捕捉到來自 _recalculateCart 的錯誤，已處理。");
+        }
+    },
+    // 將內部函式暴露給 app.js，僅供其在初始化時使用
+    internal: {
+        invokeWithTimeout,
+        recalculateCart: _recalculateCart,
+        async fetchShippingMethods() {
+            try {
+                const client = await supabase;
+                const { data, error } = await client.from('shipping_rates').select('*').eq('is_active', true).order('display_order', { ascending: true });
+                if (error) throw error;
+                const currentState = cartStore.get();
+                cartStore.set({ ...currentState, availableShippingMethods: data || [] });
+            } catch (error) {
+                console.error('獲取運送方式失敗:', error);
+                const currentState = cartStore.get();
+                cartStore.set({ ...currentState, availableShippingMethods: [] });
+            }
         }
     }
 };
