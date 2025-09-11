@@ -1,21 +1,18 @@
 // 檔案路徑: storefront-module/js/modules/product/product-detail.js
 /**
  * 檔案名稱：product-detail.js
- * 檔案職責：處理商品詳情頁的資料獲取、渲染、並實現「無聲守護者」即時庫存互動驗證。
- * 版本：34.0 (即時互動驗證最終版)
+ * 檔案職責：實現「無聲守護者 v2.0」，將數量驗證的權力完全交還給後端。
+ * 版本：35.0 (後端權威驗證最終版)
  * SOP 條款對應：
- * - [法案 KB-UPGRADE-20250909-03]
+ * - [專案憲章 ECOMMERCE-V1, 1.1] 交易數據絕對準確性原則
  * AI 註記：
- * - [核心昇華]: 此版本為最終交付版，實現了「無聲守護者」互動模式。
- *   - `displayStockStatus` 函式現在會從後端獲取 `available_stock` 並儲存在一個
- *     內部變數 `_currentAvailableStock` 中，但不會直接顯示它。
- *   - 新增 `handleQuantityChange` 函式，並將其綁定到數量輸入框的 `input` 事件。
- *   - 此函式會即時比對使用者輸入值與 `_currentAvailableStock`，如果超出，會自動
- *     將數值校正回最大庫存，並顯示一個非侵入式的提示訊息。
+ * - [核心重構]: 此版本為最終交付版，實現了最安全的「無聲守護者 v2.0」模式。
+ *   - `debouncedValidateQuantity` 函數，會在使用者停止輸入 300ms 後，
+ *     自動觸發，向新的 `validate-quantity` 後端端點發送預檢請求。
+ *   - 只有當後端返回驗證失敗時，前端才會顯示錯誤提示並自動校正數量。
  * - [操作指示]: 請完整覆蓋原檔案。
  * 更新日誌 (Changelog)：
- * - v34.0 (2025-09-09)：[FEATURE] 新增「無聲守護者」即時互動驗證邏輯。
- * - v33.0 (2025-09-09)：整合即時庫存狀態顯示與貨到通知功能。
+ * - v35.0 (2025-09-10)：[SECURITY REFACTOR] 移除所有前端庫存判斷，改用後端即時預檢。
  */
 
 import { supabase } from '../../core/supabaseClient.js';
@@ -23,7 +20,6 @@ import { TABLE_NAMES } from '../../core/constants.js';
 import { CartService } from '../../services/CartService.js';
 import { formatPrice, showNotification } from '../../core/utils.js';
 
-// --- DOM 元素獲取 ---
 const loadingView = document.getElementById('loading-view');
 const detailContainer = document.getElementById('product-detail-container');
 const productNameEl = document.getElementById('product-name');
@@ -38,22 +34,14 @@ const addToCartBtn = document.getElementById('add-to-cart-btn');
 const requestNotificationBtn = document.getElementById('request-notification-btn');
 const quantityWarningEl = document.getElementById('quantity-warning');
 
-
 let currentProduct = null;
-let _currentAvailableStock = 0;
+let debounceTimer;
 
 async function fetchProductByHandle(handle) {
     try {
         const client = await supabase;
-        const { data, error } = await client
-            .from(TABLE_NAMES.PRODUCTS)
-            .select(`*, product_variants(*)`)
-            .eq('handle', handle)
-            .single();
-        if (error) {
-            console.error('讀取商品詳細資料時發生錯誤:', error);
-            return null;
-        }
+        const { data, error } = await client.from(TABLE_NAMES.PRODUCTS).select(`*, product_variants(*)`).eq('handle', handle).single();
+        if (error) { console.error('讀取商品詳細資料時發生錯誤:', error); return null; }
         currentProduct = data;
         return data;
     } catch (error) {
@@ -67,10 +55,8 @@ function renderProductDetails(product) {
         if (loadingView) loadingView.innerHTML = `<h1>找不到商品</h1><p>您尋找的商品可能已下架或不存在。</p><a href="/storefront-module/products.html">返回商品列表</a>`;
         return;
     }
-
     if (productNameEl) productNameEl.textContent = product.name;
     if (productDescriptionEl) productDescriptionEl.innerHTML = product.description.replace(/\n/g, '<br>');
-
     if (variantSelectorEl) {
         variantSelectorEl.innerHTML = '';
         product.product_variants.forEach(variant => {
@@ -87,12 +73,10 @@ function renderProductDetails(product) {
             }
         });
     }
-
     function updateVariantDisplay() {
         if (!variantSelectorEl) return;
         const selectedVariantId = variantSelectorEl.value;
         const selectedVariant = product.product_variants.find(v => v.id === selectedVariantId);
-        
         if (selectedVariant) {
             const hasSale = selectedVariant.sale_price && selectedVariant.sale_price > 0 && selectedVariant.sale_price < selectedVariant.price;
             if (priceEl) {
@@ -108,40 +92,27 @@ function renderProductDetails(product) {
             displayStockStatus(selectedVariantId);
         }
     }
-    
-    if (variantSelectorEl) {
-        variantSelectorEl.addEventListener('change', updateVariantDisplay);
-    }
+    if (variantSelectorEl) { variantSelectorEl.addEventListener('change', updateVariantDisplay); }
     updateVariantDisplay();
-
     if (loadingView) loadingView.classList.add('hidden');
     if (detailContainer) detailContainer.classList.remove('hidden');
 }
 
 async function displayStockStatus(variantId) {
     if (!stockStatusContainerEl || !addToCartBtn || !requestNotificationBtn) return;
-
     stockStatusContainerEl.innerHTML = `<div class="skeleton-loader"></div>`;
     addToCartBtn.disabled = true;
     addToCartBtn.classList.remove('hidden');
     requestNotificationBtn.classList.add('hidden');
     if (quantityInput) quantityInput.disabled = true;
-    _currentAvailableStock = 0;
 
     try {
         const client = await supabase;
-        const { data, error } = await client.functions.invoke('get-product-stock-status', {
-            body: { variantIds: [variantId] }
-        });
-
+        const { data, error } = await client.functions.invoke('get-product-stock-status', { body: { variantIds: [variantId] } });
         if (error) throw new Error(`API 呼叫失敗: ${error.message}`);
-        if (!data.success || !data.data || data.data.length === 0) {
-            throw new Error(data.error?.message || '從 API 獲取庫存狀態失敗');
-        }
+        if (!data.success || !data.data || data.data.length === 0) { throw new Error(data.error?.message || '從 API 獲取庫存狀態失敗'); }
 
         const stockInfo = data.data[0];
-        _currentAvailableStock = stockInfo.available_stock || 0;
-        
         let statusHtml = '';
         let statusClass = '';
 
@@ -165,52 +136,64 @@ async function displayStockStatus(variantId) {
                 requestNotificationBtn.classList.remove('hidden');
                 if (quantityInput) quantityInput.disabled = true;
                 break;
-            default:
-                statusHtml = '狀態未知';
-                break;
+            default: statusHtml = '狀態未知'; break;
         }
-
         stockStatusContainerEl.innerHTML = `<span class="${statusClass}">${statusHtml}</span>`;
-        handleQuantityChange(); 
-
     } catch (error) {
         console.error("更新庫存狀態時發生錯誤:", error);
         stockStatusContainerEl.innerHTML = `<span class="status-out-of-stock">無法獲取庫存</span>`;
     }
 }
 
-function handleQuantityChange() {
-    if (!quantityInput || quantityWarningEl === null) return;
-
-    let currentQuantity = parseInt(quantityInput.value, 10);
-    
-    if (isNaN(currentQuantity) || currentQuantity < 1) {
-        quantityInput.value = 1;
-        currentQuantity = 1;
-    }
-    
-    if (_currentAvailableStock > 0 && currentQuantity > _currentAvailableStock) {
-        quantityInput.value = _currentAvailableStock;
-        quantityWarningEl.textContent = `此商品最多只能購買 ${_currentAvailableStock} 件。`;
-        quantityWarningEl.classList.remove('hidden');
-    } else {
+function debouncedValidateQuantity() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+        if (!quantityInput || !variantSelectorEl || quantityWarningEl === null) return;
+        
         quantityWarningEl.classList.add('hidden');
-    }
+
+        const variantId = variantSelectorEl.value;
+        const requestedQuantity = parseInt(quantityInput.value, 10);
+        
+        if (isNaN(requestedQuantity) || requestedQuantity < 1) {
+            quantityInput.value = 1;
+            return;
+        }
+
+        try {
+            const client = await supabase;
+            const { data, error } = await client.functions.invoke('validate-quantity', {
+                body: { variantId, requestedQuantity }
+            });
+
+            if (error) throw error;
+            if (!data.success) throw new Error(data.error?.message || '驗證失敗');
+
+            if (data.valid) {
+                quantityWarningEl.classList.add('hidden');
+            } else {
+                quantityInput.value = data.available_stock;
+                quantityWarningEl.textContent = data.message;
+                quantityWarningEl.classList.remove('hidden');
+            }
+        } catch (err) {
+            console.error('數量預檢請求失敗:', err);
+            quantityWarningEl.textContent = '無法驗證庫存，請稍後再試。';
+            quantityWarningEl.classList.remove('hidden');
+        }
+
+    }, 300);
 }
 
 async function handleAddToCart(event) {
     event.preventDefault();
-    handleQuantityChange();
-
     if (!variantSelectorEl || !quantityInput) return;
     const selectedVariantId = variantSelectorEl.value;
     const quantity = parseInt(quantityInput.value, 10);
-
     if (!selectedVariantId || isNaN(quantity) || quantity < 1) {
         showNotification('請選擇有效的規格與數量。', 'error', 'notification-message');
         return;
     }
-    
     await CartService.addItem({ variantId: selectedVariantId, quantity });
 }
 
@@ -257,22 +240,14 @@ async function handleRequestNotification() {
 export async function init() {
     const urlParams = new URLSearchParams(window.location.search);
     const handle = urlParams.get('handle');
-
     if (!handle) {
         if (loadingView) loadingView.innerHTML = `<h1>無效的商品連結</h1><p>缺少商品識別碼，無法載入頁面。</p><a href="/storefront-module/products.html">返回商品列表</a>`;
         return;
     }
-
     const product = await fetchProductByHandle(handle);
     renderProductDetails(product);
 
-    if (addToCartForm) {
-        addToCartForm.addEventListener('submit', handleAddToCart);
-    }
-    if (requestNotificationBtn) {
-        requestNotificationBtn.addEventListener('click', handleRequestNotification);
-    }
-    if (quantityInput) {
-        quantityInput.addEventListener('input', handleQuantityChange);
-    }
+    if (addToCartForm) { addToCartForm.addEventListener('submit', handleAddToCart); }
+    if (requestNotificationBtn) { requestNotificationBtn.addEventListener('click', handleRequestNotification); }
+    if (quantityInput) { quantityInput.addEventListener('input', debouncedValidateQuantity); }
 }

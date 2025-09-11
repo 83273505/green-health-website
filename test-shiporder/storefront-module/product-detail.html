@@ -1,6 +1,6 @@
 <!-- 檔案路徑: storefront-module/product-detail.html -->
-<!-- 版本：2.0 (庫存體驗昇華版) -->
-<!-- 核心修正：新增了用於顯示庫存狀態的 HTML 結構，以匹配 product-detail.js (v33.0) 的功能需求 -->
+<!-- 版本：2.1 (UI 反饋修正版) -->
+<!-- 核心修正：新增了 #quantity-warning 容器，以修復即時庫存驗證訊息無法顯示的致命 BUG。 -->
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -106,7 +106,7 @@
             -webkit-appearance: none;
             -moz-appearance: none;
             appearance: none;
-            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23666%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
+            background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23666%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E');
             background-repeat: no-repeat;
             background-position: right 1rem center;
             background-size: .65em auto;
@@ -140,15 +140,21 @@
         #notification-message.success { background-color: #e8f5e9; color: var(--primary-color); }
         #notification-message.error { background-color: #fce4e4; color: var(--sale-color); }
         #notification-message.info { background-color: #e7f3fe; color: #0056b3; }
-        /* --- [v33.0 新增] 庫存狀態顯示樣式 --- */
         #stock-status-container {
             margin-top: 1rem;
             font-weight: 500;
-            height: 24px; /* 給定固定高度防止內容跳動 */
+            height: 24px;
         }
         .status-in-stock { color: var(--primary-color); }
         .status-low-stock { color: var(--warning-color); }
         .status-out-of-stock { color: var(--sale-color); }
+        .quantity-warning {
+            color: var(--sale-color);
+            font-size: 0.85rem;
+            margin-top: -1rem;
+            margin-bottom: 1.5rem;
+            height: 1.2em;
+        }
         .skeleton-loader {
             display: inline-block;
             height: 20px;
@@ -182,15 +188,14 @@
                         <label for="variant-selector">選擇規格</label>
                         <select id="variant-selector" name="variantId"></select>
                     </div>
-                    <!-- [v33.0 核心新增] 庫存狀態容器 -->
                     <div id="stock-status-container">
                         <div class="skeleton-loader"></div>
                     </div>
                     <div class="form-group">
                         <label for="quantity">選擇數量</label>
                         <input type="number" id="quantity" name="quantity" value="1" min="1">
+                        <div id="quantity-warning" class="quantity-warning hidden"></div>
                     </div>
-                    <!-- [v33.0 核心新增] 按鈕容器，用於切換顯示 -->
                     <div id="action-buttons-container">
                         <button type="submit" id="add-to-cart-btn" class="add-to-cart-btn">加入購物車</button>
                         <button type="button" id="request-notification-btn" class="request-notification-btn hidden">貨到通知我</button>
