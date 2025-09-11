@@ -1,49 +1,84 @@
--- 檔案路徑: supabase/migrations/YYYYMMDDHHMMSS_upgrade_get_stock_status_func_v2_1.sql
+// 檔案路徑: supabase/functions/validate-quantity/index.ts
 /**
- * 檔案名稱：YYYYMMDDHHMMSS_upgrade_get_stock_status_func_v2_1.sql
- * 檔案職責：以安全、冪等的方式，升級 `get_public_stock_status` 資料庫函式。
- * 版本：2.1 (最終除錯版)
+ * 檔案名稱：index.ts
+ * 檔案職責：提供一個輕量級的、即時的庫存數量預檢服務。
+ * 版本：1.0
+ * SOP 條款對應：
+ * - [專案憲章 ECOMMERCE-V1, 1.1] 交易數據絕對準確性原則
  * AI 註記：
- * - [核心除錯]: 此版本為 v2.0 的最終修正版。在 `CREATE OR REPLACE` 指令前，
- *   新增了一行 `DROP FUNCTION IF EXISTS...`。這將安全地刪除舊版本的函式，
- *   然後再建立新版本，從而解決了因函式回傳類型變更而導致的 `ERROR: 42P13` 錯誤。
- * - [操作指示]: 此為一個完整的指令碼，可直接複製貼上執行，它將安全地覆蓋舊版本函式。
- * 更新日誌 (Changelog)：
- * - v2.1 (2025-09-09)：[BUG FIX] 新增 `DROP FUNCTION` 指令以處理函式簽名變更。
- * - v2.0 (2025-09-09)：升級函式以回傳精確庫存數量。
+ * - 此為「無聲守護者 v2.0」方案的核心後端實現。
+ * - 它接收 variantId 和 requestedQuantity，並直接呼叫 DB Function 
+ *   `get_public_stock_status` 來獲取權威的庫存數據，然後回傳一個簡單的布林值結果。
+ * - [操作指示]: 請建立 `supabase/functions/validate-quantity` 資料夾，並將此程式碼儲存為 `index.ts`。
  */
 
--- 步驟 1: 安全地刪除舊版本的函式 (如果它存在的話)
-DROP FUNCTION IF EXISTS public.get_public_stock_status(uuid[]);
+import { createClient } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
--- 步驟 2: 建立全新版本的函式
-CREATE OR REPLACE FUNCTION public.get_public_stock_status(variant_ids uuid[])
-RETURNS TABLE(
-    variant_id uuid,
-    stock_status text,
-    available_stock int
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-    low_stock_threshold INT := 10; -- 低庫存的閾值，未來可在此處統一調整
-BEGIN
-    RETURN QUERY
-    SELECT
-        v.id AS variant_id,
-        CASE
-            WHEN v.stock <= 0 THEN 'OUT_OF_STOCK'
-            WHEN v.stock <= low_stock_threshold THEN 'LOW_STOCK'
-            ELSE 'IN_STOCK'
-        END::text AS stock_status,
-        GREATEST(0, v.stock)::int AS available_stock
-    FROM
-        public.product_variants AS v
-    WHERE
-        v.id = ANY(variant_ids);
-END;
-$$;
+const FUNCTION_NAME = 'validate-quantity';
+const FUNCTION_VERSION = 'v1.0';
+const UUID_REGEXP = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
--- 步驟 3: 為新版本的函式附加註解
-COMMENT ON FUNCTION public.get_public_stock_status(uuid[]) IS 'V2.1: 供前端公開、安全地批次查詢一個或多個商品規格的庫存狀態，並在有庫存時回傳精確數量供前端進行互動驗證。使用 SECURITY DEFINER 以繞過 RLS。';
+async function mainHandler(
+  req: Request,
+  logger: LoggingService,
+  correlationId: string
+): Promise<Response> {
+  const { variantId, requestedQuantity } = await req.json().catch(() => ({}));
+
+  // 1. 輸入驗證
+  if (!variantId || typeof variantId !== 'string' || !UUID_REGEXP.test(variantId) || 
+      !Number.isInteger(requestedQuantity) || requestedQuantity <= 0) {
+    return new Response(JSON.stringify({ success: false, error: { message: '無效的輸入參數。' } }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+  
+  // 2. 建立 Admin Client 並呼叫 DB Function
+  const supabaseAdmin = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  );
+
+  const { data, error } = await supabaseAdmin.rpc('get_public_stock_status', {
+    variant_ids: [variantId],
+  }).single();
+
+  if (error) {
+    logger.error('呼叫 DB 函式 get_public_stock_status 時發生錯誤', correlationId, error, { variantId });
+    throw error;
+  }
+  
+  if (!data) {
+      return new Response(JSON.stringify({ success: false, error: { message: '找不到該商品。' } }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+  }
+
+  // 3. 核心業務邏輯
+  const isValid = requestedQuantity <= data.available_stock;
+
+  // 4. 回傳結果
+  if (isValid) {
+    return new Response(JSON.stringify({ success: true, valid: true }),
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  } else {
+    return new Response(JSON.stringify({
+      success: true,
+      valid: false,
+      message: `庫存不足，此商品最多只能購買 ${data.available_stock} 件。`,
+      available_stock: data.available_stock,
+    }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+  const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+  const wrappedHandler = withErrorLogging(mainHandler, logger);
+  return await wrappedHandler(req);
+});
