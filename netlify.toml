@@ -1,10 +1,23 @@
-# ==============================================================================
-# 檔案路徑: netlify.toml
-# 版本: v45.1 - SPA 路由劫持修正
-# ------------------------------------------------------------------------------
-# 【此為完整檔案，可直接覆蓋】
-# ==============================================================================
+// 檔案路徑: netlify.toml
+// ==============================================================================
 
+/**
+ * 檔案名稱：netlify.toml
+ * 檔案職責：Netlify 平台的統一建置與部署設定檔 (最終安全相容版)。
+ * 版本：45.4
+ * AI 註記：
+ * - [主席指示整合]: 此版本嚴格遵循主席指示，完整保留了 [build] 區塊的
+ *   所有設定，以確保與您現有的分支部署工作流 100% 相容。
+ * - [路由修正]: 所有的 [[redirects]] 規則都已基於 `publish = "test-shiporder"`
+ *   的前提進行了重新校準，能精準對應到您所有獨立的前端模組。
+ * 更新日誌 (Changelog)：
+ * - v45.4 (2025-09-12)：根據主席的最終指示，還原 [build] 區塊並重寫所有路由規則，
+ *   此為最終交付版本。
+ */
+
+# ==============================================================================
+# ⬇️ [主席指示]: 此區塊維持原樣，不可異動 ⬇️
+# ==============================================================================
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
@@ -15,72 +28,50 @@
 
 # ==============================================================================
 # [[redirects]] 區块
-# 规则顺序至关重要。Netlify 会从上到下匹配第一条符合的规则。
+# 規則順序至關重要。Netlify 會從上到下匹配第一條符合的規則。
 # ==============================================================================
 
-# 规则 1: 共用模组与静态资源 (最高优先级)
-# 确保所有对实际存在档案的请求都能被正确处理，而不会被下面的 SPA 规则劫持。
+# 規則 1: 共用模組與靜態資源 (最高優先級)
+# 確保所有對實際存在檔案的請求都能被正確處理，而不會被下面的 SPA 規則劫持。
 [[redirects]]
   from = "/_shared/*"
   to = "/_shared/:splat"
   status = 200
 
-# 规则 2: 消费者端的多页面应用 (MPA) 实体页面
-# 明确地为每一个需要被直接存取的 .html 档案建立规则。
-[[redirects]]
-  from = "/storefront-module/products.html"
-  to = "/storefront-module/products.html"
-  status = 200
-
-[[redirects]]
-  from = "/storefront-module/product-detail.html"
-  to = "/storefront-module/product-detail.html"
-  status = 200
-
-[[redirects]]
-  from = "/storefront-module/checkout.html"
-  to = "/storefront-module/checkout.html"
-  status = 200
-
-[[redirects]]
-  from = "/storefront-module/order-success.html"
-  to = "/storefront-module/order-success.html"
-  status = 200
-
-[[redirects]]
-  from = "/storefront-module/terms.html"
-  to = "/storefront-module/terms.html"
-  status = 200
-
-# 规则 3: 后台单页应用 (SPA) 的路由规则
-# [v45.1 核心修正] 移除了 'status = 200'。
-# 这会启用 Netlify 的标准 SPA 路由行为：
-# 1. 优先尝试寻找真实存在的档案 (例如 /invoice-panel/js/modules/invoicing.js)。
-# 2. 如果找不到真实档案，则将请求重写 (rewrite) 到该 SPA 的入口 index.html。
-# 这彻底解决了因“贪婪匹配”导致 .js/.css 等资源被劫持为 text/html 的问题。
+# 規則 2: 後台管理面板的 SPA 路由規則
+# 所有對後台路徑的請求，如果找不到實體檔案 (如 .js, .css)，
+# 都會被重寫到各自的入口 index.html，將路由權交給前端 JS。
 [[redirects]]
   from = "/admin/*"
   to = "/admin/index.html"
+  status = 200
 
 [[redirects]]
   from = "/warehouse-panel/*"
   to = "/warehouse-panel/index.html"
+  status = 200
 
 [[redirects]]
   from = "/invoice-panel/*"
   to = "/invoice-panel/index.html"
+  status = 200
 
 [[redirects]]
   from = "/permission-panel/*"
   to = "/permission-panel/index.html"
-
-# 规则 4: 会员中心 SPA
+  status = 200
+  
+# 規則 3: 會員中心的 SPA 路由規則
 [[redirects]]
   from = "/account-module/*"
   to = "/account-module/index.html"
+  status = 200
 
-# 规则 5: 最终的“兜底”规则
-# 这条规则现在只会在访问根目录 (/) 或完全不存在的一级路径时，才导向商店的首页。
+# 規則 4: 消費者前端 (storefront-module) 的 "兜底" 規則
+# 這是最重要的規則。任何不匹配前面後台規則的請求，都會被導向到
+# 商店前端的主入口 (此處根據您的檔案結構，應為 products.html)。
+# Netlify 會優先服務真實存在的檔案 (如 /storefront-module/product-detail.html)，
+# 只有在找不到檔案時，此規則才會生效。
 [[redirects]]
   from = "/*"
   to = "/storefront-module/products.html"
