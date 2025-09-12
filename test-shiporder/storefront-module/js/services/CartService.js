@@ -1,11 +1,16 @@
-// 檔案路徑: storefront-module/js/services/cartService.js
+// 檔案路徑: storefront-module/js/services/CartService.js
+// ==============================================================================
+
 /**
- * 檔案名稱：cartService.js
+ * 檔案名稱：CartService.js
  * 檔案職責：處理所有與後端購物車 API 的通信，並在成功後更新中央狀態儲存 (cartStore)。
- * 版本：1.0 (重構版)
+ * 版本：1.1 (正名修正版)
  * AI 註記：
- * - 此檔案是舊 `CartService.js` 經過「職責分離」重構後的產物。
- * - [操作指示]: 請用此檔案的內容，完整覆蓋您現有的 `storefront-module/js/services/CartService.js` 檔案。
+ * - [核心修正]: 根據主席的最終指示，將此檔案的核心導出常數，從 `cartService`
+ *   (小寫 c) 更正為 `CartService` (大寫 C)。此修正旨在解決因命名不一致
+ *   而導致的 Uncaught SyntaxError，並使導出名與檔名保持一致。
+ * 更新日誌 (Changelog)：
+ * - v1.1 (2025-09-12)：修正 export 常數的大小寫，以匹配全專案的導入期望。
  */
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -88,7 +93,8 @@ async function _recalculateCart(payload) {
     }
 }
 
-export const cartService = {
+// 【核心修正】將此處的 `export const cartService` 修正為 `export const CartService`
+export const CartService = {
     async addItem({ variantId, quantity }) {
         if (!variantId || !(quantity > 0)) {
             showNotification('無效的商品或數量。', 'error');
@@ -141,7 +147,7 @@ export const cartService = {
              console.log("selectShippingMethod 捕捉到來自 _recalculateCart 的錯誤，已處理。");
         }
     },
-    // 將內部函式暴露給 app.js，僅供其在初始化時使用
+    // 將內部函式暴露給 app.js 和 CartWidget，僅供其在初始化時使用
     internal: {
         invokeWithTimeout,
         recalculateCart: _recalculateCart,
@@ -157,6 +163,13 @@ export const cartService = {
                 const currentState = cartStore.get();
                 cartStore.set({ ...currentState, availableShippingMethods: [] });
             }
+        },
+        // 提供給 CartWidget 使用的訂閱和狀態獲取方法
+        subscribe(callback) {
+            return cartStore.subscribe(callback);
+        },
+        getState() {
+            return cartStore.get();
         }
     }
 };

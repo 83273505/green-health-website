@@ -1,15 +1,21 @@
 // 檔案路徑: storefront-module/js/core/app.js
+// ==============================================================================
+
 /**
  * 檔案名稱：app.js
  * 檔案職責：商店前端（Storefront）應用程式的主入口點與中央指揮官。
- * 版本：34.0 (星型架構啟動版)
+ * 版本：34.1 (命名同步修正版)
  * AI 註記：
- * - [核心架構重構]: 此版本為對 `v33.0` 的根本性重構，以支持全新的「星型架構」。
- * - [操作指示]: 請完整覆蓋原檔案。
+ * - [核心修正]: 根據 `CartService.js` v1.1 的命名校準，此檔案中的 `import`
+ *   語句已從 `cartService` (小寫 c) 更新為 `CartService` (大寫 C)，
+ *   同時所有內部的函式呼叫也已同步更新，以確保命名一致性。
+ * 更新日誌 (Changelog)：
+ * - v34.1 (2025-09-12)：同步 `CartService` 的命名，以修復模組載入錯誤。
  */
 import { supabase } from './supabaseClient.js';
 import { cartStore } from '../stores/cartStore.js';
-import { cartService } from '../services/cartService.js';
+// 【核心修正】將 `cartService` 修正為 `CartService`
+import { CartService } from '../services/CartService.js';
 import { CartWidget } from '../components/CartWidget.js';
 import { showNotification } from './utils.js';
 
@@ -29,7 +35,8 @@ async function initializeApp() {
             }
         }
         if (!cartStore.get().cartId) {
-            const { data, error } = await cartService.internal.invokeWithTimeout('get-or-create-cart');
+            // 【核心修正】將 `cartService` 修正為 `CartService`
+            const { data, error } = await CartService.internal.invokeWithTimeout('get-or-create-cart');
             if (error) throw error;
             if (data.error) throw new Error(data.error);
             cartStore.set({ ...cartStore.get(), cartId: data.cartId, isAnonymous: data.isAnonymous || false });
@@ -43,8 +50,9 @@ async function initializeApp() {
             }
         }
         await Promise.all([
-            cartService.internal.fetchShippingMethods(),
-            cartService.internal.recalculateCart({ couponCode: cartStore.get().appliedCoupon?.code, shippingMethodId: cartStore.get().selectedShippingMethodId })
+            // 【核心修正】將 `cartService` 修正為 `CartService`
+            CartService.internal.fetchShippingMethods(),
+            CartService.internal.recalculateCart({ couponCode: cartStore.get().appliedCoupon?.code, shippingMethodId: cartStore.get().selectedShippingMethodId })
         ]);
         const finalState = cartStore.get();
         cartStore.set({ ...finalState, isReadyForRender: true, isLoading: false });
