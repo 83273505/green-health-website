@@ -6,10 +6,8 @@
  * 檔案職責：商店前端（Storefront）應用程式的主入口點與中央指揮官。
  * 版本：34.3 (持久化強化版)
  * AI 註記：
- * - [核心修正]: 根據系統性診斷，此版本強化了與 localStorage 的互動邏輯。
- *   `_restoreStateFromLocalStorage` 現在會更完整地恢復狀態。
- *   `initializeApp` 流程中，對 `CartService.internal.syncStateToLocalStorage()` 的
- *   呼叫被移至更合適的位置，確保了狀態的可靠持久化。
+ * - [核心修正]: 根據系統性重構計畫，此版本強化了與 localStorage 的互動邏輯，
+ *   確保在從後端獲取到新的 cartId 後，能被可靠地持久化。
  * 更新日誌 (Changelog)：
  * - v34.3 (2025-09-13)：修正並強化了狀態持久化邏輯，解決頁面跳轉後購物車清空的問題。
  */
@@ -49,7 +47,7 @@ async function initializeApp() {
                 anonymousUserId: data.userId, 
                 anonymousToken: data.token 
             });
-            // [核心修正] 獲取到新狀態後，立即同步到 localStorage
+            // 獲取到新狀態後，立即同步到 localStorage
             CartService.internal.syncStateToLocalStorage();
         }
 
@@ -76,7 +74,6 @@ async function initializeApp() {
 function _restoreStateFromLocalStorage() {
     try {
         const cartId = localStorage.getItem('cartId');
-        // 如果連最基本的 cartId 都沒有，就直接返回空物件
         if (!cartId) return {};
 
         const appliedCouponCode = localStorage.getItem('appliedCouponCode');
