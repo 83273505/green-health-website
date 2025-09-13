@@ -1,3 +1,7 @@
+/**
+<!-- 檔案路徑: storefront-module/order-success.html -->
+<!-- ============================================================================== -->
+*/
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -5,9 +9,8 @@
     <title>訂單完成 - Green Health 綠健</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow" />
-
+    <!-- 【核心校準】僅保留唯一的應用程式主入口點 -->
     <script type="module" src="/storefront-module/js/core/app.js"></script>
-
     <style>
         :root { 
             --primary-color: #5E8C61; 
@@ -153,6 +156,8 @@
             font-size: 0.9rem;
         }
         .hidden { display: none; }
+        .product-table { width: 100%; border-collapse: collapse; }
+        .product-table th, .product-table td { text-align: left; padding: 8px 0; border-bottom: 1px solid #eee; }
     </style>
 </head>
 
@@ -177,7 +182,6 @@
             <a href="/account-module/dashboard.html" class="action-button btn-dashboard">前往會員中心</a>
         </div>
 
-        <!-- [v44.1 核心修正] 移除密碼輸入表單，改為引導式註冊按鈕 -->
         <div id="seamless-signup-section" class="seamless-signup-section hidden">
             <h3>想讓下次購物更快速嗎？</h3>
             <p>加入會員即可保存您的收件資訊，並隨時查詢訂單狀態！</p>

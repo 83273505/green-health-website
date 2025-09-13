@@ -1,3 +1,7 @@
+/**
+<!-- 檔案路徑: storefront-module/cart.html -->
+<!-- ============================================================================== -->
+*/
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
@@ -5,6 +9,7 @@
     <title>您的購物車 - Green Health 綠健</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="robots" content="noindex, nofollow" />
+    <!-- 【核心校準】僅保留唯一的應用程式主入口點 -->
     <script type="module" src="/storefront-module/js/core/app.js"></script>
     <style>
         :root { 
@@ -76,6 +81,7 @@
         .shipping-note { font-size: 0.75rem; color: var(--light-text-color); text-align: right; margin-top: 0.5rem; }
         #shipping-promo-banner { padding: 0.75rem; background-color: #e8f5e9; color: #388e3c; text-align: center; font-size: 0.9rem; border-radius: 6px; margin-bottom: 1.5rem; display: none; }
         #shipping-promo-banner p { margin: 0; }
+        #checkout-hint { color: var(--cta-color); font-size: 0.9rem; text-align: center; margin-top: 0.5rem; height: 1.2em; }
     </style>
 </head>
 <body id="cart-page">
@@ -83,7 +89,7 @@
     <div class="cart-container">
         <div class="cart-items-section">
             <h1>您的購物車</h1>
-            <div id="notification-message"></div>
+            <div id="notification-message" style="display:none;"></div>
             <div id="shipping-promo-banner"></div>
             <div id="cart-item-list">
                 <p>正在載入您的購物車...</p>
@@ -126,6 +132,7 @@
                 </div>
             </div>
             <a href="/storefront-module/checkout.html" id="checkout-btn" class="checkout-btn disabled">前往結帳</a>
+            <div id="checkout-hint" class="hidden"></div>
         </aside>
     </div>
 
