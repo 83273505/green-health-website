@@ -1,27 +1,39 @@
-// 檔案路徑: test-shiporder/_redirects
-// ==============================================================================
-
-/**
- * 檔案名稱：_redirects
- * 檔案職責：為 Netlify 平台提供分支專屬的路由重寫規則。
- * 版本：32.1 (最終修正權威版)
- * AI 註記：
- * - [主席指示整合]: 此版本嚴格遵循「只能修改，不得替換」的最高指令。
- *   下方標示為【維持不變】的區塊，均為您原始檔案的內容，已被完整保留。
- *   僅針對導致 404 錯誤的消費者前端模組規則，進行了【核心修正】。
- * 更新日誌 (Changelog)：
- * - v32.1 (2025-09-12)：在 v32.0 原始檔案基礎上，精準修正了前端模組的路由規則。
- */
-
 # ==============================================================================
-# ⬇️ 【維持不變】此區塊為您原始設定，已被完整保留 ⬇️
+# 檔案路徑: test-shiporder/_redirects
+# 版本: v34.1 - 最終 Main/Branch 整合正體中文版
+# ------------------------------------------------------------------------------
+# 【此版本為最終、唯一的路由設定檔】
+# 核心原則：完全保留主席提供的 main 分支 (v31.7) 所有規則，並在此基礎上
+#           安全地增補 branch 分支 (storefront-module) 所需的新規則。
+#           所有註解均已校訂為正體中文。
 # ==============================================================================
 
-# --- 核心 API 路由 (最高優先級) ---
+# --- 核心 API 路由 (最高優先級，維持不變) ---
 /.netlify/functions/*             /.netlify/functions/:splat             200
 
-# --- 靜態資源優先處理 (確保 .js, .css 等實體檔案被正確提供) ---
+# ==============================================================================
+# ⬇️ A. [維持不變] 主網站 (main) 的所有既有規則 ⬇️
+# ==============================================================================
 
+# A.1 --- 靜態資源優先處理 (main 分支) ---
+/GreenHealth-Auth-Module/js/*     /GreenHealth-Auth-Module/js/:splat     200
+/GreenHealth-Auth-Module/css/*    /GreenHealth-Auth-Module/css/:splat    200
+/GreenHealth-Auth-Module/images/* /GreenHealth-Auth-Module/images/:splat 200
+
+# A.2 --- 指定 MPA 頁面 (main 分支) ---
+/GreenHealth-Auth-Module/product-detail.html   /GreenHealth-Auth-Module/product-detail.html  200
+/GreenHealth-Auth-Module/products.html         /GreenHealth-Auth-Module/products.html        200
+/GreenHealth-Auth-Module/checkout.html         /GreenHealth-Auth-Module/checkout.html        200
+/GreenHealth-Auth-Module/order-success.html    /GreenHealth-Auth-Module/order-success.html   200
+
+# A.3 --- 其他 HTML 頁面 (會員相關) 一律走 SPA (main 分支) ---
+/GreenHealth-Auth-Module/*.html   /GreenHealth-Auth-Module/index.html    200
+
+# ==============================================================================
+# ⬇️ B. [安全增補] 測試分支 (branch) 所需的新規則 ⬇️
+# ==============================================================================
+
+# B.1 --- 靜態資源優先處理 (branch 分支) ---
 # 共用模組資源
 /_shared/js/*                     /_shared/js/:splat                     200
 
@@ -35,36 +47,32 @@
 /permission-panel/js/*            /permission-panel/js/:splat            200
 /permission-panel/css/*           /permission-panel/css/:splat           200
 
-# ==============================================================================
-# ⬇️ 【核心修正】此區塊已根據您的新檔案結構進行修正 ⬇️
-# ==============================================================================
-
-# 消費者前端模組拆分後的靜態資源
-# 商店前端 (Storefront)
+# 新版消費者前端模組資源
 /storefront-module/js/*           /storefront-module/js/:splat           200
 /storefront-module/css/*          /storefront-module/css/:splat          200
 /storefront-module/images/*       /storefront-module/images/:splat       200
-# 會員中心 (Account)
+# 新版會員中心模組資源
 /account-module/js/*              /account-module/js/:splat              200
 /account-module/css/*             /account-module/css/:splat             200
 
-
 # ==============================================================================
-# ⬇️ SPA / MPA 路由回退 ⬇️
+# ⬇️ C. SPA 路由回退 (整合版) ⬇️
 # ==============================================================================
+# 規則順序：先匹配精確度最高的後台和新會員中心，最後才匹配 main 分支的兜底規則。
 
-# 【維持不變】後台 SPA 模組回退規則
+# C.1 --- 後台 SPA 模組回退 (維持不變) ---
 /admin/*                          /admin/index.html                      200
 /warehouse-panel/*                /warehouse-panel/index.html            200
 /invoice-panel/*                  /invoice-panel/index.html              200
 /permission-panel/*               /permission-panel/index.html           200
 
-# 【核心修正】消費者前端 SPA (會員中心) 回退規則
-# 將所有對 /account-module/... 的請求，都導向到會員中心的 SPA 入口
+# C.2 --- 新版消費者前端 SPA (會員中心) 回退 (安全增補) ---
 /account-module/*                 /account-module/index.html             200
 
-# 【核心修正】最終的「全收」規則
-# 將對根目錄 (/) 或其他任何不匹配上述規則的路徑的訪問，導向到商店的前端首頁。
-# Netlify 會優先尋找實際存在的檔案 (例如 /storefront-module/product-detail.html)，
-# 只有在找不到檔案時，此規則才會生效。
-/*                                /storefront-module/products.html       200
+# C.3 --- 主網站 (main) 的最終兜底規則 (維持不變) ---
+# 這條規則現在是安全的，因為它位於所有更精確的規則之後。
+/*                                /GreenHealth-Auth-Module/index.html    200
+
+# [註解]: 對於新的 storefront-module，我們依賴 Netlify 的預設行為來服務實體 .html
+# (例如 products.html)，因此不需要像舊的 GreenHealth-Auth-Module 一樣定義那麼多
+# 精確的 .html 規則。現有的規則已足夠覆蓋所有場景。
