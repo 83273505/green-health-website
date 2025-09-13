@@ -1,43 +1,14 @@
 # ==============================================================================
 # 檔案路徑: test-shiporder/_redirects
-# 版本: v34.1 - 最終 Main/Branch 整合正體中文版
+# 版本: v31.7 - 最終 MPA/SPA 混合路由實作版
 # ------------------------------------------------------------------------------
-# 【此版本為最終、唯一的路由設定檔】
-# 核心原則：完全保留主席提供的 main 分支 (v31.7) 所有規則，並在此基礎上
-#           安全地增補 branch 分支 (storefront-module) 所需的新規則。
-#           所有註解均已校訂為正體中文。
-# ==============================================================================
 
-# --- 核心 API 路由 (最高優先級，維持不變) ---
+# --- 核心 API 路由 (最高優先級) ---
 /.netlify/functions/*             /.netlify/functions/:splat             200
 
-# ==============================================================================
-# ⬇️ A. [維持不變] 主網站 (main) 的所有既有規則 ⬇️
-# ==============================================================================
-
-# A.1 --- 靜態資源優先處理 (main 分支) ---
-/GreenHealth-Auth-Module/js/*     /GreenHealth-Auth-Module/js/:splat     200
-/GreenHealth-Auth-Module/css/*    /GreenHealth-Auth-Module/css/:splat    200
-/GreenHealth-Auth-Module/images/* /GreenHealth-Auth-Module/images/:splat 200
-
-# A.2 --- 指定 MPA 頁面 (main 分支) ---
-/GreenHealth-Auth-Module/product-detail.html   /GreenHealth-Auth-Module/product-detail.html  200
-/GreenHealth-Auth-Module/products.html         /GreenHealth-Auth-Module/products.html        200
-/GreenHealth-Auth-Module/checkout.html         /GreenHealth-Auth-Module/checkout.html        200
-/GreenHealth-Auth-Module/order-success.html    /GreenHealth-Auth-Module/order-success.html   200
-
-# A.3 --- 其他 HTML 頁面 (會員相關) 一律走 SPA (main 分支) ---
-/GreenHealth-Auth-Module/*.html   /GreenHealth-Auth-Module/index.html    200
-
-# ==============================================================================
-# ⬇️ B. [安全增補] 測試分支 (branch) 所需的新規則 ⬇️
-# ==============================================================================
-
-# B.1 --- 靜態資源優先處理 (branch 分支) ---
-# 共用模組資源
+# --- 靜態資源優先處理 ---
 /_shared/js/*                     /_shared/js/:splat                     200
 
-# 後台模組資源
 /admin/js/*                       /admin/js/:splat                       200
 /admin/css/*                      /admin/css/:splat                      200
 /warehouse-panel/js/*             /warehouse-panel/js/:splat             200
@@ -47,32 +18,26 @@
 /permission-panel/js/*            /permission-panel/js/:splat            200
 /permission-panel/css/*           /permission-panel/css/:splat           200
 
-# 新版消費者前端模組資源
-/storefront-module/js/*           /storefront-module/js/:splat           200
-/storefront-module/css/*          /storefront-module/css/:splat          200
-/storefront-module/images/*       /storefront-module/images/:splat       200
-# 新版會員中心模組資源
-/account-module/js/*              /account-module/js/:splat              200
-/account-module/css/*             /account-module/css/:splat             200
+/GreenHealth-Auth-Module/js/*     /GreenHealth-Auth-Module/js/:splat     200
+/GreenHealth-Auth-Module/css/*    /GreenHealth-Auth-Module/css/:splat    200
+/GreenHealth-Auth-Module/images/* /GreenHealth-Auth-Module/images/:splat 200
+
+# --- 指定 MPA 頁面 (可匿名直出，不進 SPA 驗證) ---
+/GreenHealth-Auth-Module/product-detail.html   /GreenHealth-Auth-Module/product-detail.html  200
+/GreenHealth-Auth-Module/products.html         /GreenHealth-Auth-Module/products.html        200
+/GreenHealth-Auth-Module/checkout.html         /GreenHealth-Auth-Module/checkout.html        200
+/GreenHealth-Auth-Module/order-success.html    /GreenHealth-Auth-Module/order-success.html   200
+
+# --- 其他 HTML 頁面 (會員相關) 一律走 SPA ---
+/GreenHealth-Auth-Module/*.html   /GreenHealth-Auth-Module/index.html    200
 
 # ==============================================================================
-# ⬇️ C. SPA 路由回退 (整合版) ⬇️
+# ⬇️ SPA / MPA 路由回退 ⬇️
 # ==============================================================================
-# 規則順序：先匹配精確度最高的後台和新會員中心，最後才匹配 main 分支的兜底規則。
-
-# C.1 --- 後台 SPA 模組回退 (維持不變) ---
 /admin/*                          /admin/index.html                      200
 /warehouse-panel/*                /warehouse-panel/index.html            200
 /invoice-panel/*                  /invoice-panel/index.html              200
-/permission-panel/*               /permission-panel/index.html           200
+/permission-panel/*                /permission-panel/index.html           200
 
-# C.2 --- 新版消費者前端 SPA (會員中心) 回退 (安全增補) ---
-/account-module/*                 /account-module/index.html             200
-
-# C.3 --- 主網站 (main) 的最終兜底規則 (維持不變) ---
-# 這條規則現在是安全的，因為它位於所有更精確的規則之後。
+# 消費者前端 SPA 回退
 /*                                /GreenHealth-Auth-Module/index.html    200
-
-# [註解]: 對於新的 storefront-module，我們依賴 Netlify 的預設行為來服務實體 .html
-# (例如 products.html)，因此不需要像舊的 GreenHealth-Auth-Module 一樣定義那麼多
-# 精確的 .html 規則。現有的規則已足夠覆蓋所有場景。
