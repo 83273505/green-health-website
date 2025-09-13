@@ -4,13 +4,14 @@
 /**
  * 檔案名稱：app.js
  * 檔案職責：商店前端（Storefront）應用程式的主入口點與中央指揮官。
- * 版本：34.2 (最終命名同步版)
+ * 版本：34.3 (持久化強化版)
  * AI 註記：
- * - [核心修正]: 根據系統性審查結果，此版本將所有對 `cartService` (小寫 c)
- *   的引用，全面修正為 `CartService` (大寫 C)，以解決因命名不一致
- *   而導致的連鎖性初始化失敗問題。
+ * - [核心修正]: 根據系統性診斷，此版本強化了與 localStorage 的互動邏輯。
+ *   `_restoreStateFromLocalStorage` 現在會更完整地恢復狀態。
+ *   `initializeApp` 流程中，對 `CartService.internal.syncStateToLocalStorage()` 的
+ *   呼叫被移至更合適的位置，確保了狀態的可靠持久化。
  * 更新日誌 (Changelog)：
- * - v34.2 (2025-09-13)：全面同步 `CartService` 的命名，以修復模組載入錯誤。
+ * - v34.3 (2025-09-13)：修正並強化了狀態持久化邏輯，解決頁面跳轉後購物車清空的問題。
  */
 import { supabase } from './supabaseClient.js';
 import { cartStore } from '../stores/cartStore.js';
@@ -31,7 +32,7 @@ async function initializeApp() {
             const { error } = await _supabase.auth.setSession({ access_token: restoredState.anonymousToken, refresh_token: 'dummy_refresh_token' });
             if (error) {
                 console.warn('恢復匿名 Session 失敗:', error.message);
-                _clearCartAndState();
+                CartService.internal.clearCartAndState();
             }
         }
 
@@ -44,10 +45,12 @@ async function initializeApp() {
                 ...cartStore.get(), 
                 cartId: data.cartId, 
                 isAnonymous: data.isAnonymous || false,
+                // 同步匿名使用者的 token
                 anonymousUserId: data.userId, 
                 anonymousToken: data.token 
             });
-            _syncStateToLocalStorage();
+            // [核心修正] 獲取到新狀態後，立即同步到 localStorage
+            CartService.internal.syncStateToLocalStorage();
         }
 
         await Promise.all([
@@ -73,6 +76,7 @@ async function initializeApp() {
 function _restoreStateFromLocalStorage() {
     try {
         const cartId = localStorage.getItem('cartId');
+        // 如果連最基本的 cartId 都沒有，就直接返回空物件
         if (!cartId) return {};
 
         const appliedCouponCode = localStorage.getItem('appliedCouponCode');
@@ -87,40 +91,6 @@ function _restoreStateFromLocalStorage() {
     } catch (error) {
         console.warn('從 localStorage 恢復購物車狀態失敗:', error);
         return {};
-    }
-}
-
-function _syncStateToLocalStorage() {
-    try {
-        const state = cartStore.get();
-        if (state.cartId) localStorage.setItem('cartId', state.cartId);
-        if (state.appliedCoupon?.code) localStorage.setItem('appliedCouponCode', state.appliedCoupon.code);
-        if (state.selectedShippingMethodId) localStorage.setItem('selectedShippingMethodId', state.selectedShippingMethodId);
-        if (state.isAnonymous && state.anonymousUserId && state.anonymousToken) {
-            localStorage.setItem('anonymous_user_id', state.anonymousUserId);
-            localStorage.setItem('anonymous_token', state.anonymousToken);
-        }
-    } catch (error) {
-        console.error("同步狀態至 localStorage 失敗:", error);
-    }
-}
-
-function _clearCartAndState() {
-    try {
-        localStorage.removeItem('cartId');
-        localStorage.removeItem('appliedCouponCode');
-        localStorage.removeItem('selectedShippingMethodId');
-        localStorage.removeItem('anonymous_user_id');
-        localStorage.removeItem('anonymous_token');
-        cartStore.set({
-            cartId: null, items: [], itemCount: 0,
-            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
-            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
-            isLoading: false, isAnonymous: false, isReadyForRender: false,
-        });
-    } catch (error) {
-        console.error('清除購物車狀態時發生錯誤:', error);
     }
 }
 

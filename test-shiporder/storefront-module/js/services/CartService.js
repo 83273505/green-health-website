@@ -4,13 +4,14 @@
 /**
  * 檔案名稱：CartService.js
  * 檔案職責：處理所有與後端購物車 API 的通信，並在成功後更新中央狀態儲存 (cartStore)。
- * 版本：1.1 (正名修正版)
+ * 版本：1.3 (持久化強化版)
  * AI 註記：
- * - [核心修正]: 根據主席的最終指示，將此檔案的核心導出常數，從 `cartService`
- *   (小寫 c) 更正為 `CartService` (大寫 C)。此修正旨在解決因命名不一致
- *   而導致的 Uncaught SyntaxError，並使導出名與檔名保持一致。
- * 更新日誌 (Changelog)：
- * - v1.1 (2025-09-13)：修正 export 常數的大小寫，以匹配全專案的導入期望。
+ * - [核心修正]: 根據系統性重構計畫，新增了 `syncStateToLocalStorage` 和 `clearCartAndState`
+ *   兩個核心的內部函式。前者負責將 `cartStore` 中的最新狀態可靠地寫入
+ *   `localStorage`；後者則統一了清除所有本地狀態的邏輯。
+ *   `_recalculateCart` 在成功後會自動呼叫同步函式，確保了狀態的持久化。
+ * 更新日誌 (Changelog):
+ * - v1.3 (2025-09-13): 增加並強化了與 localStorage 同步的邏輯。
  */
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -25,6 +26,63 @@ class CartAPIError extends Error {
         this.code = code;
     }
 }
+
+// [核心修正] 新增集中的狀態同步函式
+function _syncStateToLocalStorage() {
+    try {
+        const state = cartStore.get();
+        if (state.cartId) {
+            localStorage.setItem('cartId', state.cartId);
+        } else {
+            localStorage.removeItem('cartId');
+        }
+        
+        if (state.appliedCoupon?.code) {
+            localStorage.setItem('appliedCouponCode', state.appliedCoupon.code);
+        } else {
+            localStorage.removeItem('appliedCouponCode');
+        }
+
+        if (state.selectedShippingMethodId) {
+            localStorage.setItem('selectedShippingMethodId', state.selectedShippingMethodId);
+        } else {
+            localStorage.removeItem('selectedShippingMethodId');
+        }
+        
+        if (state.isAnonymous && state.anonymousUserId && state.anonymousToken) {
+            localStorage.setItem('anonymous_user_id', state.anonymousUserId);
+            localStorage.setItem('anonymous_token', state.anonymousToken);
+        } else {
+            localStorage.removeItem('anonymous_user_id');
+            localStorage.removeItem('anonymous_token');
+        }
+    } catch (error) {
+        console.error("同步購物車狀態至 localStorage 失敗:", error);
+    }
+}
+
+// [核心修正] 新增集中的狀態清除函式
+function _clearCartAndState() {
+    try {
+        localStorage.removeItem('cartId');
+        localStorage.removeItem('appliedCouponCode');
+        localStorage.removeItem('selectedShippingMethodId');
+        localStorage.removeItem('anonymous_user_id');
+        localStorage.removeItem('anonymous_token');
+        
+        cartStore.set({
+            cartId: null, items: [], itemCount: 0,
+            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
+            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
+            isLoading: false, isAnonymous: false, isReadyForRender: false,
+        });
+        console.log('🛒 購物車本地與記憶體狀態已完全清除。');
+    } catch (error) {
+        console.error('清除購物車狀態時發生錯誤:', error);
+    }
+}
+
 
 async function invokeWithTimeout(functionName, options = {}) {
     const client = await supabase;
@@ -53,6 +111,8 @@ function _updateStateFromSnapshot(snapshot) {
         appliedCoupon: snapshot.appliedCoupon || null,
         shippingInfo: snapshot.shippingInfo || currentState.shippingInfo,
     });
+    // [核心修正] 每次從後端成功更新狀態後，都同步到 localStorage
+    _syncStateToLocalStorage();
 }
 
 async function _recalculateCart(payload) {
@@ -157,8 +217,8 @@ export const CartService = {
     internal: {
         invokeWithTimeout,
         recalculateCart: _recalculateCart,
-        syncStateToLocalStorage: function() { /* Placeholder for future implementation */ },
-        clearCartAndState: function() { /* Placeholder for future implementation */ },
+        syncStateToLocalStorage: _syncStateToLocalStorage,
+        clearCartAndState: _clearCartAndState,
         async fetchShippingMethods() {
             try {
                 const client = await supabase;
