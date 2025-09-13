@@ -1,14 +1,21 @@
 // 檔案路徑: storefront-module/js/modules/cart/cart.js
+// ==============================================================================
+
 /**
  * 檔案名稱：cart.js
  * 檔案職責：處理購物車頁面的 UI 渲染與使用者互動，並整合「樂觀更新」與中央狀態管理。
- * 版本：36.0 (架構重構與樂觀更新版)
+ * 版本：36.1 (命名同步修正版)
  * AI 註記：
- * - [核心架構重構]: 此版本已完全與新的「星型架構」對齊。
- * - [操作指示]: 請完整覆蓋原檔案。
+ * - [核心修正]: 根據主席提供的錯誤日誌，此版本修正了對購物車服務的導入
+ *   語句。原始碼中錯誤地使用了 `import { cartService }` (小寫 c)，
+ *   但 `CartService.js` 檔案實際匯出的是 `CartService` (大寫 C)。
+ *   現已將所有相關引用統一為正確的大寫 `CartService`，以解決 SyntaxError。
+ * 更新日誌 (Changelog)：
+ * - v36.1 (2025-09-13)：修正 `import` 語句的大小寫，以匹配全專案的命名慣例。
  */
 import { cartStore } from '../../stores/cartStore.js';
-import { cartService } from '../../services/cartService.js';
+// 【核心修正】將 `cartService` 修正為 `CartService`
+import { CartService } from '../../services/CartService.js';
 import { formatPrice } from '../../core/utils.js';
 
 const itemListElement = document.getElementById('cart-item-list');
@@ -110,7 +117,8 @@ async function handleCartInteractions(event) {
         const itemElement = target.closest('.cart-item');
         if(itemElement) itemElement.style.opacity = '0.7';
         try {
-            await cartService.updateItemQuantity(itemId, newQuantity);
+            // 【核心修正】將 `cartService` 修正為 `CartService`
+            await CartService.updateItemQuantity(itemId, newQuantity);
         } catch (error) {
             console.warn(`[cart.js] 捕獲到庫存操作失敗信號:`, error);
             if(itemElement) {
@@ -123,12 +131,14 @@ async function handleCartInteractions(event) {
     } else if (target.matches('.remove-item-btn')) {
         const itemId = target.dataset.itemId;
         if (itemId && confirm('您確定要從購物車中移除這個商品嗎？')) {
-            cartService.removeItem(itemId);
+            // 【核心修正】將 `cartService` 修正為 `CartService`
+            CartService.removeItem(itemId);
         }
     } else if (target.id === 'apply-coupon-btn') {
         if (couponInputElement) {
             const couponCode = couponInputElement.value.trim().toUpperCase();
-            cartService.applyCoupon(couponCode || null);
+            // 【核心修正】將 `cartService` 修正為 `CartService`
+            CartService.applyCoupon(couponCode || null);
         }
     }
 }
@@ -136,7 +146,8 @@ async function handleCartInteractions(event) {
 function handleShippingChange(event) {
     if (event.target.id === 'shipping-method-select') {
         const selectedId = event.target.value;
-        cartService.selectShippingMethod(selectedId);
+        // 【核心修正】將 `cartService` 修正為 `CartService`
+        CartService.selectShippingMethod(selectedId);
     }
 }
 
