@@ -1,21 +1,18 @@
-// ==============================================================================
 // 檔案路徑: storefront-module/js/components/CartWidget.js
-// 版本: v38.2 - 主動狀態同步勝利收官版
-// ------------------------------------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
- * @file 購物車小工具 (Cart Widget)
- * @description 負責渲染並管理頁面右上角的購物車圖示及其數量角標。
- * @version v38.2
- * 
- * @update v38.2 - [PROACTIVE STATE SYNC]
- * 1. [核心修正] 在 `init` 函式的結尾，增加了主動從 `CartService` 獲取
- *          初始狀態並立即進行一次渲染的邏輯。
- * 2. [錯誤解決] 此修改徹底解決了因模組初始化順序而導致 `CartWidget`
- *          錯過 `CartService` 首次狀態通知，從而無法正確顯示初始購物車
- *          數量的問題，確保了 UI 狀態的絕對同步。
+ * 檔案名稱：CartWidget.js
+ * 檔案職責：負責渲染並管理頁面右上角的購物車圖示及其數量角標。
+ * 版本：38.4 (呼叫校準版)
+ * AI 註記：
+ * - [核心修正]: 根據 `CartService.js` v1.2 的結構還原，此版本將所有對
+ *   `CartService.internal.subscribe` 和 `CartService.internal.getState`
+ *   的呼叫，校準回直接的 `CartService.subscribe` 和 `CartService.getState`，
+ *   以確保與還原後的服務層結構完全匹配。
+ * 更新日誌 (Changelog)：
+ * - v38.4 (2025-09-12)：修正 subscribe 和 getState 的呼叫路徑。
+ * - v38.3 (2025-09-12)：修正模組導入的大小寫錯誤。
  */
 
 import { CartService } from '../services/CartService.js';
@@ -73,9 +70,10 @@ export const CartWidget = {
             });
         }
 
+        // 【核心修正】將 `CartService.internal.subscribe` 校準回 `CartService.subscribe`
         CartService.subscribe(render);
         
-        // [v38.2] 核心修正: 主動獲取一次初始狀態並渲染
+        // 【核心修正】將 `CartService.internal.getState` 校準回 `CartService.getState`
         const initialState = CartService.getState();
         render(initialState);
     }

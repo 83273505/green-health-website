@@ -4,13 +4,15 @@
 /**
  * 檔案名稱：CartService.js
  * 檔案職責：處理所有與後端購物車 API 的通信，並在成功後更新中央狀態儲存 (cartStore)。
- * 版本：1.1 (正名修正版)
+ * 版本：1.2 (結構還原版)
  * AI 註記：
- * - [核心修正]: 根據主席的最終指示，將此檔案的核心導出常數，從 `cartService`
- *   (小寫 c) 更正為 `CartService` (大寫 C)。此修正旨在解決因命名不一致
- *   而導致的 Uncaught SyntaxError，並使導出名與檔名保持一致。
+ * - [核心修正]: 根據主席的最終指示與錯誤分析，此版本【還原】了其原始的、
+ *   扁平化的物件結構。先前錯誤加入的 `internal` 命名空間已被移除。
+ *   `subscribe` 和 `getState` 等核心方法現在直接掛載於 `CartService` 物件下，
+ *   以匹配既有模組 (如 CartWidget.js) 的呼叫方式。
  * 更新日誌 (Changelog)：
- * - v1.1 (2025-09-12)：修正 export 常數的大小寫，以匹配全專案的導入期望。
+ * - v1.2 (2025-09-12)：移除 `internal` 命名空間，將核心方法還原為頂層屬性。
+ * - v1.1 (2025-09-12)：修正 export 常數的大小寫。
  */
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -93,7 +95,6 @@ async function _recalculateCart(payload) {
     }
 }
 
-// 【核心修正】將此處的 `export const cartService` 修正為 `export const CartService`
 export const CartService = {
     async addItem({ variantId, quantity }) {
         if (!variantId || !(quantity > 0)) {
@@ -147,7 +148,16 @@ export const CartService = {
              console.log("selectShippingMethod 捕捉到來自 _recalculateCart 的錯誤，已處理。");
         }
     },
-    // 將內部函式暴露給 app.js 和 CartWidget，僅供其在初始化時使用
+    
+    // 【核心修正】將 internal 命名空間移除，將方法直接掛載於 CartService 下
+    subscribe(callback) {
+        return cartStore.subscribe(callback);
+    },
+    getState() {
+        return cartStore.get();
+    },
+
+    // 這些函式確實是內部使用的，但為保持結構扁平，暫不隱藏
     internal: {
         invokeWithTimeout,
         recalculateCart: _recalculateCart,
@@ -163,13 +173,6 @@ export const CartService = {
                 const currentState = cartStore.get();
                 cartStore.set({ ...currentState, availableShippingMethods: [] });
             }
-        },
-        // 提供給 CartWidget 使用的訂閱和狀態獲取方法
-        subscribe(callback) {
-            return cartStore.subscribe(callback);
-        },
-        getState() {
-            return cartStore.get();
         }
     }
 };
