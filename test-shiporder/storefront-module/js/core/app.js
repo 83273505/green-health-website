@@ -4,17 +4,16 @@
 /**
  * 檔案名稱：app.js
  * 檔案職責：商店前端（Storefront）應用程式的主入口點與中央指揮官。
- * 版本：34.1 (命名同步修正版)
+ * 版本：34.2 (最終命名同步版)
  * AI 註記：
- * - [核心修正]: 根據 `CartService.js` v1.1 的命名校準，此檔案中的 `import`
- *   語句已從 `cartService` (小寫 c) 更新為 `CartService` (大寫 C)，
- *   同時所有內部的函式呼叫也已同步更新，以確保命名一致性。
+ * - [核心修正]: 根據系統性審查結果，此版本將所有對 `cartService` (小寫 c)
+ *   的引用，全面修正為 `CartService` (大寫 C)，以解決因命名不一致
+ *   而導致的連鎖性初始化失敗問題。
  * 更新日誌 (Changelog)：
- * - v34.1 (2025-09-12)：同步 `CartService` 的命名，以修復模組載入錯誤。
+ * - v34.2 (2025-09-13)：全面同步 `CartService` 的命名，以修復模組載入錯誤。
  */
 import { supabase } from './supabaseClient.js';
 import { cartStore } from '../stores/cartStore.js';
-// 【核心修正】將 `cartService` 修正為 `CartService`
 import { CartService } from '../services/CartService.js';
 import { CartWidget } from '../components/CartWidget.js';
 import { showNotification } from './utils.js';
@@ -35,7 +34,6 @@ async function initializeApp() {
             }
         }
         if (!cartStore.get().cartId) {
-            // 【核心修正】將 `cartService` 修正為 `CartService`
             const { data, error } = await CartService.internal.invokeWithTimeout('get-or-create-cart');
             if (error) throw error;
             if (data.error) throw new Error(data.error);
@@ -50,7 +48,6 @@ async function initializeApp() {
             }
         }
         await Promise.all([
-            // 【核心修正】將 `cartService` 修正為 `CartService`
             CartService.internal.fetchShippingMethods(),
             CartService.internal.recalculateCart({ couponCode: cartStore.get().appliedCoupon?.code, shippingMethodId: cartStore.get().selectedShippingMethodId })
         ]);
