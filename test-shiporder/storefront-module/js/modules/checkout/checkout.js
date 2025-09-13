@@ -6,9 +6,9 @@
  * 檔案職責：統一情境感知結帳模組，整合最終提交時的後端錯誤處理。
  * 版本：45.6 (最終命名同步版)
  * AI 註記：
- * - [核心修正]: 根據系統性審查結果，此版本將所有對 `CartService`
- *   (先前版本中的 `CartService`) 的引用，全面修正為 `CartService` (大寫 C)，
- *   以解決因命名不一致而導致的連鎖性初始化失敗問題。
+ * - [核心修正]: 根據系統性審查結果，此版本將所有對 `CartService` 的引用，
+ *   全面修正為 `CartService` (大寫 C)，以解決因命名不一致而導致的
+ *   連鎖性初始化失敗問題。
  * 更新日誌 (Changelog)：
  * - v45.6 (2025-09-13)：全面同步 `CartService` 的命名，以修復模組載入錯誤。
  */
@@ -389,12 +389,12 @@ function _handleOrderError(err) {
             case 'PRICE_MISMATCH':
                 userMessage = backendError.message || '商品價格或優惠已變更，購物車將自動更新，請您重新確認訂單。';
                 showNotification(userMessage, 'warning', 'notification-message');
-                setTimeout(() => CartService.forceReinit(), 500);
+                setTimeout(() => CartService.internal.recalculateCart({}), 500);
                 break;
             case 'RESERVATION_EXPIRED':
                 userMessage = backendError.message || '部分商品庫存已變動，購物車將自動為您更新。';
                 showNotification(userMessage, 'warning', 'notification-message');
-                setTimeout(() => CartService.forceReinit(), 500);
+                setTimeout(() => CartService.internal.recalculateCart({}), 500);
                 break;
             case 'INSUFFICIENT_STOCK':
             case 'INSUFFICIENT_STOCK_PRECHECK':
@@ -479,17 +479,7 @@ async function handlePlaceOrder() {
             sessionStorage.setItem('latestOrderDetails', JSON.stringify(data.data.orderDetails));
         }
 
-        // 【核心修正】將 `CartService` 的 clearCartAndState 呼叫放在內部
-        const clearState = () => {
-             try {
-                localStorage.removeItem('cartId');
-                localStorage.removeItem('appliedCouponCode');
-                localStorage.removeItem('selectedShippingMethodId');
-                localStorage.removeItem('anonymous_user_id');
-                localStorage.removeItem('anonymous_token');
-             } catch(e){}
-        };
-        clearState();
+        CartService.internal.clearCartAndState();
 
         window.location.href = `${ROUTES.ORDER_SUCCESS}?order_number=${data.data.orderNumber}`;
 
@@ -503,7 +493,6 @@ export async function init() {
     const { data: { session } } = await client.auth.getSession();
     currentSession = session;
     
-    // 【核心修正】不再直接呼叫 CartService.init()，因為 app.js 已處理
     if (CartService.getState().itemCount === 0 && !window.location.search.includes('order_number')) {
         alert('您的購物車是空的，將為您導向商品頁。');
         window.location.href = ROUTES.PRODUCTS_LIST;

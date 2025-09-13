@@ -26,6 +26,7 @@ async function initializeApp() {
         console.log('🛒 開始初始化購物車服務...');
         const restoredState = _restoreStateFromLocalStorage();
         cartStore.set({ ...cartStore.get(), ...restoredState });
+
         if (restoredState.anonymousToken && restoredState.anonymousUserId) {
             const { error } = await _supabase.auth.setSession({ access_token: restoredState.anonymousToken, refresh_token: 'dummy_refresh_token' });
             if (error) {
@@ -33,24 +34,30 @@ async function initializeApp() {
                 _clearCartAndState();
             }
         }
+
         if (!cartStore.get().cartId) {
             const { data, error } = await CartService.internal.invokeWithTimeout('get-or-create-cart');
             if (error) throw error;
             if (data.error) throw new Error(data.error);
-            cartStore.set({ ...cartStore.get(), cartId: data.cartId, isAnonymous: data.isAnonymous || false });
-            localStorage.setItem('cartId', data.cartId);
-            if (data.isAnonymous && data.userId && data.token) {
-                localStorage.setItem('anonymous_user_id', data.userId);
-                localStorage.setItem('anonymous_token', data.token);
-            } else {
-                localStorage.removeItem('anonymous_user_id');
-                localStorage.removeItem('anonymous_token');
-            }
+            
+            cartStore.set({ 
+                ...cartStore.get(), 
+                cartId: data.cartId, 
+                isAnonymous: data.isAnonymous || false,
+                anonymousUserId: data.userId, 
+                anonymousToken: data.token 
+            });
+            _syncStateToLocalStorage();
         }
+
         await Promise.all([
             CartService.internal.fetchShippingMethods(),
-            CartService.internal.recalculateCart({ couponCode: cartStore.get().appliedCoupon?.code, shippingMethodId: cartStore.get().selectedShippingMethodId })
+            CartService.internal.recalculateCart({ 
+                couponCode: cartStore.get().appliedCoupon?.code, 
+                shippingMethodId: cartStore.get().selectedShippingMethodId 
+            })
         ]);
+
         const finalState = cartStore.get();
         cartStore.set({ ...finalState, isReadyForRender: true, isLoading: false });
         console.log(`🛒 購物車服務初始化完成 (使用者狀態: ${finalState.isAnonymous ? '匿名' : '已認證'})`);
@@ -67,9 +74,12 @@ function _restoreStateFromLocalStorage() {
     try {
         const cartId = localStorage.getItem('cartId');
         if (!cartId) return {};
+
+        const appliedCouponCode = localStorage.getItem('appliedCouponCode');
+        
         return {
             cartId,
-            appliedCoupon: localStorage.getItem('appliedCouponCode') ? { code: localStorage.getItem('appliedCouponCode') } : null,
+            appliedCoupon: appliedCouponCode ? { code: appliedCouponCode } : null,
             selectedShippingMethodId: localStorage.getItem('selectedShippingMethodId'),
             anonymousUserId: localStorage.getItem('anonymous_user_id'),
             anonymousToken: localStorage.getItem('anonymous_token')
@@ -77,6 +87,21 @@ function _restoreStateFromLocalStorage() {
     } catch (error) {
         console.warn('從 localStorage 恢復購物車狀態失敗:', error);
         return {};
+    }
+}
+
+function _syncStateToLocalStorage() {
+    try {
+        const state = cartStore.get();
+        if (state.cartId) localStorage.setItem('cartId', state.cartId);
+        if (state.appliedCoupon?.code) localStorage.setItem('appliedCouponCode', state.appliedCoupon.code);
+        if (state.selectedShippingMethodId) localStorage.setItem('selectedShippingMethodId', state.selectedShippingMethodId);
+        if (state.isAnonymous && state.anonymousUserId && state.anonymousToken) {
+            localStorage.setItem('anonymous_user_id', state.anonymousUserId);
+            localStorage.setItem('anonymous_token', state.anonymousToken);
+        }
+    } catch (error) {
+        console.error("同步狀態至 localStorage 失敗:", error);
     }
 }
 
@@ -94,7 +119,6 @@ function _clearCartAndState() {
             shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
             isLoading: false, isAnonymous: false, isReadyForRender: false,
         });
-        console.log('🛒 購物車本地狀態已完全清除。');
     } catch (error) {
         console.error('清除購物車狀態時發生錯誤:', error);
     }
