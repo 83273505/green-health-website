@@ -1,16 +1,6 @@
 // 檔案路徑: storefront-module/js/services/CartService.js
-// ==============================================================================
-
-/**
- * 檔案名稱：CartService.js
- * 檔案職責：處理所有與後端購物車 API 的通信，並在成功後更新中央狀態儲存 (cartStore)。
- * 版本：1.3 (持久化強化版)
- * AI 註記：
- * - [核心修正]: 根據系統性重構計畫，新增了 `syncStateToLocalStorage` 和 `clearCartAndState`
- *   兩個核心的內部函式，並確保在任何狀態變更成功後，都會觸發持久化。
- * 更新日誌 (Changelog):
- * - v1.3 (2025-09-13): 增加並強化了與 localStorage 同步的邏輯。
- */
+// 版本：v43.0 (架構融合版)
+// 職責：【行為層】。處理所有與後端 API 的通信，並在成功後更新 `cartStore`。
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 import { cartStore } from '../stores/cartStore.js';
@@ -22,60 +12,6 @@ class CartAPIError extends Error {
         super(message);
         this.name = 'CartAPIError';
         this.code = code;
-    }
-}
-
-function _syncStateToLocalStorage() {
-    try {
-        const state = cartStore.get();
-        if (state.cartId) {
-            localStorage.setItem('cartId', state.cartId);
-        } else {
-            localStorage.removeItem('cartId');
-        }
-        
-        if (state.appliedCoupon?.code) {
-            localStorage.setItem('appliedCouponCode', state.appliedCoupon.code);
-        } else {
-            localStorage.removeItem('appliedCouponCode');
-        }
-
-        if (state.selectedShippingMethodId) {
-            localStorage.setItem('selectedShippingMethodId', state.selectedShippingMethodId);
-        } else {
-            localStorage.removeItem('selectedShippingMethodId');
-        }
-        
-        if (state.isAnonymous && state.anonymousUserId && state.anonymousToken) {
-            localStorage.setItem('anonymous_user_id', state.anonymousUserId);
-            localStorage.setItem('anonymous_token', state.anonymousToken);
-        } else {
-            localStorage.removeItem('anonymous_user_id');
-            localStorage.removeItem('anonymous_token');
-        }
-    } catch (error) {
-        console.error("同步購物車狀態至 localStorage 失敗:", error);
-    }
-}
-
-function _clearCartAndState() {
-    try {
-        localStorage.removeItem('cartId');
-        localStorage.removeItem('appliedCouponCode');
-        localStorage.removeItem('selectedShippingMethodId');
-        localStorage.removeItem('anonymous_user_id');
-        localStorage.removeItem('anonymous_token');
-        
-        cartStore.set({
-            cartId: null, items: [], itemCount: 0,
-            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
-            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
-            isLoading: false, isAnonymous: false, isReadyForRender: false,
-        });
-        console.log('🛒 購物車本地與記憶體狀態已完全清除。');
-    } catch (error) {
-        console.error('清除購物車狀態時發生錯誤:', error);
     }
 }
 
@@ -147,6 +83,45 @@ async function _recalculateCart(payload) {
     }
 }
 
+function _syncStateToLocalStorage() {
+    try {
+        const state = cartStore.get();
+        if (state.cartId) localStorage.setItem('cartId', state.cartId); else localStorage.removeItem('cartId');
+        if (state.appliedCoupon?.code) localStorage.setItem('appliedCouponCode', state.appliedCoupon.code); else localStorage.removeItem('appliedCouponCode');
+        if (state.selectedShippingMethodId) localStorage.setItem('selectedShippingMethodId', state.selectedShippingMethodId); else localStorage.removeItem('selectedShippingMethodId');
+        if (state.isAnonymous && state.anonymousUserId && state.anonymousToken) {
+            localStorage.setItem('anonymous_user_id', state.anonymousUserId);
+            localStorage.setItem('anonymous_token', state.anonymousToken);
+        } else {
+            localStorage.removeItem('anonymous_user_id');
+            localStorage.removeItem('anonymous_token');
+        }
+    } catch (error) {
+        console.error("同步購物車狀態至 localStorage 失敗:", error);
+    }
+}
+
+function _clearCartAndState() {
+    try {
+        localStorage.removeItem('cartId');
+        localStorage.removeItem('appliedCouponCode');
+        localStorage.removeItem('selectedShippingMethodId');
+        localStorage.removeItem('anonymous_user_id');
+        localStorage.removeItem('anonymous_token');
+        cartStore.set({
+            cartId: null, items: [], itemCount: 0,
+            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
+            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
+            isLoading: false, isAnonymous: false, isReadyForRender: false,
+            anonymousUserId: null, anonymousToken: null,
+        });
+        console.log('🛒 購物車本地與記憶體狀態已完全清除。');
+    } catch (error) {
+        console.error('清除購物車狀態時發生錯誤:', error);
+    }
+}
+
 export const CartService = {
     async addItem({ variantId, quantity }) {
         if (!variantId || !(quantity > 0)) {
@@ -201,12 +176,8 @@ export const CartService = {
         }
     },
     
-    subscribe(callback) {
-        return cartStore.subscribe(callback);
-    },
-    getState() {
-        return cartStore.get();
-    },
+    subscribe(callback) { return cartStore.subscribe(callback); },
+    getState() { return cartStore.get(); },
 
     internal: {
         invokeWithTimeout,
@@ -218,12 +189,10 @@ export const CartService = {
                 const client = await supabase;
                 const { data, error } = await client.from('shipping_rates').select('*').eq('is_active', true).order('display_order', { ascending: true });
                 if (error) throw error;
-                const currentState = cartStore.get();
-                cartStore.set({ ...currentState, availableShippingMethods: data || [] });
+                cartStore.set({ ...cartStore.get(), availableShippingMethods: data || [] });
             } catch (error) {
                 console.error('獲取運送方式失敗:', error);
-                const currentState = cartStore.get();
-                cartStore.set({ ...currentState, availableShippingMethods: [] });
+                cartStore.set({ ...cartStore.get(), availableShippingMethods: [] });
             }
         }
     }

@@ -1,18 +1,6 @@
 // 檔案路徑: storefront-module/js/modules/cart/cart.js
-// ==============================================================================
-
-/**
- * 檔案名稱：cart.js
- * 檔案職責：處理購物車頁面的 UI 渲染與使用者互動，並整合「樂觀更新」與中央狀態管理。
- * 版本：36.1 (命名同步修正版)
- * AI 註記：
- * - [核心修正]: 根據系統性審查結果，此版本修正了對購物車服務的導入
- *   語句。原始碼中錯誤地使用了 `import { cartService }` (小寫 c)，
- *   但 `CartService.js` 檔案實際匯出的是 `CartService` (大寫 C)。
- *   現已將所有相關引用統一為正確的大寫 `CartService`，以解決 SyntaxError。
- * 更新日誌 (Changelog)：
- * - v36.1 (2025-09-13)：修正 `import` 語句的大小寫，以匹配全專案的命名慣例。
- */
+// 版本: v37.0 (架構融合版)
+// 職責：處理購物車頁面的 UI 渲染與使用者互動。
 import { cartStore } from '../../stores/cartStore.js';
 import { CartService } from '../../services/CartService.js';
 import { formatPrice } from '../../core/utils.js';

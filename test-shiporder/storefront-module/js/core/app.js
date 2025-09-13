@@ -1,16 +1,6 @@
 // 檔案路徑: storefront-module/js/core/app.js
-// ==============================================================================
-
-/**
- * 檔案名稱：app.js
- * 檔案職責：商店前端（Storefront）應用程式的主入口點與中央指揮官。
- * 版本：34.3 (持久化強化版)
- * AI 註記：
- * - [核心修正]: 根據系統性重構計畫，此版本強化了與 localStorage 的互動邏輯，
- *   確保在從後端獲取到新的 cartId 後，能被可靠地持久化。
- * 更新日誌 (Changelog)：
- * - v34.3 (2025-09-13)：修正並強化了狀態持久化邏輯，解決頁面跳轉後購物車清空的問題。
- */
+// 版本：v35.0 (架構融合版)
+// 職責：應用程式主入口點。初始化 `CartService`，並根據頁面動態載入模組。
 import { supabase } from './supabaseClient.js';
 import { cartStore } from '../stores/cartStore.js';
 import { CartService } from '../services/CartService.js';
@@ -37,17 +27,15 @@ async function initializeApp() {
         if (!cartStore.get().cartId) {
             const { data, error } = await CartService.internal.invokeWithTimeout('get-or-create-cart');
             if (error) throw error;
-            if (data.error) throw new Error(data.error);
+            if (data.error) throw new Error(data.error.message);
             
             cartStore.set({ 
                 ...cartStore.get(), 
                 cartId: data.cartId, 
                 isAnonymous: data.isAnonymous || false,
-                // 同步匿名使用者的 token
                 anonymousUserId: data.userId, 
                 anonymousToken: data.token 
             });
-            // 獲取到新狀態後，立即同步到 localStorage
             CartService.internal.syncStateToLocalStorage();
         }
 
@@ -75,9 +63,7 @@ function _restoreStateFromLocalStorage() {
     try {
         const cartId = localStorage.getItem('cartId');
         if (!cartId) return {};
-
         const appliedCouponCode = localStorage.getItem('appliedCouponCode');
-        
         return {
             cartId,
             appliedCoupon: appliedCouponCode ? { code: appliedCouponCode } : null,

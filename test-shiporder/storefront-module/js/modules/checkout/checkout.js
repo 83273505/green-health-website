@@ -1,25 +1,13 @@
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
-// ==============================================================================
-
-/**
- * 檔案名稱：checkout.js
- * 檔案職責：統一情境感知結帳模組，整合最終提交時的後端錯誤處理。
- * 版本：45.6 (最終命名同步版)
- * AI 註記：
- * - [核心修正]: 根據系統性審查結果，此版本將所有對 `CartService` 的引用，
- *   全面修正為 `CartService` (大寫 C)，以解決因命名不一致而導致的
- *   連鎖性初始化失敗問題。
- * 更新日誌 (Changelog)：
- * - v45.6 (2025-09-13)：全面同步 `CartService` 的命名，以修復模組載入錯誤。
- */
-
+// 版本：v46.0 (架構融合版)
+// 職責：處理結帳頁面的所有邏輯。
 import { supabase } from '../../core/supabaseClient.js';
+import { cartStore } from '../../stores/cartStore.js';
 import { CartService } from '../../services/CartService.js';
 import { TABLE_NAMES, ROUTES } from '../../core/constants.js';
 import { formatPrice, showNotification } from '../../core/utils.js';
 import { taiwanZipcodes } from '../../core/taiwan_zipcodes.js';
 
-// --- 狀態管理 ---
 let currentSession = null;
 let paymentMethods = [];
 let selectedPaymentMethodId = null;
@@ -30,7 +18,6 @@ let invoiceOptions = {
 };
 let userAddresses = [];
 
-// --- DOM 元素獲取 ---
 const loadingOverlay = document.getElementById('loading-overlay');
 const checkoutContainer = document.querySelector('.checkout-container');
 const checkoutForm = document.getElementById('checkout-form');
@@ -65,8 +52,6 @@ const socialLoginSection = document.getElementById('social-login-section');
 const btnLoginGoogle = document.getElementById('btn-login-google');
 const btnLoginLine = document.getElementById('btn-login-line');
 
-
-// --- 地址預填與選擇邏輯 ---
 function populateAddressForm(address) {
     if (!address) return;
     if (recipientNameInput) recipientNameInput.value = address.recipient_name || '';
@@ -142,7 +127,6 @@ async function fetchAndHandleAddresses(userId) {
 
 async function updateUIMode(session) {
     const isRealMember = session && session.user && !session.user.is_anonymous;
-
     if (isRealMember) {
         const userEmail = session.user.email;
         if (userWelcomeMessageEl) {
@@ -154,38 +138,24 @@ async function updateUIMode(session) {
             emailInput.readOnly = true;
             shippingDetails.email = userEmail;
         }
-        if (socialLoginSection) {
-            socialLoginSection.classList.add('hidden');
-        }
+        if (socialLoginSection) socialLoginSection.classList.add('hidden');
         await fetchAndHandleAddresses(session.user.id);
     } else {
         if (userWelcomeMessageEl) userWelcomeMessageEl.classList.add('hidden');
-        if (emailInput) {
-            emailInput.value = '';
-            emailInput.readOnly = false;
-        }
+        if (emailInput) { emailInput.value = ''; emailInput.readOnly = false; }
         if (addressSelectorContainer) addressSelectorContainer.classList.add('hidden');
-        if (socialLoginSection) {
-            socialLoginSection.classList.remove('hidden');
-        }
+        if (socialLoginSection) socialLoginSection.classList.remove('hidden');
     }
 }
 
 async function socialSignIn(provider) {
     try {
         const client = await supabase;
-        const { error } = await client.auth.signInWithOAuth({
-            provider: provider,
-            options: {
-                redirectTo: window.location.href
-            }
-        });
-        if (error) {
-            showNotification(`透過 ${provider} 登入時發生錯誤: ${error.message}`, 'error', 'notification-message');
-        }
+        const { error } = await client.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.href } });
+        if (error) showNotification(`透過 ${provider} 登入時發生錯誤: ${error.message}`, 'error');
     } catch (err) {
         console.error('社交登入時發生未知錯誤:', err);
-        showNotification('登入程序啟動失敗，請稍後再試。', 'error', 'notification-message');
+        showNotification('登入程序啟動失敗，請稍後再試。', 'error');
     }
 }
 
@@ -224,11 +194,7 @@ function updatePostalCode() {
 async function fetchCommonData() {
     try {
         const client = await supabase;
-        const { data, error } = await client
-            .from(TABLE_NAMES.PAYMENT_METHODS)
-            .select('*')
-            .eq('is_active', true)
-            .order('sort_order', { ascending: true });
+        const { data, error } = await client.from(TABLE_NAMES.PAYMENT_METHODS).select('*').eq('is_active', true).order('sort_order', { ascending: true });
         if (error) throw error;
         paymentMethods = data || [];
     } catch (error) {
@@ -238,25 +204,19 @@ async function fetchCommonData() {
 }
 
 function render() {
-    const cartState = CartService.getState();
+    const cartState = cartStore.get();
     const { summary, items, availableShippingMethods, selectedShippingMethodId } = cartState;
     if (summaryItemListEl) {
-        if (items && items.length > 0) {
-            summaryItemListEl.innerHTML = items.map((item) => {
-                const productName = item.product_variants?.products?.name;
-                const variantName = item.product_variants?.name || '';
-                const displayName = productName && productName !== variantName ? `${productName} - ${variantName}` : variantName;
-                return `<div class="summary-item"><span class="item-name">${displayName}</span><span class="item-qty">數量: ${item.quantity}</span><span class="item-total">${formatPrice(item.price_snapshot * item.quantity)}</span></div>`;
-            }).join('');
-        } else {
-            summaryItemListEl.innerHTML = '<p>購物車無商品</p>';
-        }
+        summaryItemListEl.innerHTML = items && items.length > 0 ? items.map(item => {
+            const displayName = item.product_variants?.products?.name && item.product_variants?.products?.name !== item.product_variants?.name ? `${item.product_variants.products.name} - ${item.product_variants.name}` : item.product_variants?.name || '';
+            return `<div class="summary-item"><span class="item-name">${displayName}</span><span class="item-qty">數量: ${item.quantity}</span><span class="item-total">${formatPrice(item.price_snapshot * item.quantity)}</span></div>`;
+        }).join('') : '<p>購物車無商品</p>';
     }
     if (shippingListContainer) {
         if (!cartState.isReadyForRender) {
             shippingListContainer.innerHTML = '<p>正在載入運送方式...</p>';
         } else if (availableShippingMethods && availableShippingMethods.length > 0) {
-            shippingListContainer.innerHTML = availableShippingMethods.map((method) => {
+            shippingListContainer.innerHTML = availableShippingMethods.map(method => {
                 const isSelected = method.id === selectedShippingMethodId;
                 return `<div class="option-item ${isSelected ? 'selected' : ''}"><label><input type="radio" name="shipping" value="${method.id}" ${isSelected ? 'checked' : ''}><span>${method.method_name} - ${formatPrice(method.rate)}</span></label></div>`;
             }).join('');
@@ -266,7 +226,7 @@ function render() {
     }
     if (paymentListContainer) {
         if (paymentMethods && paymentMethods.length > 0) {
-            paymentListContainer.innerHTML = paymentMethods.map((method) => {
+            paymentListContainer.innerHTML = paymentMethods.map(method => {
                 const isSelected = method.id === selectedPaymentMethodId;
                 return `<div class="option-item ${isSelected ? 'selected' : ''}"><label><input type="radio" name="payment" value="${method.id}" ${isSelected ? 'checked' : ''}><div class="payment-details"><span class="name">${method.method_name}</span>${method.description ? `<p class="description">${method.description}</p>` : ''}</div></label></div>`;
             }).join('');
@@ -306,7 +266,7 @@ function handleInvoiceTypeChange() {
     const selectedType = selectedRadio.value;
     invoiceOptions.type = selectedType;
     if (invoiceDetailsForms) {
-        invoiceDetailsForms.querySelectorAll('div[id^="form-"]').forEach((form) => form.classList.add('hidden'));
+        invoiceDetailsForms.querySelectorAll('div[id^="form-"]').forEach(form => form.classList.add('hidden'));
         const formToShow = document.getElementById(`form-${selectedType}`);
         if (formToShow) formToShow.classList.remove('hidden');
     }
@@ -321,9 +281,7 @@ function handleInvoiceDetailsChange() {
     invoiceOptions.company_name = companyNameInput?.value.trim() || '';
     if (invoiceOptions.type === 'cloud' && (invoiceOptions.carrier_type === 'mobile' || invoiceOptions.carrier_type === 'certificate')) {
         carrierNumberGroup?.classList.remove('hidden');
-        if (carrierNumberInput) {
-            carrierNumberInput.placeholder = invoiceOptions.carrier_type === 'mobile' ? '請輸入 / 開頭，共 8 碼英數字' : '請輸入共 16 碼英數字';
-        }
+        if (carrierNumberInput) carrierNumberInput.placeholder = invoiceOptions.carrier_type === 'mobile' ? '請輸入 / 開頭，共 8 碼英數字' : '請輸入共 16 碼英數字';
     } else {
         carrierNumberGroup?.classList.add('hidden');
     }
@@ -332,46 +290,28 @@ function handleInvoiceDetailsChange() {
 function validateInvoiceInfo() {
     switch (invoiceOptions.type) {
         case 'business':
-            if (!/^\d{8}$/.test(invoiceOptions.vat_number)) {
-                showNotification('統一編號格式不正確，應為 8 位數字。', 'error', 'notification-message');
-                return false;
-            }
-            if (!invoiceOptions.company_name) {
-                showNotification('請輸入公司抬頭。', 'error', 'notification-message');
-                return false;
-            }
+            if (!/^\d{8}$/.test(invoiceOptions.vat_number)) { showNotification('統一編號格式不正確，應為 8 位數字。', 'error'); return false; }
+            if (!invoiceOptions.company_name) { showNotification('請輸入公司抬頭。', 'error'); return false; }
             break;
         case 'donation':
-            if (!/^\d{3,7}$/.test(invoiceOptions.donation_code)) {
-                showNotification('愛心碼格式不正確，應為 3-7 位數字。', 'error', 'notification-message');
-                return false;
-            }
+            if (!/^\d{3,7}$/.test(invoiceOptions.donation_code)) { showNotification('愛心碼格式不正確，應為 3-7 位數字。', 'error'); return false; }
             break;
         case 'cloud':
-            if (invoiceOptions.carrier_type === 'mobile' && !/^\/[A-Z0-9+\-.]{7}$/.test(invoiceOptions.carrier_number)) {
-                showNotification('手機條碼格式不正確，應為 / 開頭共 8 碼。', 'error', 'notification-message');
-                return false;
-            }
-            if (invoiceOptions.carrier_type === 'certificate' && !/^[A-Z]{2}\d{14}$/.test(invoiceOptions.carrier_number)) {
-                showNotification('自然人憑證格式不正確，應為 2 位英文開頭共 16 碼。', 'error', 'notification-message');
-                return false;
-            }
+            if (invoiceOptions.carrier_type === 'mobile' && !/^\/[A-Z0-9+\-.]{7}$/.test(invoiceOptions.carrier_number)) { showNotification('手機條碼格式不正確，應為 / 開頭共 8 碼。', 'error'); return false; }
+            if (invoiceOptions.carrier_type === 'certificate' && !/^[A-Z]{2}\d{14}$/.test(invoiceOptions.carrier_number)) { showNotification('自然人憑證格式不正確，應為 2 位英文開頭共 16 碼。', 'error'); return false; }
             break;
     }
     return true;
 }
 
 function validateCustomerInfo() {
-    if (!shippingDetails.phone_number || !/^09\d{8}$/.test(shippingDetails.phone_number)) {
-        showNotification('手機號碼格式不正確，應為 09 開頭的 10 位數字。', 'error', 'notification-message');
-        return false;
-    }
+    if (!shippingDetails.phone_number || !/^09\d{8}$/.test(shippingDetails.phone_number)) { showNotification('手機號碼格式不正確，應為 09 開頭的 10 位數字。', 'error'); return false; }
     return true;
 }
 
 function updateSubmitButtonState() {
     if (!placeOrderBtn) return;
-    const cartState = CartService.getState();
+    const cartState = cartStore.get();
     const addressReady = !!(recipientNameInput?.value && phoneNumberInput?.value && emailInput?.value && streetAddressInput?.value && citySelector?.value && districtSelector?.value && postalCodeInput?.value);
     const termsChecked = termsCheckbox ? !!termsCheckbox.checked : true;
     const isReady = addressReady && !!cartState.selectedShippingMethodId && !!selectedPaymentMethodId && termsChecked;
@@ -380,78 +320,38 @@ function updateSubmitButtonState() {
 
 function _handleOrderError(err) {
     console.error('下單時發生嚴重錯誤:', err);
-    
     let userMessage = '下單失敗，系統發生未知錯誤。';
     const backendError = err?.context?.json?.error || err?.error;
-
-    if (backendError && backendError.code) {
+    if (backendError?.code) {
         switch (backendError.code) {
-            case 'PRICE_MISMATCH':
-                userMessage = backendError.message || '商品價格或優惠已變更，購物車將自動更新，請您重新確認訂單。';
-                showNotification(userMessage, 'warning', 'notification-message');
-                setTimeout(() => CartService.internal.recalculateCart({}), 500);
-                break;
-            case 'RESERVATION_EXPIRED':
-                userMessage = backendError.message || '部分商品庫存已變動，購物車將自動為您更新。';
-                showNotification(userMessage, 'warning', 'notification-message');
-                setTimeout(() => CartService.internal.recalculateCart({}), 500);
-                break;
-            case 'INSUFFICIENT_STOCK':
-            case 'INSUFFICIENT_STOCK_PRECHECK':
-                userMessage = backendError.message || '抱歉，部分商品在您結帳時剛好售完。';
-                showNotification(userMessage, 'error', 'notification-message');
-                setTimeout(() => { window.location.href = ROUTES.CART; }, 3000);
-                break;
-            default:
-                userMessage = backendError.message || userMessage;
-                showNotification(userMessage, 'error', 'notification-message');
-                break;
+            case 'PRICE_MISMATCH': userMessage = backendError.message || '商品價格或優惠已變更，購物車將自動更新，請您重新確認訂單。'; showNotification(userMessage, 'warning'); setTimeout(() => CartService.internal.recalculateCart({}), 500); break;
+            case 'RESERVATION_EXPIRED': userMessage = backendError.message || '部分商品庫存已變動，購物車將自動為您更新。'; showNotification(userMessage, 'warning'); setTimeout(() => CartService.internal.recalculateCart({}), 500); break;
+            case 'INSUFFICIENT_STOCK': case 'INSUFFICIENT_STOCK_PRECHECK': userMessage = backendError.message || '抱歉，部分商品在您結帳時剛好售完。'; showNotification(userMessage, 'error'); setTimeout(() => { window.location.href = ROUTES.CART; }, 3000); break;
+            default: userMessage = backendError.message || userMessage; showNotification(userMessage, 'error'); break;
         }
     } else {
         const errString = err.message || '';
-        if (errString.includes('Failed to fetch') || errString.includes('network')) {
-            userMessage = '網路連線不穩定，請檢查您的網路後重試。';
-        } else if (errString.includes('401') || errString.includes('token')) {
-            userMessage = '您的登入狀態已過期，請重新登入後再試。';
-        } else if (errString.includes('recalculate-cart')) {
-            userMessage = '無法取得最新的金額資訊，請稍後再試或重新整理頁面。';
-        } else if (errString) {
-             userMessage = errString;
-        }
-        showNotification(userMessage, 'error', 'notification-message');
+        if (errString.includes('Failed to fetch') || errString.includes('network')) userMessage = '網路連線不穩定，請檢查您的網路後重試。';
+        else if (errString.includes('401') || errString.includes('token')) userMessage = '您的登入狀態已過期，請重新登入後再試。';
+        else if (errString.includes('recalculate-cart')) userMessage = '無法取得最新的金額資訊，請稍後再試或重新整理頁面。';
+        else if (errString) userMessage = errString;
+        showNotification(userMessage, 'error');
     }
-    
-    if (placeOrderBtn) {
-        placeOrderBtn.disabled = false;
-        placeOrderBtn.textContent = '確認下單';
-    }
+    if (placeOrderBtn) { placeOrderBtn.disabled = false; placeOrderBtn.textContent = '確認下單'; }
 }
 
 async function handlePlaceOrder() {
     if (!validateCustomerInfo() || !validateInvoiceInfo()) return;
     placeOrderBtn.disabled = true;
     placeOrderBtn.textContent = '訂單驗證中...';
-
-    const cartState = CartService.getState();
-
+    const cartState = cartStore.get();
     try {
-        console.log('[Checkout] Performing final recalculation before placing order...');
         const client = await supabase;
-        const { data: finalRecalc, error: recalcError } = await client.functions.invoke('recalculate-cart', {
-            body: { 
-                cartId: cartState.cartId, 
-                couponCode: cartState.appliedCoupon?.code, 
-                shippingMethodId: cartState.selectedShippingMethodId 
-            },
-        });
-        
+        const { data: finalRecalc, error: recalcError } = await client.functions.invoke('recalculate-cart', { body: { cartId: cartState.cartId, couponCode: cartState.appliedCoupon?.code, shippingMethodId: cartState.selectedShippingMethodId } });
         if (recalcError) throw recalcError;
         if (finalRecalc.success === false) throw finalRecalc;
-        
         const finalSnapshot = finalRecalc.data;
-        
         placeOrderBtn.textContent = '訂單處理中...';
-
         const payloadBody = {
             cartId: cartState.cartId,
             shippingDetails,
@@ -461,28 +361,14 @@ async function handlePlaceOrder() {
             invoiceOptions,
             couponCode: finalSnapshot.appliedCoupon?.code || null
         };
-
         const invokeOptions = {};
-        if (currentSession) {
-            invokeOptions.headers = { Authorization: `Bearer ${currentSession.access_token}` };
-        }
-
-        const { data, error } = await client.functions.invoke('create-order-from-cart', {
-            body: payloadBody,
-            ...invokeOptions
-        });
-        
+        if (currentSession) invokeOptions.headers = { Authorization: `Bearer ${currentSession.access_token}` };
+        const { data, error } = await client.functions.invoke('create-order-from-cart', { body: payloadBody, ...invokeOptions });
         if (error) throw error;
         if (data?.success === false) throw data;
-
-        if (data?.success && data.data.orderDetails) {
-            sessionStorage.setItem('latestOrderDetails', JSON.stringify(data.data.orderDetails));
-        }
-
+        if (data?.success && data.data.orderDetails) sessionStorage.setItem('latestOrderDetails', JSON.stringify(data.data.orderDetails));
         CartService.internal.clearCartAndState();
-
         window.location.href = `${ROUTES.ORDER_SUCCESS}?order_number=${data.data.orderNumber}`;
-
     } catch (err) {
         _handleOrderError(err);
     }
@@ -492,8 +378,7 @@ export async function init() {
     const client = await supabase;
     const { data: { session } } = await client.auth.getSession();
     currentSession = session;
-    
-    if (CartService.getState().itemCount === 0 && !window.location.search.includes('order_number')) {
+    if (cartStore.get().itemCount === 0 && !window.location.search.includes('order_number')) {
         alert('您的購物車是空的，將為您導向商品頁。');
         window.location.href = ROUTES.PRODUCTS_LIST;
         return;
@@ -501,7 +386,7 @@ export async function init() {
     initCitySelector();
     await updateUIMode(currentSession);
     await fetchCommonData();
-    CartService.subscribe(render);
+    cartStore.subscribe(render);
     render();
     if (loadingOverlay) loadingOverlay.style.display = 'none';
     if (checkoutContainer) checkoutContainer.style.display = 'grid';
@@ -511,8 +396,8 @@ export async function init() {
     if (districtSelector) districtSelector.addEventListener('change', updatePostalCode);
     if (btnLoginGoogle) btnLoginGoogle.addEventListener('click', () => socialSignIn('google'));
     if (btnLoginLine) btnLoginLine.addEventListener('click', () => socialSignIn('line'));
-    invoiceTypeRadios.forEach((radio) => radio.addEventListener('change', handleInvoiceTypeChange));
-    [carrierNumberInput, donationCodeInput, vatNumberInput, companyNameInput].forEach((input) => {
+    invoiceTypeRadios.forEach(radio => radio.addEventListener('change', handleInvoiceTypeChange));
+    [carrierNumberInput, donationCodeInput, vatNumberInput, companyNameInput].forEach(input => {
         if (input) input.addEventListener('input', handleInvoiceDetailsChange);
     });
     handleInvoiceTypeChange();

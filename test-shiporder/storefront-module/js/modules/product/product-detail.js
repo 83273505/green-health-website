@@ -1,24 +1,10 @@
 // 檔案路徑: storefront-module/js/modules/product/product-detail.js
-/**
- * 檔案名稱：product-detail.js
- * 檔案職責：實現「無聲守護者 v2.0」，將數量驗證的權力完全交還給後端。
- * 版本：35.0 (後端權威驗證最終版)
- * SOP 條款對應：
- * - [專案憲章 ECOMMERCE-V1, 1.1] 交易數據絕對準確性原則
- * AI 註記：
- * - [核心重構]: 此版本為最終交付版，實現了最安全的「無聲守護者 v2.0」模式。
- *   - `debouncedValidateQuantity` 函數，會在使用者停止輸入 300ms 後，
- *     自動觸發，向新的 `validate-quantity` 後端端點發送預檢請求。
- *   - 只有當後端返回驗證失敗時，前端才會顯示錯誤提示並自動校正數量。
- * - [操作指示]: 請完整覆蓋原檔案。
- * 更新日誌 (Changelog)：
- * - v35.0 (2025-09-10)：[SECURITY REFACTOR] 移除所有前端庫存判斷，改用後端即時預檢。
- */
-
+// 版本：v36.0 (架構融合版)
+// 職責：處理商品詳情頁的邏輯。
 import { supabase } from '../../core/supabaseClient.js';
-import { TABLE_NAMES } from '../../core/constants.js';
 import { CartService } from '../../services/CartService.js';
 import { formatPrice, showNotification } from '../../core/utils.js';
+import { TABLE_NAMES } from '../../core/constants.js';
 
 const loadingView = document.getElementById('loading-view');
 const detailContainer = document.getElementById('product-detail-container');
