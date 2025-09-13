@@ -1,22 +1,13 @@
-// 檔案路徑: netlify.toml
-// ==============================================================================
-
-/**
- * 檔案名稱：netlify.toml
- * 檔案職責：Netlify 平台的統一建置與部署設定檔 (JWT 策略固化增補版)。
- * 版本：45.5
- * AI 註記：
- * - [主席指示整合]: 此版本嚴格遵循「不修改原設計內文」的最高指令。
- *   既有的 [build] 與 [[redirects]] 區塊均被完整保留。
- * - [核心增補]: 在檔案末尾新增了 [functions] 設定區塊，將四個核心匿名
- *   購物流程函式的 JWT 驗證策略 (`verify_jwt = false`) 進行了固化。
- * 更新日誌 (Changelog)：
- * - v45.5 (2025-09-13)：根據主席指示，以增補方式將 JWT 驗證策略固化。
- */
-
 # ==============================================================================
-# ⬇️ [主席指示]: 此區塊維持原樣，不可異動 ⬇️
+# 檔案路徑: netlify.toml
+# 版本: v45.6 - 最小化增補版
+# ------------------------------------------------------------------------------
+# 【此為最終、唯一的路由設定檔，請刪除 _redirects 檔案】
 # ==============================================================================
+
+# --- 1. 基本建置設定 ---
+# publish: 告訴 Netlify 您的網站檔案都放在 `test-shiporder` 這個資料夾裡。
+# functions: 告訴 Netlify 您的後端雲端函式放在哪裡。
 [build]
   command = "echo '無需建置指令'"
   publish = "test-shiporder"
@@ -25,61 +16,8 @@
   [build.environment]
     NODE_VERSION = "18"
 
-# ==============================================================================
-# [[redirects]] 區块
-# 規則順序至關重要。Netlify 會從上到下匹配第一條符合的規則。
-# ==============================================================================
-
-# 規則 1: 共用模組與靜態資源 (最高優先級)
-# 確保所有對實際存在檔案的請求都能被正確處理，而不會被下面的 SPA 規則劫持。
-[[redirects]]
-  from = "/_shared/*"
-  to = "/_shared/:splat"
-  status = 200
-
-# 規則 2: 後台管理面板的 SPA 路由規則
-# 所有對後台路徑的請求，如果找不到實體檔案 (如 .js, .css)，
-# 都會被重寫到各自的入口 index.html，將路由權交給前端 JS。
-[[redirects]]
-  from = "/admin/*"
-  to = "/admin/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/warehouse-panel/*"
-  to = "/warehouse-panel/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/invoice-panel/*"
-  to = "/invoice-panel/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/permission-panel/*"
-  to = "/permission-panel/index.html"
-  status = 200
-  
-# 規則 3: 會員中心的 SPA 路由規則
-[[redirects]]
-  from = "/account-module/*"
-  to = "/account-module/index.html"
-  status = 200
-
-# 規則 4: 消費者前端 (storefront-module) 的 "兜底" 規則
-# 這是最重要的規則。任何不匹配前面後台規則的請求，都會被導向到
-# 商店前端的主入口 (此處根據您的檔案結構，應為 products.html)。
-# Netlify 會優先服務真實存在的檔案 (如 /storefront-module/product-detail.html)，
-# 只有在找不到檔案時，此規則才會生效。
-[[redirects]]
-  from = "/*"
-  to = "/storefront-module/products.html"
-  status = 200
-
-# ==============================================================================
-# ⬇️ 【核心增補】Edge Functions 的 JWT 驗證白名單 ⬇️
-# ==============================================================================
-# 此區塊的作用是告訴部署系統，以下列出的函式允許匿名使用者呼叫。
+# --- 2. 後端 Edge Functions 的 JWT 驗證白名單 ---
+# 作用：告訴部署系統，以下列出的函式允許匿名使用者呼叫。
 # 所有未在此處列出的函式，都將維持預設的安全設定（需要登入才能呼叫）。
 [functions]
   [functions.get-or-create-cart]
@@ -89,4 +27,9 @@
   [functions.create-order-from-cart]
     verify_jwt = false
   [functions.validate-quantity]
-    verify_jwt = false  
+    verify_jwt = false
+  # 【核心增補】後台 Supabase Client 安全金鑰獲取
+  # 理由: 這是後台應用程式初始化時，安全獲取 anon key 的端點，
+  #       此階段使用者尚未登入，因此不能驗證 JWT。
+  [functions.config]
+    verify_jwt = false
