@@ -1,21 +1,16 @@
 # ==============================================================================
 # 檔案路徑: test-shiporder/_redirects
-# 版本: v32.1 (主席提供之分支穩定版 + SOP 正體中文註解)
+# 版本: v32.2 (最終路徑校準版)
 # ------------------------------------------------------------------------------
-# 【此版本為測試分支 (branch) 專用的、唯一的路由設定檔】
+# 【此版本為最終修正版，旨在使路由規則與已知可運作的前端JS檔案完全匹配】
 # ==============================================================================
 
 # --- 核心 API 路由 (最高優先級) ---
-# 作用：確保所有對後端雲端函式的請求，都能被正確路由。
 /.netlify/functions/*             /.netlify/functions/:splat             200
 
 # --- 靜態資源優先處理 (確保 .js, .css 等實體檔案被正確提供) ---
-# 作用：這些規則確保瀏覽器能直接獲取到網站運行所需的 JavaScript、CSS 等資源檔案，
-#       而不會被後面的頁面路由規則錯誤地攔截。
-
 # 共用模組資源
 /_shared/js/*                     /_shared/js/:splat                     200
-
 # 後台模組資源
 /admin/js/*                       /admin/js/:splat                       200
 /admin/css/*                      /admin/css/:splat                      200
@@ -25,7 +20,6 @@
 /invoice-panel/css/*              /invoice-panel/css/:splat              200
 /permission-panel/js/*            /permission-panel/js/:splat            200
 /permission-panel/css/*           /permission-panel/css/:splat           200
-
 # 消費者前端模組拆分後的靜態資源
 # 商店前端 (Storefront)
 /storefront-module/js/*           /storefront-module/js/:splat           200
@@ -35,32 +29,26 @@
 /account-module/js/*              /account-module/js/:splat              200
 /account-module/css/*             /account-module/css/:splat             200
 
-
 # ==============================================================================
 # ⬇️ SPA / MPA 路由回退 ⬇️
 # ==============================================================================
-# 作用：這些規則處理當使用者訪問的不是一個具體檔案，而是一個「虛擬」頁面路徑時
-#       (例如 /admin/dashboard)，伺服器應該如何回應。
 
-# --- 後台 SPA 模組回退 ---
-# 作用：將所有對 /admin/... 等後台路徑的訪問，都導向到各自的入口 index.html，
-#       由前端的 JavaScript 來接管後續的頁面渲染。
+# 後台 SPA 模組回退
 /admin/*                          /admin/index.html                      200
 /warehouse-panel/*                /warehouse-panel/index.html            200
 /invoice-panel/*                  /invoice-panel/index.html              200
 /permission-panel/*               /permission-panel/index.html           200
 
-# --- 消費者前端 SPA (會員中心) 回退 ---
-# 作用：將所有對 /account/... 的訪問，都導向到會員中心的入口 index.html。
+# 消費者前端 SPA (會員中心) 回退
 /account/*                        /account-module/index.html             200
 
-# --- 消費者前端 MPA (商店前端) ---
-# 作用：將對 /storefront/... 的訪問，對應到 `test-shiporder/storefront-module/`
-#       目錄下的實體檔案。例如，訪問 /storefront/product-detail.html 會實際
-#       讀取 /storefront-module/product-detail.html。
-/storefront/*                     /storefront-module/:splat              200
+# --- 【核心修正】消費者前端 MPA (商店前端) ---
+# 作用：將對 /storefront-module/... 的直接訪問，正確地對應到實體檔案。
+#       例如，訪問 /storefront-module/product-detail.html 會實際
+#       讀取 `test-shiporder/storefront-module/product-detail.html` 這個實體檔案。
+#       這條規則現在與 ProductCard.js 生成的 URL 完全匹配。
+/storefront-module/*              /storefront-module/:splat              200
 
 # --- 最終的「兜底」規則 ---
 # 作用：將對根目錄 (/) 或其他任何不匹配上述規則的路徑的訪問，導向到商店的前端首頁。
-#       這是確保使用者無論輸入什麼網址，都能看到網站內容的關鍵。
 /*                                /storefront-module/products.html       200
