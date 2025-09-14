@@ -1,13 +1,7 @@
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
-// ==============================================================================
-/**
- * 檔案名稱：checkout.js
- * 檔案職責：處理結帳頁面的所有邏輯。
- * 版本：44.1 (架構還原校準版 - 完整版)
- * AI 註記：
- * - 此版本為 storefront-module/js/modules/checkout/checkout.js 檔案的完整、無省略版本。
- * - 已將所有對 cartStore 的依賴，完全修正為對 CartService 的依賴。
- */
+// 版本: v44.1 (架構還原校準版 - 完整版)
+// AI 註記: 此版本為 storefront-module/js/modules/checkout/checkout.js 檔案的完整、無省略版本。
+// 已將所有對 cartStore 的依賴，完全修正為對 CartService 的依賴。
 import { supabase } from '../../core/supabaseClient.js';
 import { CartService } from '../../services/CartService.js';
 import { TABLE_NAMES, ROUTES } from '../../core/constants.js';
@@ -509,5 +503,3 @@ export async function init() {
     });
     handleInvoiceTypeChange();
 }
-70.2s
-Use Arrow Up and Arrow Down to select a turn, Enter to jump to it, and Escape to return to the chat.
