@@ -1,6 +1,6 @@
 // 檔案路徑: storefront-module/js/components/CartWidget.js
-// 版本: v39.1 (架構還原校準版)
-// AI 註記: 此版本已將所有對 cartStore 的依賴，完全修正為對 CartService 的依賴。
+// 版本: v39.2 (最终依赖校准版)
+// AI 註記: 此版本彻底移除了对 cartStore.js 的引用，完全依赖 CartService.js。
 import { CartService } from '../services/CartService.js';
 
 function render(state) {
@@ -49,7 +49,6 @@ export const CartWidget = {
             });
         }
         CartService.subscribe(render);
-        // 主動獲取一次初始狀態並渲染，確保 UI 立即同步
         const initialState = CartService.getState();
         render(initialState);
     }

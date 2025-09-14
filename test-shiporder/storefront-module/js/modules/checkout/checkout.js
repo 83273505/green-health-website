@@ -1,7 +1,15 @@
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
-// 版本: v44.1 (架構還原校準版 - 完整版)
-// AI 註記: 此版本為 storefront-module/js/modules/checkout/checkout.js 檔案的完整、無省略版本。
-// 已將所有對 cartStore 的依賴，完全修正為對 CartService 的依賴。
+// ==============================================================================
+/**
+ * 檔案名稱：checkout.js
+ * 檔案職責：處理結帳頁面的所有邏輯。
+ * 版本：44.2 (最终依赖与语言校准版)
+ * AI 註記：
+ * - [核心修正] 此版本为 storefront-module/js/modules/checkout/checkout.js 檔案的
+ *   最终完整、无省略版本。
+ * - [依赖校准] 已将所有对 cartStore.js 的引用，完全修正为对 CartService.js 的依赖。
+ * - [语言校准] 已将所有 console.error 及 UI 字串中的简体中文，校订为标准正体中文。
+ */
 import { supabase } from '../../core/supabaseClient.js';
 import { CartService } from '../../services/CartService.js';
 import { TABLE_NAMES, ROUTES } from '../../core/constants.js';

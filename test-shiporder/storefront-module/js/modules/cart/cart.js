@@ -1,6 +1,6 @@
 // 檔案路徑: storefront-module/js/modules/cart/cart.js
-// 版本: v37.1 (架構還原校準版)
-// AI 註記: 此版本已將所有對 cartStore 的依賴，完全修正為對 CartService 的依賴。
+// 版本: v37.2 (最终依赖校准版)
+// AI 註記: 此版本彻底移除了对 cartStore.js 的引用，完全依赖 CartService.js。
 import { CartService } from '../../services/CartService.js';
 import { formatPrice } from '../../core/utils.js';
 
@@ -142,7 +142,7 @@ export async function init() {
     style.textContent = `.item-error-flash { transition: box-shadow 0.3s ease-in-out; box-shadow: 0 0 0 2px rgba(217, 83, 79, 0.7); }`;
     document.head.appendChild(style);
     CartService.subscribe(render);
-    render(CartService.getState()); // 主動渲染一次初始狀態
+    render(CartService.getState());
     document.querySelector('.cart-items-section')?.addEventListener('click', handleCartInteractions);
     document.querySelector('.cart-summary')?.addEventListener('click', handleCartInteractions);
     document.querySelector('.cart-summary')?.addEventListener('change', handleShippingChange);
