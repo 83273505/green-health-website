@@ -1,8 +1,8 @@
 // ==============================================================================
 // 檔案路徑: storefront-module/js/services/CartService.js
-// 版本: v43.0 - 健壯性重構版 (Robust Refactor Edition)
+// 版本: v43.1 - 初始化邏輯修正版 (Initialization Logic Hotfix)
 // ------------------------------------------------------------------------------
-// 【此為完整檔案，可直接覆蓋】
+// 【此為最終的、權威的、可直接使用的完整檔案】
 // ==============================================================================
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -87,57 +87,40 @@ function _notify() {
     });
 }
 
-/**
- * [v43.0 核心修正] 統一處理 API 回應的函式
- * @param {object} response - 來自 supabase.functions.invoke 的回應
- * @param {object} payload - 原始請求的 payload，用於日誌
- */
 function _handleApiResponse(response, payload) {
     const { data: apiData, error: networkError } = response;
+    if (networkError) { throw networkError; }
 
-    if (networkError) {
-        throw networkError; // 網路或函式級別的錯誤
-    }
-
-    // 後端業務邏輯錯誤 (例如：庫存不足)
     if (apiData.success === false) {
-        // 【Bug #1 修正點】
-        // 即使操作失敗，我們依然使用後端回傳的 `data` 快照來更新 UI，
-        // 確保購物車內容不會被清空。
-        if (apiData.data) {
-            _updateStateFromSnapshot(apiData.data);
-        }
-        // 將後端的錯誤訊息拋出，讓呼叫者可以捕捉並顯示給使用者
+        if (apiData.data) { _updateStateFromSnapshot(apiData.data); }
         throw new Error(apiData.error?.message || '發生未知的業務邏輯錯誤。');
     }
 
-    // 完全成功的操作
     if (apiData.success === true && apiData.data) {
         if (payload.shippingMethodId !== undefined) { 
             _state.selectedShippingMethodId = payload.shippingMethodId; 
         }
         _updateStateFromSnapshot(apiData.data);
     } else {
-        // 對於未預期但不屬於錯誤的回應格式，進行記錄
+        if (apiData.cartId) {
+             return apiData; // 直接回傳原始資料，讓呼叫者處理
+        }
         console.warn("API 回應格式非預期，但未標記為錯誤:", apiData);
     }
+     return null;
 }
-
 
 async function _recalculateCart(payload) {
     if (_state.isLoading) return;
     _state.isLoading = true;
     _notify();
-
     try {
         const response = await invokeWithTimeout('recalculate-cart', { body: { cartId: _state.cartId, ...payload } });
-        // [v43.0 核心修正] 使用統一的處理函式
         _handleApiResponse(response, payload);
     } catch (error) {
         console.error('更新購物車失敗:', error);
         const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : error.message;
         showNotification(userMessage, 'error', 'notification-message');
-        // 向上拋出，讓呼叫的 UI 元件可以捕捉並做出反應 (例如：停止轉圈)
         throw error;
     } finally {
         _state.isLoading = false;
@@ -165,26 +148,31 @@ export const CartService = {
                     const { error } = await _supabase.auth.setSession({ access_token: anonymousToken, refresh_token: 'dummy_refresh_token' });
                     if (error) { 
                         console.warn('恢復匿名 Session 失敗，將重新獲取:', error.message);
-                        this.clearCartAndState(); // 清除無效的本地狀態
+                        this.clearCartAndState();
                     }
                 }
 
                 if (!_state.cartId) {
                     console.log('🛒 本地無 cartId 或恢復失敗，執行遠端獲取...');
                     const response = await invokeWithTimeout('get-or-create-cart');
-                    _handleApiResponse(response, {});
-                    // 額外儲存匿名使用者資訊
-                    if (response.data?.isAnonymous && response.data?.userId && response.data?.token) {
-                        localStorage.setItem('anonymous_user_id', response.data.userId);
-                        localStorage.setItem('anonymous_token', response.data.token);
+                    const cartData = _handleApiResponse(response, {});
+                    
+                    if (cartData && cartData.cartId) {
+                        _state.cartId = cartData.cartId;
+                        _state.isAnonymous = cartData.isAnonymous || false;
+                        localStorage.setItem('cartId', _state.cartId);
+                        if (cartData.isAnonymous && cartData.userId && cartData.token) {
+                            localStorage.setItem('anonymous_user_id', cartData.userId);
+                            localStorage.setItem('anonymous_token', cartData.token);
+                        } else {
+                            localStorage.removeItem('anonymous_user_id');
+                            localStorage.removeItem('anonymous_token');
+                        }
                     } else {
-                        localStorage.removeItem('anonymous_user_id');
-                        localStorage.removeItem('anonymous_token');
+                        throw new Error("從 get-or-create-cart 未能獲取有效的 cartId。");
                     }
                 }
                 
-                // [v43.0 Bug #2 修正點]
-                // 確保在初始化結束前，一定會獲取最新的運送方式與購物車狀態
                 await Promise.all([
                     this.fetchShippingMethods(),
                     _recalculateCart({ couponCode: _state.appliedCoupon?.code, shippingMethodId: _state.selectedShippingMethodId })
@@ -203,7 +191,6 @@ export const CartService = {
         return _initPromise;
     },
     
-    // ... 其他公開方法的內容保持不變 ...
     isReady: () => _state.isReadyForRender,
     async fetchShippingMethods(retry = true) {
         try {
