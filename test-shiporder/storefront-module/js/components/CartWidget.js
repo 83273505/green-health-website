@@ -1,6 +1,4 @@
 // 檔案路徑: storefront-module/js/components/CartWidget.js
-// 版本: v39.2 (最终依赖校准版)
-// AI 註記: 此版本彻底移除了对 cartStore.js 的引用，完全依赖 CartService.js。
 import { CartService } from '../services/CartService.js';
 
 function render(state) {
