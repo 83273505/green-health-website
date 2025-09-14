@@ -1,25 +1,8 @@
 // 檔案路徑: storefront-module/js/services/CartService.js
-// ==============================================================================
-
-/**
- * 檔案名稱：CartService.js
- * 檔案職責：【行為層】購物車服務。採用單例模式，作為應用程式中唯一、權威的購物車狀態管理器與後端 API 中介。
- * 版本：42.3 (主席提供之穩定版 - 語法修正)
- * SOP 條款對應：
- * - [5.2] 不重複造輪子 (DRY)
- * - [0.3] 輸出完整性規範
- * AI 註記：
- * - 此版本為您提供的、已知可運作的穩定版本 v42.3 的最終校準版，已修復所有語法錯誤。
- * 更新日誌 (Changelog)：
- * - v42.3.1 (2025-09-13)：緊急修復了先前交付版本中存在的致命語法錯誤。
- * - v42.3 (2025-09-13)：恢復至主席提供的、功能完整的單例模式購物車服務。
- */
-
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 
 let _supabase = null;
-
 let _state = {
     cartId: null, items: [], itemCount: 0,
     summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
@@ -80,10 +63,6 @@ function _saveStateToLocalStorage() {
 }
 
 function _updateStateFromSnapshot(snapshot) {
-    if (!snapshot) {
-        console.warn('嘗試用空的 snapshot 更新狀態，操作已中止。');
-        return;
-    }
     _state.items = snapshot.items || [];
     _state.itemCount = snapshot.itemCount || 0;
     _state.summary = snapshot.summary || _state.summary;
@@ -104,30 +83,15 @@ async function _recalculateCart(payload) {
     _state.isLoading = true;
     _notify();
     try {
-        const { data: response, error } = await invokeWithTimeout('recalculate-cart', { body: { cartId: _state.cartId, ...payload } });
-        
+        const { data: snapshot, error } = await invokeWithTimeout('recalculate-cart', { body: { cartId: _state.cartId, ...payload } });
         if (error) throw error;
-
-        if (response.success === false) {
-             console.warn(`後端業務錯誤: ${response.error.message}`);
-             showNotification(response.error.message, 'warning');
-             if (response.data) {
-                 _updateStateFromSnapshot(response.data);
-             }
-             throw new Error(response.error.message);
-        } else {
-             if (payload.shippingMethodId !== undefined) { 
-                 _state.selectedShippingMethodId = payload.shippingMethodId; 
-             }
-             _updateStateFromSnapshot(response.data);
-        }
-
+        if (snapshot.error) throw new Error(snapshot.error);
+        if (payload.shippingMethodId !== undefined) { _state.selectedShippingMethodId = payload.shippingMethodId; }
+        _updateStateFromSnapshot(snapshot);
     } catch (error) {
         console.error('更新購物車失敗:', error);
-        if (!error.message.includes('aborted')) {
-            const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : (error.message || '購物車更新失敗，請重試。');
-            showNotification(userMessage, 'error', 'notification-message');
-        }
+        const userMessage = error.message.includes('逾時') ? '購物車連線逾時，請檢查您的網路環境後重試。' : '購物車更新失敗，請重試。';
+        showNotification(userMessage, 'error', 'notification-message');
         throw error;
     } finally {
         _state.isLoading = false;
@@ -154,7 +118,7 @@ export const CartService = {
                 if (!_state.cartId) {
                     console.log('🛒 本地無 cartId 或恢復失敗，執行遠端獲取...');
                     const { data, error } = await invokeWithTimeout('get-or-create-cart');
-                    if (error) throw error; if (data.error) throw new Error(data.error.message);
+                    if (error) throw error; if (data.error) throw new Error(data.error);
                     _state.cartId = data.cartId;
                     _state.isAnonymous = data.isAnonymous || false;
                     localStorage.setItem('cartId', _state.cartId);
@@ -182,6 +146,7 @@ export const CartService = {
         })();
         return _initPromise;
     },
+    isReady: () => _state.isReadyForRender,
     async fetchShippingMethods(retry = true) {
         try {
             if (!_supabase) await this.init();
@@ -205,34 +170,21 @@ export const CartService = {
             return;
         }
         await this.init();
-        try {
-            await _recalculateCart({
-                actions: [{ type: 'ADD_ITEM', payload: { variantId, quantity } }],
-                couponCode: _state.appliedCoupon?.code,
-                shippingMethodId: _state.selectedShippingMethodId
-            });
-            showNotification('商品已加入購物車！', 'success');
-        } catch(e) {
-            console.info("addItem 捕捉到預期的後端業務錯誤，無需進一步處理。");
-        }
-    },
-    /** @deprecated Will be removed in v43. Use addItem instead. */
-    async addToCart(variantId, quantity) {
-        console.warn('addToCart() is deprecated. Please use addItem() instead.');
-        return this.addItem({ variantId, quantity });
+        await _recalculateCart({
+            actions: [{ type: 'ADD_ITEM', payload: { variantId, quantity } }],
+            couponCode: _state.appliedCoupon?.code,
+            shippingMethodId: _state.selectedShippingMethodId
+        });
+        showNotification('商品已加入購物車！', 'success');
     },
     async updateItemQuantity(itemId, newQuantity) {
         if (!itemId || newQuantity < 0) return;
         await this.init();
-        try {
-            await _recalculateCart({
-                actions: [{ type: 'UPDATE_ITEM_QUANTITY', payload: { itemId, newQuantity } }],
-                couponCode: _state.appliedCoupon?.code,
-                shippingMethodId: _state.selectedShippingMethodId
-            });
-        } catch(e) {
-            console.info("updateItemQuantity 捕捉到預期的後端業務錯誤，無需進一步處理。");
-        }
+        await _recalculateCart({
+            actions: [{ type: 'UPDATE_ITEM_QUANTITY', payload: { itemId, newQuantity } }],
+            couponCode: _state.appliedCoupon?.code,
+            shippingMethodId: _state.selectedShippingMethodId
+        });
     },
     async removeItem(itemId) {
         if (!itemId) return;
@@ -245,13 +197,9 @@ export const CartService = {
         showNotification('商品已從購物車移除。', 'info');
     },
     async applyCoupon(couponCode) {
-        if (typeof couponCode !== 'string') return;
+        if (!couponCode || typeof couponCode !== 'string') return;
         await this.init();
-        try {
-            await _recalculateCart({ couponCode: couponCode.trim(), shippingMethodId: _state.selectedShippingMethodId });
-        } catch(e) {
-            console.info("applyCoupon 捕捉到預期的後端業務錯誤，無需進一步處理。");
-        }
+        await _recalculateCart({ couponCode: couponCode.trim(), shippingMethodId: _state.selectedShippingMethodId });
     },
     async selectShippingMethod(shippingMethodId) {
         await this.init();
