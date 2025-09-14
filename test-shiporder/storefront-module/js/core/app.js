@@ -1,13 +1,18 @@
-// 檔案路徑: storefront-module/js/core/app.js
 // ==============================================================================
+// 檔案路徑: storefront-module/js/core/app.js
+// 版本: v33.2 (已知可運作的純淨版本)
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，請用此檔案直接覆蓋已損毀的版本】
+// ==============================================================================
+
 /**
  * 檔案名稱：app.js
  * 檔案職責：商店前端 (Storefront) - 應用程式主入口點。此腳本作為商店前端所有公開頁面的中央控制器。
  * 版本：v33.2 (正體中文校訂版)
  * AI 註記：
- * - [核心修正] 将所有 console.error 中的简体中文错误讯息，校订为标准正体中文。
- * - [架构还原] 此版本完全遵循您提供的 v33.0 稳定版架构，仅依赖 CartService.js
- *   作为唯一的购物逻辑和状态管理器。
+ * - [核心修正] 將所有 console.error 中的簡體中文錯誤訊息，校訂為標準正體中文。
+ * - [架構還原] 此版本完全遵循您提供的 v33.0 穩定版架構，僅依賴 CartService.js
+ *   作為唯一的購物邏輯和狀態管理器。
  */
 import { supabase } from './supabaseClient.js';
 import { CartService } from '../services/CartService.js';
@@ -18,7 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const supabaseClient = await supabase;
         // 初始化唯一的 CartService
         await CartService.init(supabaseClient);
-        // 初始化 CartWidget，它将自动从 CartService 订阅状态
+        // 初始化 CartWidget，它將自動從 CartService 訂閱狀態
         CartWidget.init('cart-widget-container');
 
         const pageId = document.body.id;
