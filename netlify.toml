@@ -101,3 +101,5 @@
     verify_jwt = false
   [functions.config]
     verify_jwt = false
+  [functions.manage-cart]
+    verify_jwt = false
