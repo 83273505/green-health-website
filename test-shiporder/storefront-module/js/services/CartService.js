@@ -1,16 +1,22 @@
 // ==============================================================================
 // 檔案路徑: storefront-module/js/services/CartService.js
+// 版本: v45.0 - 交易核心統一重構版
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
 // ==============================================================================
 
 /**
  * 檔案名稱：CartService.js
  * 檔案職責：作為購物車的輕量級狀態容器與 API 客戶端。
- * 版本：44.0 (原子化架構重構版)
+ * 版本：v45.0
  * AI 註記：
+ * 變更摘要:
+ * - [finalizeCheckout]::[新增]::【✅ P0 級 - 新增方法】新增了此方法作為處理
+ *   最終結帳流程的唯一入口點，將呼叫統一導向 `manage-cart` 端點。
  * - [核心架構]: 內部邏輯被完全重構。不再呼叫 `recalculate-cart`，而是統一呼叫
  *   新的 `manage-cart` 原子化端點。
  * - [簡化]: 移除了複雜的內部狀態計算，現在完全信任後端回傳的權威快照。
- * - [相容性]: 所有公開 API (`init`, `addItem`, etc.) 保持不變，確保 UI 層無需修改。
+ * - [相容性]: 所有既有的公開 API (`init`, `addItem`, etc.) 保持不變，確保 UI 層無需修改。
  */
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -108,6 +114,8 @@ async function _manageCart(payload) {
             if (payload.couponCode) localStorage.setItem('appliedCouponCode', payload.couponCode);
             else if (payload.couponCode === null && !apiData.data.summary.couponCode) localStorage.removeItem('appliedCouponCode');
             _updateStateFromSnapshot(apiData.data);
+            // ✅ 【核心修正】將完整的 apiData 回傳，以便 finalizeCheckout 使用
+            return apiData;
         }
     } catch (error) {
         console.error('更新購物車失敗:', error);
@@ -198,6 +206,30 @@ export const CartService = {
     async selectShippingMethod(shippingMethodId) {
         await this.init();
         await _manageCart({ shippingMethodId: shippingMethodId || null });
+    },
+    async finalizeCheckout(checkoutData) {
+        await this.init();
+        if (_state.isLoading) {
+            showNotification('系統正忙，請稍候再試。', 'warning');
+            throw new Error('Previous cart operation in progress.');
+        }
+
+        const payload = {
+            actions: [{
+                type: 'FINALIZE_CHECKOUT',
+                payload: checkoutData
+            }],
+            couponCode: _state.appliedCoupon?.code || null,
+            shippingMethodId: _state.selectedShippingMethodId || null
+        };
+        
+        const response = await _manageCart(payload);
+        
+        if (response?.data?.finalizedOrderDetails) {
+            return response.data.finalizedOrderDetails;
+        } else {
+            throw new Error('結帳成功，但無法獲取訂單最終資訊。');
+        }
     },
     getState() { return { ..._state }; },
     subscribe(callback) {

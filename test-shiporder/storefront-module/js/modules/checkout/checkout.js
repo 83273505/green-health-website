@@ -1,4 +1,23 @@
+// ==============================================================================
 // 檔案路徑: storefront-module/js/modules/checkout/checkout.js
+// 版本: v45.0 - 交易核心統一重構版
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
+
+/**
+ * 檔案名稱：checkout.js
+ * 檔案職責：統一情境感知結帳模組，處理所有結帳邏輯。
+ * 版本：v45.0
+ * AI 註記：
+ * 變更摘要:
+ * - [handlePlaceOrder]::[重構]::【✅ 核心修正】徹底移除了對舊有、非原子性的
+ *   `recalculate-cart` 和 `create-order-from-cart` 函式的呼叫。
+ * - [handlePlaceOrder]::[重構]::【✅ 核心修正】現在，所有結帳的最終執行步驟，
+ *   都統一委託給 `CartService.finalizeCheckout` 方法，確保交易流程的
+ *   單一性與原子性，從根本上解決了「雙重核心」問題。
+ */
+
 import { supabase } from '../../core/supabaseClient.js';
 import { CartService } from '../../services/CartService.js';
 import { TABLE_NAMES, ROUTES } from '../../core/constants.js';
@@ -368,7 +387,8 @@ function _handleOrderError(err) {
     console.error('下單時發生嚴重錯誤:', err);
     
     let userMessage = '下單失敗，系統發生未知錯誤。';
-    const backendError = err?.context?.json?.error || err?.error;
+    const backendError = err?.context?.json?.error || err?.error || err;
+
     if (backendError?.code) {
         switch (backendError.code) {
             case 'PRICE_MISMATCH': 
@@ -396,72 +416,40 @@ function _handleOrderError(err) {
         const errString = err.message || '';
         if (errString.includes('Failed to fetch') || errString.includes('network')) userMessage = '網路連線不穩定，請檢查您的網路後重試。';
         else if (errString.includes('401') || errString.includes('token')) userMessage = '您的登入狀態已過期，請重新登入後再試。';
-        else if (errString.includes('recalculate-cart')) userMessage = '無法取得最新的金額資訊，請稍後再試或重新整理頁面。';
         else if (errString) userMessage = errString;
         showNotification(userMessage, 'error');
-    }
-    
-    if (placeOrderBtn) {
-        placeOrderBtn.disabled = false;
-        placeOrderBtn.textContent = '確認下單';
     }
 }
 
 async function handlePlaceOrder() {
     if (!validateCustomerInfo() || !validateInvoiceInfo()) return;
     placeOrderBtn.disabled = true;
-    placeOrderBtn.textContent = '訂單驗證中...';
-
-    const cartState = CartService.getState();
+    placeOrderBtn.textContent = '訂單處理中...';
 
     try {
-        const client = await supabase;
-        const { data: finalRecalc, error: recalcError } = await client.functions.invoke('recalculate-cart', {
-            body: { 
-                cartId: cartState.cartId, 
-                couponCode: cartState.appliedCoupon?.code, 
-                shippingMethodId: cartState.selectedShippingMethodId 
-            },
-        });
-
-        if (recalcError) throw recalcError;
-        if (finalRecalc.success === false) throw finalRecalc;
-        
-        const finalSnapshot = finalRecalc.data;
-        placeOrderBtn.textContent = '訂單處理中...';
-
-        const payloadBody = {
-            cartId: cartState.cartId,
+        // ✅ 【核心修正】所有結帳邏輯，現在統一委託給 CartService 的新方法
+        const result = await CartService.finalizeCheckout({
             shippingDetails,
-            selectedShippingMethodId: cartState.selectedShippingMethodId,
             selectedPaymentMethodId,
-            frontendValidationSummary: finalSnapshot.summary,
-            invoiceOptions,
-            couponCode: finalSnapshot.summary.couponCode || cartState.appliedCoupon?.code || null
-        };
-
-        const invokeOptions = {};
-        if (currentSession) {
-            invokeOptions.headers = { Authorization: `Bearer ${currentSession.access_token}` };
-        }
-
-        const { data, error } = await client.functions.invoke('create-order-from-cart', {
-            body: payloadBody,
-            ...invokeOptions
+            invoiceOptions
         });
-        
-        if (error) throw error;
-        if (data?.success === false) throw data;
 
-        if (data?.success && data.data.orderDetails) {
-            sessionStorage.setItem('latestOrderDetails', JSON.stringify(data.data.orderDetails));
-        }
+        // 儲存成功訂單資訊以供成功頁使用
+        sessionStorage.setItem('latestOrderDetails', JSON.stringify(result.orderDetails));
 
+        // 清空購物車並導向成功頁面
         CartService.clearCartAndState();
-        window.location.href = `${ROUTES.ORDER_SUCCESS}?order_number=${data.data.orderNumber}`;
+        window.location.href = `${ROUTES.ORDER_SUCCESS}?order_number=${result.orderNumber}`;
 
     } catch (err) {
+        // 共用同一套錯誤處理機制
         _handleOrderError(err);
+    } finally {
+        // 無論成功或失敗，都要確保按鈕恢復正常
+        if (placeOrderBtn) {
+            placeOrderBtn.disabled = false;
+            placeOrderBtn.textContent = '確認下單';
+        }
     }
 }
 
@@ -487,6 +475,7 @@ export async function init() {
     
     if (loadingOverlay) loadingOverlay.style.display = 'none';
     if (checkoutContainer) checkoutContainer.style.display = 'grid';
+
     if (checkoutForm) checkoutForm.addEventListener('input', handleFormChange);
     if (placeOrderBtn) placeOrderBtn.addEventListener('click', handlePlaceOrder);
     
@@ -498,5 +487,6 @@ export async function init() {
     [carrierTypeSelector, carrierNumberInput, donationCodeInput, vatNumberInput, companyNameInput].forEach(input => {
         if (input) input.addEventListener('input', handleInvoiceDetailsChange);
     });
+
     handleInvoiceTypeChange();
 }
