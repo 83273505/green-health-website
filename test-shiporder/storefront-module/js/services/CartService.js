@@ -114,7 +114,6 @@ async function _manageCart(payload) {
             if (payload.couponCode) localStorage.setItem('appliedCouponCode', payload.couponCode);
             else if (payload.couponCode === null && !apiData.data.summary.couponCode) localStorage.removeItem('appliedCouponCode');
             _updateStateFromSnapshot(apiData.data);
-            // ✅ 【核心修正】將完整的 apiData 回傳，以便 finalizeCheckout 使用
             return apiData;
         }
     } catch (error) {

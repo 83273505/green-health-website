@@ -427,25 +427,20 @@ async function handlePlaceOrder() {
     placeOrderBtn.textContent = '訂單處理中...';
 
     try {
-        // ✅ 【核心修正】所有結帳邏輯，現在統一委託給 CartService 的新方法
         const result = await CartService.finalizeCheckout({
             shippingDetails,
             selectedPaymentMethodId,
             invoiceOptions
         });
 
-        // 儲存成功訂單資訊以供成功頁使用
         sessionStorage.setItem('latestOrderDetails', JSON.stringify(result.orderDetails));
 
-        // 清空購物車並導向成功頁面
         CartService.clearCartAndState();
         window.location.href = `${ROUTES.ORDER_SUCCESS}?order_number=${result.orderNumber}`;
 
     } catch (err) {
-        // 共用同一套錯誤處理機制
         _handleOrderError(err);
     } finally {
-        // 無論成功或失敗，都要確保按鈕恢復正常
         if (placeOrderBtn) {
             placeOrderBtn.disabled = false;
             placeOrderBtn.textContent = '確認下單';
