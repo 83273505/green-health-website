@@ -1,6 +1,7 @@
 // 檔案路徑: storefront-module/js/services/CartService.js
-// 版本: v47.0 (客戶端日誌整合版)
-// 說明: 此版本新增了關鍵錯誤的遠端日誌記錄功能，以消除觀測盲區。
+// 版本: v47.1 (日誌路徑校準版)
+// 說明: 此版本修正了 _logRemoteError 函式，使其能夠將日誌正確地
+//       發送到 Supabase Edge Function，而非錯誤的 Netlify 路徑。
 
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
@@ -24,15 +25,22 @@ let _initPromise = null;
 
 const INVOKE_TIMEOUT = 15000;
 
-// [v47.0 新增] 輕量級的遠端日誌記錄器
+// [v47.1 CORE FIX] 修正遠端日誌記錄器
 async function _logRemoteError(error, context = {}) {
     try {
-        // 使用 'navigator.sendBeacon' 或 'fetch' 的 'keepalive' 選項是更健壯的做法，
-        // 但為了簡單起見，我們先用標準 fetch。
-        // 這是一個 "fire and forget" 的操作，我們不關心它的回傳結果。
-        fetch('/.netlify/functions/log-client-error', {
+        if (!_supabase) {
+            console.warn('Supabase client not ready, cannot log remote error.');
+            return;
+        }
+        const functionsUrl = _supabase.functions.getURL();
+        const logEndpoint = `${functionsUrl}/log-client-error`;
+
+        fetch(logEndpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'apikey': _supabase.auth.headers.apikey,
+            },
             body: JSON.stringify({ 
                 error: { 
                     name: error.name, 
@@ -47,11 +55,9 @@ async function _logRemoteError(error, context = {}) {
             })
         });
     } catch (e) {
-        // 如果日誌本身失敗，我們只在本地 console 記錄，避免循環錯誤。
         console.warn('Remote logging failed:', e);
     }
 }
-
 
 async function invokeWithTimeout(functionName, options = {}) {
     if (!_supabase) throw new Error('Supabase client not initialized.');
@@ -111,7 +117,6 @@ function _updateStateFromSnapshot(snapshot) {
     _notify();
 }
 
-// [v46.0 新增] 查詢函式，專職獲取最新狀態
 async function _fetchCartSnapshot(payload = {}) {
     _state.isLoading = true;
     _notify();
@@ -122,7 +127,7 @@ async function _fetchCartSnapshot(payload = {}) {
             shippingMethodId: localStorage.getItem('selectedShippingMethodId'),
             ...payload
         };
-        const { data, error } = await _supabase.functions.invoke('get-cart-snapshot', { body: fullPayload });
+        const { data, error } = await invokeWithTimeout('get-cart-snapshot', { body: fullPayload });
         if (error) throw error;
         
         _updateStateFromSnapshot(data);
@@ -130,7 +135,6 @@ async function _fetchCartSnapshot(payload = {}) {
     } catch (error) {
         console.error('獲取購物車快照失敗:', error);
         showNotification(`同步購物車失敗: ${error.message}`, 'error');
-        // [v47.0 新增] 記錄此類關鍵失敗
         _logRemoteError(error, { operation: 'fetchCartSnapshot' });
     } finally {
         _state.isLoading = false;
@@ -138,12 +142,11 @@ async function _fetchCartSnapshot(payload = {}) {
     }
 }
 
-// [v46.0 新增] 命令函式，專職修改購物車
 async function _modifyCart(action) {
     _state.isLoading = true;
     _notify();
     try {
-        const { data, error } = await _supabase.functions.invoke('manage-cart', { body: { cartId: _state.cartId, action } });
+        const { data, error } = await invokeWithTimeout('manage-cart', { body: { cartId: _state.cartId, action } });
         if (error) throw error;
         if (data.success === false) throw new Error(data.error);
         return data;
@@ -151,7 +154,6 @@ async function _modifyCart(action) {
         console.error('修改購物車失敗:', error);
         showNotification(`操作失敗: ${error.message}`, 'error');
         await _fetchCartSnapshot(); 
-        // [v47.0 新增] 記錄此類關鍵失敗
         _logRemoteError(error, { operation: 'modifyCart', action });
         throw error;
     }
@@ -165,7 +167,16 @@ export const CartService = {
             _notify();
             try {
                 _supabase = await supabase;
-                // ... (從 localStorage 恢復 cartId 和匿名 session 的邏輯) ...
+                console.log('🛒 開始初始化購物車服務...');
+                const { restored, anonymousToken, anonymousUserId } = _restoreStateFromLocalStorage();
+                if (restored && anonymousToken && anonymousUserId) {
+                    const { error } = await _supabase.auth.setSession({ access_token: anonymousToken, refresh_token: 'dummy_refresh_token' });
+                    if (error) { 
+                        console.warn('恢復匿名 Session 失敗:', error.message);
+                        this.clearCartAndState();
+                    }
+                }
+
                 if (!_state.cartId) {
                     const { data: apiResponse, error } = await invokeWithTimeout('get-or-create-cart');
                     if (error || !apiResponse.cartId) throw new Error(error?.message || "未能獲取購物車");
@@ -179,7 +190,6 @@ export const CartService = {
                  console.error('初始化購物車服務失敗:', error);
                  showNotification(`初始化購物車失敗：${error.message}`, 'error');
                  _initPromise = null;
-                 // [v47.0 新增] 記錄此類關鍵失敗
                  _logRemoteError(error, { operation: 'init' });
             } finally {
                 _state.isLoading = false;
@@ -251,7 +261,7 @@ export const CartService = {
             return data.data;
         } catch(error) {
             _logRemoteError(error, { operation: 'finalizeCheckout' });
-            throw error; // 繼續向上拋出，讓 UI 層處理
+            throw error;
         }
     },
     
