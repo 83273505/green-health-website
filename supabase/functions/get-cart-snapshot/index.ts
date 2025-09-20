@@ -1,37 +1,55 @@
+// ==============================================================================
 // 檔案路徑: supabase/functions/get-cart-snapshot/index.ts
-// 版本: v3.1 (CORS 健壯性修正版)
-// 說明: 此版本重構了 Deno.serve 的啟動邏輯，確保 OPTIONS 預檢請求
-//       永遠能被優先處理並返回正確的 CORS 標頭，從而解決 CORS policy 錯誤。
+// 版本: v5.0 (信任反轉閘道 - 最終版)
+// 說明: 此版本已完全重構，不再依賴不可靠的匿名 JWT。它透過一個自訂的
+//       `X-Cart-Token` 標頭來接收安全的「購物車訪問權杖」，並在函式
+//       內部執行權威的所有權驗證，是「堡壘計畫」安全架構的核心。
+// ==============================================================================
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-cart-snapshot';
-const FUNCTION_VERSION = 'v3.1';
+const FUNCTION_VERSION = 'v5.0';
 
-// 核心業務邏輯保持不變
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, couponCode, shippingMethodId } = await req.json().catch(() => ({}));
+    const cartAccessToken = req.headers.get('X-Cart-Token'); // **【核心修正】** 從自訂標頭讀取權杖
 
-    if (!cartId) {
-        return new Response(JSON.stringify({ error: '缺少 cartId' }), { status: 400, headers: corsHeaders });
+    if (!cartId || !cartAccessToken) {
+        logger.warn('請求中缺少 cartId 或 X-Cart-Token', correlationId, { cartId: !!cartId, cartToken: !!cartAccessToken });
+        return new Response(JSON.stringify({ error: '缺少 cartId 或 X-Cart-Token' }), { status: 400, headers: corsHeaders });
     }
 
-    const supabaseUserClient = createClient(
-        Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!,
-        { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+    // 使用 Admin Client 來執行權威驗證
+    const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL')!, 
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-    const { data: { user } } = await supabaseUserClient.auth.getUser();
-    if (!user) {
-        return new Response(JSON.stringify({ error: '使用者未授權' }), { status: 401, headers: corsHeaders });
+
+    // **【核心修正】** 不再依賴 RLS，直接在程式碼中進行權威驗證
+    // 驗證 cartId 和 access_token 是否匹配
+    const { data: cart, error: ownerError } = await supabaseAdmin
+        .from('carts')
+        .select('id')
+        .eq('id', cartId)
+        .eq('access_token', cartAccessToken)
+        .maybeSingle();
+    
+    if (ownerError) {
+        logger.error('驗證購物車所有權時發生資料庫錯誤', correlationId, ownerError, { cartId });
+        return new Response(JSON.stringify({ error: '伺服器內部錯誤' }), { status: 500, headers: corsHeaders });
+    }
+    
+    if (!cart) {
+        logger.warn('購物車不存在或訪問權杖無效', correlationId, { cartId });
+        return new Response(JSON.stringify({ error: '購物車不存在或訪問權杖無效' }), { status: 404, headers: corsHeaders });
     }
 
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-
+    // 權限已在上方被驗證，現在可以安全地呼叫 RPC
     const { data, error } = await supabaseAdmin.rpc('get_cart_snapshot', {
         p_cart_id: cartId,
-        p_user_id: user.id,
         p_coupon_code: couponCode || null,
         p_shipping_method_id: shippingMethodId || null
     });
@@ -44,20 +62,15 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 }
 
-// [v3.1 CORE FIX] 採用更健壯的服務啟動模式
 Deno.serve(async (req) => {
-    // 立即處理 OPTIONS 請求，這是處理 CORS 的第一道防線
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
     }
-    
-    // 只有在不是 OPTIONS 請求時，才初始化日誌服務並執行核心邏輯
     try {
         const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
         const wrappedHandler = withErrorLogging(mainHandler, logger);
         return await wrappedHandler(req);
     } catch (e) {
-        // 這是一個兜底的錯誤處理，以防日誌服務本身初始化失敗
         console.error("Critical error during function initialization:", e);
         return new Response(JSON.stringify({ error: "Internal Server Error" }), {
             status: 500,
