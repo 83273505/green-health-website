@@ -1,20 +1,8 @@
-// ==============================================================================
 // 檔案路徑: supabase/functions/create-order-from-cart/index.ts
-// 版本: v49.4 - 庫存預留自動展延版 (Reservation Auto-Extend Edition)
-// ------------------------------------------------------------------------------
-// 【此為最終的、權威的、可直接使用的完整檔案】
-// ==============================================================================
-
-/**
- * 檔案名稱：index.ts
- * 檔案職責：統一智慧型訂單建立函式，整合了交易級庫存控制與預留自動展延。
- * 版本：49.4
- * AI 註記：
- * - [v49.4 核心修正] 重構了 `_commitStockAndFinalizeInventory` 函式。
- *   在進行最終庫存檢查前，新增了一個「預留展延」步驟。此步驟會自動將
- *   當前購物車內所有項目的預留期限刷新至最新，從而根除因使用者購物
- *   時間過長而導致的「預留過期」結帳失敗問題，極大提升了使用者體驗。
- */
+// 版本: v50.0 (堡壘計畫 - 應用邏輯適配版)
+// 說明: 此版本已完全適配「堡壘計畫」架構。庫存扣減的核心邏輯，
+//       已從本檔案中移除，改為在訂單資料寫入成功後，
+//       呼叫獨立、安全的 `finalize_order_inventory` DB 函式來完成。
 
 import { createClient, Resend } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
@@ -23,7 +11,7 @@ import { InvoiceService } from '../_shared/services/InvoiceService.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'create-order-from-cart';
-const FUNCTION_VERSION = 'v49.4';
+const FUNCTION_VERSION = 'v50.0';
 
 class CreateUnifiedOrderHandler {
   private supabaseAdmin: ReturnType<typeof createClient>;
@@ -40,85 +28,6 @@ class CreateUnifiedOrderHandler {
     this.resend = new Resend(Deno.env.get('RESEND_API_KEY')!);
   }
   
-  private async _commitStockAndFinalizeInventory(cartId: string, cartItems: any[], correlationId: string) {
-    this.logger.info('啟動庫存兌現與最終扣減流程', correlationId, { cartId });
-
-    const itemIds = cartItems.map(item => item.id);
-    
-    // [v49.4 核心修正] 步驟 1: 自動展延庫存預留期限
-    const newExpiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
-    const { error: extendError } = await this.supabaseAdmin
-        .from('cart_stock_reservations')
-        .update({ expires_at: newExpiresAt, status: 'active' }) // 確保狀態也是 active
-        .in('cart_item_id', itemIds);
-
-    if (extendError) {
-        this.logger.error('資料庫操作失敗：展延庫存預留', correlationId, extendError, { cartId });
-        throw new Error(`展延庫存預留失敗: ${extendError.message}`);
-    }
-    this.logger.info('成功自動展延購物車內所有商品的庫存預留', correlationId, { cartId, newExpiresAt });
-
-    // [v49.4 核心修正] 步驟 2: 進行最終的、嚴格的庫存驗證 (現在基於已展延的預留)
-    const { data: reservations, error: reservationError } = await this.supabaseAdmin
-        .from('cart_stock_reservations')
-        .select('cart_item_id, expires_at')
-        .in('cart_item_id', itemIds)
-        .eq('status', 'active');
-
-    if (reservationError) {
-        this.logger.error('資料庫操作失敗：查詢已展延的庫存預留', correlationId, reservationError, { cartId });
-        throw new Error(`查詢庫存預留失敗: ${reservationError.message}`);
-    }
-    
-    const now = new Date();
-    if (reservations.length !== itemIds.length || reservations.some(r => new Date(r.expires_at) < now)) {
-        // 如果展延後仍然驗證失敗，這代表有更深層的資料不一致問題，應當拋出錯誤
-        this.logger.critical('預留展延後驗證仍然失敗，可能存在資料不一致', correlationId, new Error("Reservation check failed post-extension"), { cartId });
-        throw {
-            name: 'ReservationExpiredError',
-            message: '您的購物車部分商品預留已過期，為確保庫存正確，請返回購物車刷新後重新結帳。'
-        };
-    }
-
-    this.logger.info('所有庫存預留驗證通過 (基於已展延的時間)', correlationId, { cartId });
-
-    // 步驟 3: 執行庫存扣減 (原子性操作)
-    for (const item of cartItems) {
-        const variantId = item.product_variant_id;
-        const quantity = item.quantity;
-
-        const { data: variant, error: fetchError } = await this.supabaseAdmin
-            .from('product_variants')
-            .select('stock, version, name')
-            .eq('id', variantId)
-            .single();
-
-        if (fetchError || !variant) {
-            throw new Error(`無法獲取商品版本號: ${variantId}`);
-        }
-        
-        if (variant.stock < quantity) {
-            throw { name: 'InsufficientStockError', message: `最終確認時發現商品 ${variant.name} 庫存不足` };
-        }
-        
-        const { error: updateError } = await this.supabaseAdmin
-            .from('product_variants')
-            .update({
-                stock: variant.stock - quantity,
-                version: variant.version + 1
-            })
-            .eq('id', variantId)
-            .eq('version', variant.version);
-
-        if (updateError) {
-            this.logger.warn('庫存扣減失敗 (樂觀鎖衝突或DB錯誤)', correlationId, { error: updateError, variantId, expectedVersion: variant.version });
-            throw new Error(`商品 ${variant.name} 庫存更新失敗，可能其他顧客剛好結帳，請重試。`);
-        }
-    }
-
-    this.logger.info('所有商品庫存扣減成功', correlationId, { cartId });
-  }
-
   private async _calculateCartSummary(
     req: Request,
     cartId: string,
@@ -406,14 +315,6 @@ class CreateUnifiedOrderHandler {
       return new Response(JSON.stringify({ success: false, error: { message: '無法建立訂單，購物車為空。', code: 'EMPTY_CART', correlationId: correlationId } }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    try {
-        await this._commitStockAndFinalizeInventory(cartId, backendSnapshot.items, correlationId);
-    } catch (err) {
-        const errorCode = err.name === 'ReservationExpiredError' ? 'RESERVATION_EXPIRED' : 'INSUFFICIENT_STOCK';
-        this.logger.warn(`[庫存兌現失敗] ${err.message}`, correlationId, { cartId, errorName: err.name });
-        return new Response(JSON.stringify({ success: false, error: { message: err.message, code: errorCode, correlationId: correlationId } }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
     const { data: shippingMethod } = await this.supabaseAdmin.from('shipping_rates').select('*').eq('id', selectedShippingMethodId).single();
     const { data: paymentMethod } = await this.supabaseAdmin.from('payment_methods').select('*').eq('id', selectedPaymentMethodId).single();
     if (!shippingMethod || !paymentMethod) {
@@ -442,13 +343,17 @@ class CreateUnifiedOrderHandler {
     
     this.logger.audit('訂單項目已成功建立', correlationId, { orderId: newOrder.id, itemCount: orderItemsToInsert.length });
     
-    const inventoryLogs = backendSnapshot.items.map((item: any) => ({
-        product_variant_id: item.product_variant_id, order_id: newOrder.id, change_quantity: -item.quantity, reason: 'order_placed', notes: `訂單 ${newOrder.order_number} 成立`
-    }));
-    const { error: logInsertError } = await this.supabaseAdmin.from('inventory_logs').insert(inventoryLogs);
-    if(logInsertError) { this.logger.critical('資料庫操作失敗：寫入庫存日誌', correlationId, logInsertError, { orderId: newOrder.id }); throw logInsertError; }
-
-    this.logger.audit('庫存日誌已成功寫入', correlationId, { orderId: newOrder.id, itemsChanged: inventoryLogs.length });
+    // **【v50.0 核心修正】** 呼叫獨立函式來完成庫存的「預留轉承諾」
+    const { error: finalizeInventoryError } = await this.supabaseAdmin.rpc('finalize_order_inventory', {
+        p_order_id: newOrder.id
+    });
+    
+    if (finalizeInventoryError) {
+        this.logger.critical('庫存最終確認失敗，將回滾訂單', correlationId, finalizeInventoryError, { orderId: newOrder.id });
+        return new Response(JSON.stringify({ success: false, error: { message: `庫存最終確認失敗: ${finalizeInventoryError.message}`, code: 'INVENTORY_COMMIT_FAILED', correlationId: correlationId } }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    
+    this.logger.audit('庫存已成功承諾並扣減', correlationId, { orderId: newOrder.id });
 
     const { data: finalOrderItems } = await this.supabaseAdmin.from('order_items').select('*, product_variants(name)').eq('order_id', newOrder.id);
 
