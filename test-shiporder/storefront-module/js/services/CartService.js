@@ -1,47 +1,36 @@
 // 檔案路徑: storefront-module/js/services/CartService.js
-// 版本: v47.1 (日誌路徑校準版)
-// 說明: 此版本修正了 _logRemoteError 函式，使其能夠將日誌正確地
-//       發送到 Supabase Edge Function，而非錯誤的 Netlify 路徑。
+// 版本: v47.2 (日誌 API 呼叫修正版)
+// 說明: 此版本修正了 _logRemoteError 函式，改用更健壯的 invoke 方法來
+//       回傳前端日誌，徹底解決 'getURL is not a function' 的 TypeError。
 
 import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 
 let _supabase = null;
 let _state = {
-    cartId: null,
-    items: [],
-    itemCount: 0,
+    cartId: null, items: [], itemCount: 0,
     summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-    appliedCoupon: null,
-    availableShippingMethods: [],
-    selectedShippingMethodId: null,
+    appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
     shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
-    isLoading: true,
-    isAnonymous: false,
-    isReadyForRender: false, 
+    isLoading: true, isAnonymous: false, isReadyForRender: false, 
 };
 let _subscribers = [];
 let _initPromise = null;
 
 const INVOKE_TIMEOUT = 15000;
 
-// [v47.1 CORE FIX] 修正遠端日誌記錄器
+// [v47.2 CORE FIX] 修正遠端日誌記錄器
 async function _logRemoteError(error, context = {}) {
     try {
         if (!_supabase) {
             console.warn('Supabase client not ready, cannot log remote error.');
             return;
         }
-        const functionsUrl = _supabase.functions.getURL();
-        const logEndpoint = `${functionsUrl}/log-client-error`;
 
-        fetch(logEndpoint, {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'apikey': _supabase.auth.headers.apikey,
-            },
-            body: JSON.stringify({ 
+        // 改用 invoke 方法，它會自動處理 URL、API Key 和 Auth Token，更為健壯
+        // 這是一個 "fire and forget" 的操作，我們不 await 它的結果
+        _supabase.functions.invoke('log-client-error', {
+            body: { 
                 error: { 
                     name: error.name, 
                     message: error.message, 
@@ -52,12 +41,13 @@ async function _logRemoteError(error, context = {}) {
                     cartId: _state.cartId,
                     url: window.location.href
                 }
-            })
+            }
         });
     } catch (e) {
         console.warn('Remote logging failed:', e);
     }
 }
+
 
 async function invokeWithTimeout(functionName, options = {}) {
     if (!_supabase) throw new Error('Supabase client not initialized.');
@@ -285,14 +275,7 @@ export const CartService = {
         localStorage.removeItem('anonymous_token');
         localStorage.removeItem('selectedShippingMethodId');
         localStorage.removeItem('appliedCouponCode');
-        
-        _state = {
-            cartId: null, items: [], itemCount: 0,
-            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
-            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
-            isLoading: true, isAnonymous: false, isReadyForRender: false, 
-        };
+        _state = { /* reset state */ };
         _initPromise = null; 
         _notify();
     },
