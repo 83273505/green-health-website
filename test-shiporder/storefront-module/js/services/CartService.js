@@ -1,53 +1,73 @@
+// ==============================================================================
 // 檔案路徑: storefront-module/js/services/CartService.js
-// 版本: v47.2 (日誌 API 呼叫修正版)
-// 說明: 此版本修正了 _logRemoteError 函式，改用更健壯的 invoke 方法來
-//       回傳前端日誌，徹底解決 'getURL is not a function' 的 TypeError。
+// 版本: v50.0 (權威身份驗證模式 - 最終決定版)
+// 說明: 此版本徹底重寫了初始化邏輯，以遵循「前端主導身份，後端專職驗證」的
+//       最終架構。它將主動確保匿名 Session 的存在，然後才與後端交互。
+// ==============================================================================
 
-import { supabase } from '../core/supabaseClient.js';
+import { supabase as getSupabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 
 let _supabase = null;
 let _state = {
-    cartId: null, items: [], itemCount: 0,
+    cartId: null,
+    cartAccessToken: null, // 新增，用於匿名訪問
+    items: [],
+    itemCount: 0,
     summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
-    appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
+    appliedCoupon: null,
+    availableShippingMethods: [],
+    selectedShippingMethodId: null,
     shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
-    isLoading: true, isAnonymous: false, isReadyForRender: false, 
+    isLoading: true,
+    isReadyForRender: false, 
 };
 let _subscribers = [];
 let _initPromise = null;
 
 const INVOKE_TIMEOUT = 15000;
 
-// [v47.2 CORE FIX] 修正遠端日誌記錄器
+// [v50.0 核心修正] 新增一個健壯的、確保 Session 存在的函式
+async function _ensureSession() {
+    if (!_supabase) _supabase = await getSupabase;
+
+    let { data: { session } } = await _supabase.auth.getSession();
+
+    // 如果沒有 session，則主動、明確地進行匿名登入
+    if (!session) {
+        console.warn("🛒 未找到 Session，正在主動進行匿名登入...");
+        const { data: anonSessionData, error: anonError } = await _supabase.auth.signInAnonymously();
+        if (anonError) {
+            console.error("❌ 匿名登入失敗:", anonError);
+            throw new Error("無法建立匿名使用者 Session");
+        }
+        console.log("✅ 成功建立匿名 Session。");
+        session = anonSessionData.session;
+    }
+    
+    // 將最新的 token 設置到客戶端，以備後續所有 invoke 使用
+    await _supabase.auth.setSession({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+    });
+
+    return session;
+}
+
+// 輕量級的遠端日誌記錄器
 async function _logRemoteError(error, context = {}) {
     try {
-        if (!_supabase) {
-            console.warn('Supabase client not ready, cannot log remote error.');
-            return;
-        }
-
-        // 改用 invoke 方法，它會自動處理 URL、API Key 和 Auth Token，更為健壯
-        // 這是一個 "fire and forget" 的操作，我們不 await 它的結果
+        if (!_supabase) return;
         _supabase.functions.invoke('log-client-error', {
             body: { 
-                error: { 
-                    name: error.name, 
-                    message: error.message, 
-                    stack: error.stack 
-                }, 
-                context: {
-                    ...context,
-                    cartId: _state.cartId,
-                    url: window.location.href
-                }
+                error: { name: error.name, message: error.message, stack: error.stack }, 
+                context: { ...context, cartId: _state.cartId, url: window.location.href }
             }
         });
     } catch (e) {
         console.warn('Remote logging failed:', e);
     }
 }
-
 
 async function invokeWithTimeout(functionName, options = {}) {
     if (!_supabase) throw new Error('Supabase client not initialized.');
@@ -67,15 +87,14 @@ async function invokeWithTimeout(functionName, options = {}) {
 function _restoreStateFromLocalStorage() {
     try {
         const cartId = localStorage.getItem('cartId');
-        if (!cartId) return { restored: false };
-        _state.cartId = cartId;
-        _state.isAnonymous = !!localStorage.getItem('anonymous_user_id');
-        console.log(`🛒 從 localStorage 恢復 Cart ID: ${cartId}`);
-        return { 
-            restored: true, 
-            anonymousToken: localStorage.getItem('anonymous_token'), 
-            anonymousUserId: localStorage.getItem('anonymous_user_id') 
-        };
+        const cartAccessToken = localStorage.getItem('cartAccessToken');
+        if (cartId && cartAccessToken) {
+            _state.cartId = cartId;
+            _state.cartAccessToken = cartAccessToken;
+            console.log(`🛒 從 localStorage 恢復 Cart 憑證`);
+            return { restored: true };
+        }
+        return { restored: false };
     } catch (error) {
         console.warn('從 localStorage 恢復購物車狀態失敗:', error);
         return { restored: false };
@@ -85,8 +104,9 @@ function _restoreStateFromLocalStorage() {
 function _saveStateToLocalStorage() {
     try {
         if (_state.cartId) localStorage.setItem('cartId', _state.cartId);
+        if (_state.cartAccessToken) localStorage.setItem('cartAccessToken', _state.cartAccessToken);
     } catch (error) {
-        console.warn('保存 Cart ID 到 localStorage 失敗:', error);
+        console.warn('保存 Cart 憑證到 localStorage 失敗:', error);
     }
 }
 
@@ -107,6 +127,19 @@ function _updateStateFromSnapshot(snapshot) {
     _notify();
 }
 
+// [v50.0] 更新請求標頭邏輯
+function _getAuthHeaders() {
+    const headers = { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${_supabase.auth.currentSession?.access_token}`
+    };
+    if (_state.cartAccessToken) {
+        headers['X-Cart-Token'] = _state.cartAccessToken;
+    }
+    return headers;
+}
+
+
 async function _fetchCartSnapshot(payload = {}) {
     _state.isLoading = true;
     _notify();
@@ -117,7 +150,10 @@ async function _fetchCartSnapshot(payload = {}) {
             shippingMethodId: localStorage.getItem('selectedShippingMethodId'),
             ...payload
         };
-        const { data, error } = await invokeWithTimeout('get-cart-snapshot', { body: fullPayload });
+        const { data, error } = await invokeWithTimeout('get-cart-snapshot', { 
+            headers: _getAuthHeaders(),
+            body: fullPayload 
+        });
         if (error) throw error;
         
         _updateStateFromSnapshot(data);
@@ -136,7 +172,10 @@ async function _modifyCart(action) {
     _state.isLoading = true;
     _notify();
     try {
-        const { data, error } = await invokeWithTimeout('manage-cart', { body: { cartId: _state.cartId, action } });
+        const { data, error } = await invokeWithTimeout('manage-cart', { 
+            headers: _getAuthHeaders(),
+            body: { cartId: _state.cartId, action } 
+        });
         if (error) throw error;
         if (data.success === false) throw new Error(data.error);
         return data;
@@ -156,26 +195,35 @@ export const CartService = {
             _state.isLoading = true;
             _notify();
             try {
-                _supabase = await supabase;
-                console.log('🛒 開始初始化購物車服務...');
-                const { restored, anonymousToken, anonymousUserId } = _restoreStateFromLocalStorage();
-                if (restored && anonymousToken && anonymousUserId) {
-                    const { error } = await _supabase.auth.setSession({ access_token: anonymousToken, refresh_token: 'dummy_refresh_token' });
-                    if (error) { 
-                        console.warn('恢復匿名 Session 失敗:', error.message);
-                        this.clearCartAndState();
-                    }
-                }
+                _supabase = await getSupabase;
+                console.log('🛒 開始初始化購物車服務 (v50.0)...');
 
-                if (!_state.cartId) {
-                    const { data: apiResponse, error } = await invokeWithTimeout('get-or-create-cart');
-                    if (error || !apiResponse.cartId) throw new Error(error?.message || "未能獲取購物車");
+                // 步驟 1: 確保擁有一個有效的 Session
+                await _ensureSession();
+
+                // 步驟 2: 檢查本地是否有購物車憑證
+                const { restored } = _restoreStateFromLocalStorage();
+
+                // 如果沒有本地憑證，或需要驗證，則呼叫後端
+                if (!restored) {
+                    const { data: apiResponse, error } = await invokeWithTimeout('get-or-create-cart', {
+                        headers: _getAuthHeaders()
+                    });
+                    
+                    if (error) throw error;
+                    if (!apiResponse.cartId || !apiResponse.cart_access_token) {
+                        throw new Error("後端未能回傳有效的購物車憑證");
+                    }
+                    
                     _state.cartId = apiResponse.cartId;
+                    _state.cartAccessToken = apiResponse.cart_access_token;
                     _saveStateToLocalStorage();
                 }
+
                 await this.fetchShippingMethods();
                 await _fetchCartSnapshot();
                 _state.isReadyForRender = true;
+
             } catch (error) {
                  console.error('初始化購物車服務失敗:', error);
                  showNotification(`初始化購物車失敗：${error.message}`, 'error');
@@ -191,7 +239,7 @@ export const CartService = {
     
     async fetchShippingMethods() {
         try {
-            if (!_supabase) await this.init();
+            if (!_supabase) _supabase = await getSupabase;
             const { data, error } = await _supabase.from('shipping_rates').select('*').eq('is_active', true).order('display_order', { ascending: true });
             if (error) throw error;
             _state.availableShippingMethods = data || [];
@@ -238,6 +286,7 @@ export const CartService = {
         await this.init();
         try {
             const { data, error } = await invokeWithTimeout('create-order-from-cart', {
+                headers: _getAuthHeaders(),
                 body: {
                     cartId: _state.cartId,
                     couponCode: _state.appliedCoupon?.code || null,
@@ -271,11 +320,18 @@ export const CartService = {
 
     clearCartAndState() {
         localStorage.removeItem('cartId');
-        localStorage.removeItem('anonymous_user_id');
-        localStorage.removeItem('anonymous_token');
+        localStorage.removeItem('cartAccessToken');
+        localStorage.removeItem('supabase.auth.token'); // Supabase JS v2 stores session here
         localStorage.removeItem('selectedShippingMethodId');
         localStorage.removeItem('appliedCouponCode');
-        _state = { /* reset state */ };
+        
+        _state = {
+            cartId: null, cartAccessToken: null, items: [], itemCount: 0,
+            summary: { subtotal: 0, couponDiscount: 0, shippingFee: 0, total: 0 },
+            appliedCoupon: null, availableShippingMethods: [], selectedShippingMethodId: null,
+            shippingInfo: { freeShippingThreshold: 0, amountNeededForFreeShipping: 0 },
+            isLoading: true, isReadyForRender: false, 
+        };
         _initPromise = null; 
         _notify();
     },
