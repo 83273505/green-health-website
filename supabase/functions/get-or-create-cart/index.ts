@@ -1,16 +1,15 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
-// 版本: v47.0 (診斷版本 - 詳細錯誤追蹤)
-// 說明: 添加詳細的錯誤診斷和日誌，找出 500 錯誤的具體原因
+// 版本: v49.0 (正確讀取匿名使用者 session)
+// 說明: 正確處理前端建立的匿名使用者 session，不自行建立使用者
 // ==============================================================================
 
 import { createClient } from '../_shared/deps.ts';
 import { corsHeaders } from '../_shared/cors.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
-const FUNCTION_VERSION = 'v47.0';
+const FUNCTION_VERSION = 'v49.0';
 
-// 簡化版日誌函式，避免外部依賴問題
 function log(level: string, message: string, data?: any) {
     const timestamp = new Date().toISOString();
     console.log(JSON.stringify({
@@ -37,49 +36,53 @@ Deno.serve(async (req) => {
         const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY');
         
         if (!supabaseUrl || !supabaseAnonKey) {
-            throw new Error(`環境變數缺失: SUPABASE_URL=${!!supabaseUrl}, SUPABASE_ANON_KEY=${!!supabaseAnonKey}`);
+            throw new Error(`環境變數缺失: URL=${!!supabaseUrl}, ANON_KEY=${!!supabaseAnonKey}`);
         }
 
-        log('INFO', '環境變數檢查通過');
-
-        // 檢查授權標頭
+        // 檢查 Authorization header
         const authHeader = req.headers.get('Authorization');
-        log('INFO', '請求標頭檢查', { 
-            hasAuth: !!authHeader,
-            authPrefix: authHeader?.substring(0, 10)
+        log('INFO', '檢查請求標頭', { 
+            hasAuthHeader: !!authHeader,
+            authPrefix: authHeader ? authHeader.substring(0, 20) + '...' : 'none'
         });
 
-        // 初始化 Supabase 客戶端
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            throw new Error('缺少有效的 Authorization header');
+        }
+
+        // 建立 Supabase 客戶端，使用前端傳來的 session token
         const supabase = createClient(supabaseUrl, supabaseAnonKey, {
             global: {
-                headers: authHeader ? { Authorization: authHeader } : {}
+                headers: { Authorization: authHeader }
             }
         });
 
-        log('INFO', 'Supabase 客戶端初始化完成');
+        log('INFO', '嘗試驗證使用者 session');
 
-        // 步驟 1: 獲取使用者
-        log('INFO', '開始獲取使用者資訊');
+        // 驗證使用者 session（這裡應該能讀取到前端建立的匿名使用者）
         const { data: { user }, error: userError } = await supabase.auth.getUser();
 
         if (userError) {
-            log('ERROR', '獲取使用者時發生錯誤', userError);
-            throw new Error(`獲取使用者失敗: ${userError.message}`);
+            log('ERROR', 'session 驗證失敗', { 
+                error: userError.message,
+                code: userError.status 
+            });
+            throw new Error(`Session 驗證失敗: ${userError.message}`);
         }
 
         if (!user) {
-            log('ERROR', '使用者資訊為空');
-            throw new Error('使用者 session 無效');
+            log('ERROR', 'session 中沒有使用者資訊');
+            throw new Error('Session 有效但沒有使用者資訊');
         }
 
-        log('INFO', '成功獲取使用者資訊', { 
-            userId: user.id.substring(0, 8) + '...', 
+        log('INFO', '成功驗證使用者 session', { 
+            userId: user.id.substring(0, 8) + '...',
             isAnonymous: user.is_anonymous,
             email: user.email || 'anonymous'
         });
 
-        // 步驟 2: 查詢現有購物車
-        log('INFO', '開始查詢現有購物車');
+        // 查詢現有的活躍購物車
+        log('INFO', '查詢現有購物車');
         const { data: existingCart, error: cartError } = await supabase
             .from('carts')
             .select('id, access_token')
@@ -88,83 +91,83 @@ Deno.serve(async (req) => {
             .maybeSingle();
 
         if (cartError) {
-            log('ERROR', '查詢現有購物車失敗', cartError);
+            log('ERROR', '查詢購物車時發生錯誤', cartError);
             throw new Error(`查詢購物車失敗: ${cartError.message} (${cartError.code})`);
         }
 
         if (existingCart) {
-            log('INFO', '找到現有購物車', { cartId: existingCart.id });
+            log('INFO', '找到現有購物車', { 
+                cartId: existingCart.id,
+                userId: user.id.substring(0, 8) + '...'
+            });
+            
             return new Response(JSON.stringify({
                 cartId: existingCart.id,
                 cart_access_token: existingCart.access_token,
-                token: authHeader?.replace('Bearer ', ''),
-                debug: { executionTime: Date.now() - startTime, found: 'existing' }
+                debug: { 
+                    executionTime: Date.now() - startTime, 
+                    found: 'existing',
+                    userType: user.is_anonymous ? 'anonymous' : 'registered'
+                }
             }), { 
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
             });
         }
 
-        // 步驟 3: 建立新購物車
-        log('INFO', '開始建立新購物車', { userId: user.id.substring(0, 8) + '...' });
-        
-        const insertData = {
-            user_id: user.id,
-            status: 'active'
-        };
-        
-        log('INFO', '準備插入資料', { hasUserId: !!insertData.user_id });
+        // 為使用者建立新購物車
+        log('INFO', '為使用者建立新購物車', { 
+            userId: user.id.substring(0, 8) + '...',
+            isAnonymous: user.is_anonymous 
+        });
         
         const { data: newCart, error: createError } = await supabase
             .from('carts')
-            .insert(insertData)
+            .insert({
+                user_id: user.id, // 使用從 session 中獲取的 user.id
+                status: 'active'
+            })
             .select('id, access_token')
             .single();
 
         if (createError) {
             log('ERROR', '建立購物車失敗', {
-                error: createError,
+                error: createError.message,
                 code: createError.code,
-                message: createError.message,
                 details: createError.details,
-                hint: createError.hint
+                hint: createError.hint,
+                userId: user.id.substring(0, 8) + '...'
             });
-            
-            // 特別處理外鍵約束錯誤
+
+            // 如果是外鍵約束錯誤，提供更詳細的診斷資訊
             if (createError.code === '23503') {
-                log('WARN', '檢測到外鍵約束錯誤，嘗試驗證使用者是否存在於 auth.users 表中');
-                
-                // 使用 service role 檢查使用者是否確實存在
-                const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-                if (serviceRoleKey) {
-                    const adminClient = createClient(supabaseUrl, serviceRoleKey);
-                    const { data: adminUser, error: adminError } = await adminClient.auth.admin.getUserById(user.id);
-                    
-                    log('INFO', '管理員檢查使用者結果', {
-                        exists: !!adminUser?.user,
-                        error: adminError?.message,
-                        userIdMatch: adminUser?.user?.id === user.id
-                    });
-                }
+                log('WARN', '外鍵約束錯誤 - 使用者可能不存在於 auth.users 表中', {
+                    userId: user.id,
+                    isAnonymous: user.is_anonymous,
+                    userFromSession: !!user
+                });
             }
-            
+
             throw new Error(`建立購物車失敗: ${createError.message} (${createError.code})`);
         }
 
         if (!newCart) {
-            log('ERROR', '建立購物車成功但未返回資料');
             throw new Error('建立購物車成功但未返回資料');
         }
 
         log('INFO', '成功建立新購物車', { 
             cartId: newCart.id,
+            userId: user.id.substring(0, 8) + '...',
             executionTime: Date.now() - startTime
         });
         
         return new Response(JSON.stringify({
             cartId: newCart.id,
             cart_access_token: newCart.access_token,
-            token: authHeader?.replace('Bearer ', ''),
-            debug: { executionTime: Date.now() - startTime, found: 'created' }
+            debug: { 
+                executionTime: Date.now() - startTime, 
+                found: 'created',
+                userType: user.is_anonymous ? 'anonymous' : 'registered'
+            }
         }), { 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         });
