@@ -1,8 +1,8 @@
 // ==============================================================================
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
-// 版本: v44.1 (匿名使用者外鍵約束修正版)
-// 說明: 此版本已完全重構。其核心修正是：在為匿名使用者建立購物車時，
-//       將 user_id 欄位安全地設定為 NULL，以符合資料庫的外鍵約束，
+// 版本: v44.2 (外鍵約束遵循 - 最終修正版)
+// 說明: 此版本已完全重構。其核心修正是：在為「匿名使用者」建立購物車時，
+//       將 user_id 欄位安全地設定為 NULL，以完全遵循資料庫的外鍵約束，
 //       從而徹底解決初始化時的 500 錯誤。
 // ==============================================================================
 
@@ -11,31 +11,28 @@ import { corsHeaders } from '../_shared/cors.ts';
 import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
-const FUNCTION_VERSION = 'v44.1';
+const FUNCTION_VERSION = 'v44.2';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
+    // 使用 Admin Client 以便能處理匿名與登入兩種 session
     const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // 授權標頭現在是可選的，因為我們需要處理首次訪問的匿名使用者
-    const authHeader = req.headers.get('Authorization');
-    
+    // 從請求中安全地獲取使用者 session
     const { data: { user }, error: userError } = await supabaseAdmin.auth.admin.getUserByCookie(req);
 
     if (userError || !user) {
-        logger.error('無法獲取或解析使用者', correlationId, userError || new Error('No user from cookie'));
-        // 即使獲取用戶失敗，我們依然可以嘗試為其建立一個完全匿名的購物車
-        // 但此處我們先返回錯誤，以觀察是否為預期行為
-        return new Response(JSON.stringify({ error: '無法識別使用者身份' }), { status: 401, headers: corsHeaders });
+        // 即使是匿名使用者，Supabase 也會為其分配一個 user 物件
+        // 如果連 user 物件都拿不到，代表 session 處理出現嚴重問題
+        logger.error('無法獲取或解析使用者 Session', correlationId, userError || new Error('No user from cookie'));
+        return new Response(JSON.stringify({ error: '無法識別使用者身份' }), { status: 500, headers: corsHeaders });
     }
 
-    // 核心邏輯：區分正式會員與匿名訪客
     const isAnonymousUser = user.is_anonymous;
 
-    // 嘗試尋找該使用者已存在的、活躍的購物車
-    // 只有在是「正式會員」時，我們才嘗試用 user.id 去尋找舊購物車
+    // 只有在是「正式會員」時，才嘗試用 user.id 去尋找舊購物車
     if (!isAnonymousUser) {
         const { data: cart, error: cartError } = await supabaseAdmin
             .from('carts')
@@ -67,8 +64,10 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     // 如果是匿名使用者，或已登入使用者但沒有活躍購物車，則建立一個新的
     logger.info('為使用者建立新購物車', correlationId, { userId: user.id, isAnonymous: isAnonymousUser });
 
-    // **【v44.1 CORE FIX】**
-    // 關鍵修正：如果是匿名使用者，user_id 必須為 NULL，因為匿名 user.id 不存在於 auth.users 表中。
+    // **【v44.2 最終核心修正】**
+    // 根據 carts 表的綱要，匿名使用者的 user_id 必須為 NULL，
+    // 因為匿名 user.id 雖然存在於 JWT 中，但並不存在於 `auth.users` 主表中，
+    // 直接寫入將違反 `carts_user_id_fkey` 外鍵約束。
     const insertPayload = {
         user_id: isAnonymousUser ? null : user.id,
         status: 'active'
@@ -81,11 +80,10 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         .single();
 
     if (createError) {
-        logger.error('建立新購物車時發生資料庫錯誤', correlationId, createError, { payload: insertPayload });
+        logger.critical('建立新購物車時發生資料庫錯誤', correlationId, createError, { payload: insertPayload });
         throw createError;
     }
     
-    // 為新建立的購物車生成一個臨時的 JWT Session 以便後續操作
     const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.getSession();
     if(sessionError) {
         logger.warn('建立購物車後，獲取 Session 失敗', correlationId, sessionError);
