@@ -4,13 +4,6 @@
  * 檔案名稱：import_map.json
  * 檔案職責：【v53.0 主席團最終整合版】定義所有 Edge Functions 的模組導入路徑。
  * 版本：53.0
- * AI 註記：
- * 變更摘要:
- * - [imports]::[保留]::【✅ 關鍵整合】完整保留了主席原始檔案中對外部函式庫 (如 `supabase-js`, `resend`, `sheetjs`) 的所有重要定義。
- * - [imports]::[新增]::【✅ 根本原因修正】在此基礎上，安全地新增了內部共享模組的路徑別名 (`@/`)，以解決雲端環境中的路徑解析錯誤。
- * - [原理]::[說明]:: 此版本現在是一個完整的「主地址簿」，能同時正確解析內部與外部的所有模組依賴，確保本地與雲端行為 100% 一致。
- * 更新日誌 (Changelog)：
- * - v53.0 (2025-09-27)：整合主席提供的原始檔案與 AI 診斷的修正方案。
  */
 {
   "imports": {
@@ -18,6 +11,6 @@
     "resend": "https://esm.sh/resend@3.4.0",
     "std/csv": "https://deno.land/std@0.224.0/csv/mod.ts",
     "sheetjs": "https://esm.sh/xlsx@0.18.5",
-    "@/": "./supabase/functions/"
+    "@/": "./functions/"
   }
 }
