@@ -2,22 +2,22 @@
 // ==============================================================================
 /**
  * 檔案名稱：CartService.js
- * 檔案職責：【v50.1 競爭條件修正版】管理全站購物車的狀態、與後端 API 的所有交互。
- * 版本：50.1
+ * 檔案職責：【v50.2 TypeError 修正版】管理全站購物車的狀態、與後端 API 的所有交互。
+ * 版本：50.2
  * SOP 條款對應：
  * - [SOP v7.2 4.0] 變更優先診斷原則
  * - [SOP-CE 12] 謙遜協議
  * AI 註記：
  * 變更摘要:
- * - [核心邏輯]::[重構]::【✅ 根本原因修正】完全重寫了 `_ensureSession` 和 API 呼叫流程，解決了因非同步競爭條件導致的 `Bearer undefined` 和 `401` 致命錯誤。
- * - [核心邏輯]::[重構]::【✅ 健壯性強化】`_ensureSession` 現在會明確地等待並回傳一個有效的 `access_token`。
- * - [核心邏輯]::[重構]::【✅ 健壯性強化】所有 `invokeWithTimeout` 呼叫都被改造，現在會明確地接收並使用這個有效的 `access_token` 來建構請求標頭，不再依賴可能過時的全域狀態。
+ * - [核心邏輯]::[重構]::【✅ 根本原因修正】修正了 v50.1 中因錯誤 `import` 導致的 `TypeError: getSupabase is not a function` 致命錯誤。
+ * - [核心邏輯]::[重構]::【✅ 健壯性強化】現在使用 `import { supabase } from ...` 直接導入 Promise，並在需要時使用 `_supabase = await supabase;` 的標準方式來解析它，確保語法正確性。
  * 更新日誌 (Changelog)：
- * - v50.1 (2025-09-27)：修復了因 `signInAnonymously` 非同步競爭條件導致的致命初始化失敗。
+ * - v50.2 (2025-09-27)：修正了 v50.1 引入的致命 TypeError。
+ * - v50.1 (2025-09-27)：嘗試修復競爭條件但引入了 TypeError。
  * - v50.0 (2025-09-26)：舊版，存在狀態不一致的競爭條件。
  */
 
-import { supabase as getSupabase } from '../core/supabaseClient.js';
+import { supabase } from '../core/supabaseClient.js';
 import { showNotification } from '../core/utils.js';
 
 let _supabase = null;
@@ -40,12 +40,12 @@ let _initPromise = null;
 const INVOKE_TIMEOUT = 15000;
 
 /**
- * [v50.1 核心修正]
+ * [v50.2 修正版]
  * 確保 Supabase 有一個有效的 Session，並權威地回傳 access_token。
  * @returns {Promise<string>} 一個解析為有效 access_token 的 Promise。
  */
 async function _ensureValidAccessToken() {
-    if (!_supabase) _supabase = await getSupabase();
+    if (!_supabase) _supabase = await supabase; // 【v50.2 核心修正】正確等待 Promise
 
     let { data: { session }, error: getSessionError } = await _supabase.auth.getSession();
 
@@ -65,7 +65,6 @@ async function _ensureValidAccessToken() {
         session = anonData.session;
     }
     
-    // 無論是既有 Session 還是新建立的匿名 Session，都確保其 Token 是有效的
     if (!session.access_token) {
         console.error("❌ Session 有效但缺少 access_token，這是一個非預期狀態。");
         throw new Error("Session 中缺少 access_token。");
@@ -91,7 +90,7 @@ async function _logRemoteError(error, context = {}) {
 }
 
 /**
- * [v50.1 核心修正]
+ * [v50.2 修正版]
  * 帶有逾時機制的 Supabase Function 呼叫器，現在會明確接收 access_token。
  * @param {string} functionName - 要呼叫的 Edge Function 名稱。
  * @param {string} accessToken - 用於驗證的 JWT。
@@ -99,12 +98,11 @@ async function _logRemoteError(error, context = {}) {
  * @returns {Promise<any>}
  */
 async function invokeWithTimeout(functionName, accessToken, options = {}) {
-    if (!_supabase) throw new Error('Supabase client not initialized.');
+    if (!_supabase) _supabase = await supabase; // 【v50.2 核心修正】
     
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), INVOKE_TIMEOUT);
     
-    // [v50.1] 直接使用傳入的 accessToken 建構標頭
     const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
@@ -223,13 +221,10 @@ export const CartService = {
             _state.isLoading = true;
             _notify();
             try {
-                _supabase = await getSupabase();
-                console.log('🛒 開始初始化購物車服務 (v50.1)...');
+                _supabase = await supabase; // 【v50.2 核心修正】
+                console.log('🛒 開始初始化購物車服務 (v50.2)...');
 
-                // 步驟 1: 權威地獲取一個有效的 access token
                 const accessToken = await _ensureValidAccessToken();
-
-                // 步驟 2: 檢查本地是否有購物車憑證
                 const { restored } = _restoreStateFromLocalStorage();
 
                 if (!restored) {
@@ -262,7 +257,7 @@ export const CartService = {
     
     async fetchShippingMethods() {
         try {
-            if (!_supabase) _supabase = await getSupabase();
+            if (!_supabase) _supabase = await supabase; // 【v50.2 核心修正】
             const { data, error } = await _supabase.from('shipping_rates').select('*').eq('is_active', true).order('display_order', { ascending: true });
             if (error) throw error;
             _state.availableShippingMethods = data || [];
