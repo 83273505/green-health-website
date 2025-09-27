@@ -1,0 +1,75 @@
+<!-- 檔案路徑: storefront-module/test_cors.html -->
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <title>CORS 獨立測試頁面</title>
+</head>
+<body>
+    <h1>Supabase Edge Function CORS 獨立測試</h1>
+    <p>此頁面用於在不載入任何複雜應用程式邏輯的情況下，直接測試後端 CORS 配置是否正確。</p>
+    <button id="test-btn">開始測試</button>
+    <pre id="result"></pre>
+
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+        const resultEl = document.getElementById('result');
+        const btn = document.getElementById('test-btn');
+
+        async function runTest() {
+            resultEl.textContent = '測試中...\n';
+            let supabase;
+            let anonToken;
+
+            try {
+                // 1. 獲取 Supabase 設定
+                const configResponse = await fetch('/.netlify/functions/config');
+                if (!configResponse.ok) throw new Error('無法獲取 Netlify config function');
+                const config = await configResponse.json();
+                resultEl.textContent += '✅ 成功獲取 Netlify 設定\n';
+
+                supabase = createClient(config.supabaseUrl, config.supabaseAnonKey);
+
+                // 2. 獲取匿名 Token
+                const { data: { session }, error: anonError } = await supabase.auth.signInAnonymously();
+                if (anonError || !session) throw new Error(`匿名登入失敗: ${anonError?.message}`);
+                anonToken = session.access_token;
+                resultEl.textContent += `✅ 成功獲取匿名 Token: ${anonToken.substring(0, 20)}...\n`;
+
+                // 3. 構造自訂標頭並發起請求
+                const headers = {
+                    'Authorization': `Bearer ${anonToken}`,
+                    'x-cart-token': 'test-token-value-12345', // 這是我們要測試的關鍵自訂標頭
+                };
+                resultEl.textContent += '🚀 準備發起帶有 x-cart-token 的請求至 manage-cart...\n';
+
+                const response = await fetch(`${config.supabaseUrl}/functions/v1/manage-cart`, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({ cartId: 'dummy-id', action: {type: 'TEST'} })
+                });
+
+                resultEl.textContent += `📈 後端回應狀態碼: ${response.status}\n`;
+
+                if (response.ok || response.status === 422) { // 422 也是 CORS 通過的表現
+                    resultEl.textContent += '\n🎉🎉🎉\n✅ CORS 測試通過！瀏覽器允許發送自訂標頭。\n🎉🎉🎉\n';
+                } else {
+                    throw new Error(`CORS 測試失敗，後端返回非預期狀態碼。`);
+                }
+
+            } catch (error) {
+                console.error(error);
+                resultEl.textContent += `\n❌ 測試失敗: ${error.name}\n${error.message}\n\n`;
+                if (error.message.includes('CORS')) {
+                     resultEl.textContent += '🛑 根本原因確認：CORS 配置錯誤。請執行步驟二的部署指令。';
+                } else {
+                     resultEl.textContent += '🛑 發生了非 CORS 錯誤，請檢查主控台以獲取詳細資訊。';
+                }
+            }
+        }
+
+        btn.addEventListener('click', runTest);
+    </script>
+</body>
+</html>
