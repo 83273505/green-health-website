@@ -1,20 +1,17 @@
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
 // ==============================================================================
 /**
- * 版本：53.0 (安全閘道重構版)
+ * 版本：53.1 (路徑修正版)
  * AI 註記：
- * 變更摘要:
- * - 【重構後】程式碼極度簡化。所有 CORS、日誌、錯誤處理的樣板程式碼均已移除。
- * - 【重構後】現在只專注於 `mainHandler` 的核心業務邏輯。
- * - 【重構後】函式啟動方式改為 `Deno.serve(createSecureHandler(...))`，確保所有請求都經過安全閘道處理。
+ * - 【v53.1 核心修正】將所有 import 路徑從錯誤的 `@/shared/...` 修正為正確的 `@/_shared/...`
  */
-import { createClient } from '@/shared/deps.ts';
-import { corsHeaders } from '@/shared/cors.ts';
-import { createSecureHandler } from '@/shared/api-gateway.ts';
-import LoggingService from '@/shared/services/loggingService.ts';
+import { createClient } from '@/`_`shared/deps.ts';
+import { corsHeaders } from '@/`_`shared/cors.ts';
+import { createSecureHandler } from '@/`_`shared/api-gateway.ts';
+import LoggingService from '@/`_`shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
-const FUNCTION_VERSION = 'v53.0';
+const FUNCTION_VERSION = 'v53.1';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const supabaseAdmin = createClient(

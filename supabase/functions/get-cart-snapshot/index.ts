@@ -1,15 +1,17 @@
 // 檔案路徑: supabase/functions/get-cart-snapshot/index.ts
 // ==============================================================================
 /**
- * 版本: v53.0 (安全閘道重構版)
+ * 版本: v53.1 (路徑修正版)
+ * AI 註記：
+ * - 【v53.1 核心修正】將所有 import 路徑從錯誤的 `@/shared/...` 修正為正確的 `@/_shared/...`
  */
-import { createClient } from '@/shared/deps.ts';
-import { corsHeaders } from '@/shared/cors.ts';
-import { createSecureHandler } from '@/shared/api-gateway.ts';
-import LoggingService from '@/shared/services/loggingService.ts';
+import { createClient } from '@/`_`shared/deps.ts';
+import { corsHeaders } from '@/`_`shared/cors.ts';
+import { createSecureHandler } from '@/`_`shared/api-gateway.ts';
+import LoggingService from '@/`_`shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-cart-snapshot';
-const FUNCTION_VERSION = 'v53.0';
+const FUNCTION_VERSION = 'v53.1';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, couponCode, shippingMethodId } = await req.json().catch(() => ({}));
