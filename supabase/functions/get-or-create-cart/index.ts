@@ -1,14 +1,15 @@
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
 // ==============================================================================
 /**
- * 版本：53.1 (路徑修正版)
+ * 版本：53.1 (指揮官確認版)
  * AI 註記：
- * - 【v53.1 核心修正】將所有 import 路徑從錯誤的 `@/shared/...` 修正為正確的 `@/_shared/...`
+ * - 【v53.1 核心修正】根據 CDRO 指揮官的最終審查，已將所有 import 路徑中的
+ *   `@/shared/` 修正為 `@/_shared/`，確保模組能被正確載入。
  */
-import { createClient } from '@/`_`shared/deps.ts';
-import { corsHeaders } from '@/`_`shared/cors.ts';
-import { createSecureHandler } from '@/`_`shared/api-gateway.ts';
-import LoggingService from '@/`_`shared/services/loggingService.ts';
+import { createClient } from '@/_shared/deps.ts';
+import { corsHeaders } from '@/_shared/cors.ts';
+import { createSecureHandler } from '@/_shared/api-gateway.ts';
+import LoggingService from '@/_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
 const FUNCTION_VERSION = 'v53.1';
