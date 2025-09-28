@@ -1,18 +1,20 @@
 // 檔案路徑: supabase/functions/get-or-create-cart/index.ts
 // ==============================================================================
 /**
- * 版本：53.1 (指揮官確認版)
+ * 版本：54.0 (主席外部情資整合版)
  * AI 註記：
- * - 【v53.1 核心修正】根據 CDRO 指揮官的最終審查，已將所有 import 路徑中的
- *   `@/shared/` 修正為 `@/_shared/`，確保模組能被正確載入。
+ * - 【v54.0 核心修正】完全採納主席發現的 GitHub 解決方案。
+ * - 【v54.0 核心修正】在 `Deno.serve` 入口處，新增了處理 CORS `OPTIONS` 預檢請求的邏輯，
+ *   這是解決 `net::ERR_FAILED` 的關鍵。
+ * - 【v54.0 核心修正】移除了對已廢止的 `api-gateway.ts` 的所有依賴，回歸 Deno 原生寫法。
+ * - 【v54.0 核心修正】修正了所有 `import` 路徑，確保 `@/_shared/` 的正確性。
  */
 import { createClient } from '@/_shared/deps.ts';
 import { corsHeaders } from '@/_shared/cors.ts';
-import { createSecureHandler } from '@/_shared/api-gateway.ts';
-import LoggingService from '@/_shared/services/loggingService.ts';
+import LoggingService, { withErrorLogging } from '@/_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
-const FUNCTION_VERSION = 'v53.1';
+const FUNCTION_VERSION = 'v54.0';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const supabaseAdmin = createClient(
@@ -50,4 +52,15 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     });
 }
 
-Deno.serve(createSecureHandler(mainHandler, FUNCTION_NAME, FUNCTION_VERSION));
+// 【v54.0 核心修正】使用主席發現的、更簡潔的啟動方式
+Deno.serve(async (req) => {
+    // 這是解決 CORS 錯誤的關鍵：在執行任何邏輯前，先回應瀏覽器的 OPTIONS (預檢) 請求。
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
+    }
+    
+    // 將日誌和錯誤處理包裹在業務邏輯外層
+    const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+    const wrappedHandler = withErrorLogging(mainHandler, logger);
+    return await wrappedHandler(req);
+});

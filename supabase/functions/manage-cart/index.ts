@@ -1,18 +1,18 @@
 // 檔案路徑: supabase/functions/manage-cart/index.ts
 // ==============================================================================
 /**
- * 版本：53.1 (指揮官確認版)
+ * 版本：54.0 (主席外部情資整合版)
  * AI 註記：
- * - 【v53.1 核心修正】根據 CDRO 指揮官的最終審查，已將所有 import 路徑中的
- *   `@/shared/` 修正為 `@/_shared/`，確保模組能被正確載入。
+ * - 【v54.0 核心修正】新增了處理 CORS `OPTIONS` 預檢請求的邏輯。
+ * - 【v54.0 核心修正】移除了對已廢止的 `api-gateway.ts` 的所有依賴。
+ * - 【v54.0 核心修正】修正了所有 `import` 路徑，確保 `@/_shared/` 的正確性。
  */
 import { createClient } from '@/_shared/deps.ts';
 import { corsHeaders } from '@/_shared/cors.ts';
-import { createSecureHandler } from '@/_shared/api-gateway.ts';
-import LoggingService from '@/_shared/services/loggingService.ts';
+import LoggingService, { withErrorLogging } from '@/_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'manage-cart-command';
-const FUNCTION_VERSION = 'v53.1';
+const FUNCTION_VERSION = 'v54.0';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, action } = await req.json().catch(() => ({}));
@@ -51,4 +51,12 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     return new Response(JSON.stringify({ success: true, data }), { status: 200, headers: corsHeaders });
 }
 
-Deno.serve(createSecureHandler(mainHandler, FUNCTION_NAME, FUNCTION_VERSION));
+// 【v54.0 核心修正】
+Deno.serve(async (req) => {
+    if (req.method === 'OPTIONS') {
+        return new Response('ok', { headers: corsHeaders });
+    }
+    const logger = new LoggingService(FUNCTION_NAME, FUNCTION_VERSION);
+    const wrappedHandler = withErrorLogging(mainHandler, logger);
+    return await wrappedHandler(req);
+});
