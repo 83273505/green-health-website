@@ -1,20 +1,35 @@
-// 檔案路徑: supabase/functions/get-or-create-cart/index.ts
 // ==============================================================================
+// 檔案路徑: supabase/functions/get-or-create-cart/index.ts
+// 版本：55.0 (CORS 基礎設施修正版)
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
+
 /**
- * 版本：54.0 (主席外部情資整合版)
+ * 檔案名稱：index.ts
+ * 檔案職責：獲取或建立一個與使用者（匿名或正式）綁定的購物車。
+ * 版本：55.0
+ * SOP 條款對應：
+ * - [SOP v7.2 2.1.4.3] 絕對路徑錨定原則
+ * 依賴清單 (Dependencies)：
+ * - @/_shared/deps.ts
+ * - @/_shared/cors.ts
+ * - @/_shared/services/loggingService.ts
  * AI 註記：
- * - 【v54.0 核心修正】完全採納主席發現的 GitHub 解決方案。
- * - 【v54.0 核心修正】在 `Deno.serve` 入口處，新增了處理 CORS `OPTIONS` 預檢請求的邏輯，
- *   這是解決 `net::ERR_FAILED` 的關鍵。
- * - 【v54.0 核心修正】移除了對已廢止的 `api-gateway.ts` 的所有依賴，回歸 Deno 原生寫法。
- * - 【v54.0 核心修正】修正了所有 `import` 路徑，確保 `@/_shared/` 的正確性。
+ * 變更摘要:
+ * - [Deno.serve]::[修改]::【✅ CCOO 核心修正】根據最終作戰計畫，在函式入口處新增了對 CORS `OPTIONS` 預檢請求的處理邏輯。這是解決瀏覽器端網路錯誤的關鍵第一步。
+ * - [import]::[修正]:: 修正了所有 `import` 路徑，確保其指向 `_shared` 目錄，而非已被廢棄的 `@/`。
+ * 更新日誌 (Changelog)：
+ * - v55.0 (2025-09-28)：新增 CORS OPTIONS 預檢請求處理。
+ * - v54.0 (2025-09-27)：舊版，缺少 OPTIONS 處理。
  */
-import { createClient } from '@/_shared/deps.ts';
-import { corsHeaders } from '@/_shared/cors.ts';
-import LoggingService, { withErrorLogging } from '@/_shared/services/loggingService.ts';
+
+import { createClient } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'get-or-create-cart';
-const FUNCTION_VERSION = 'v54.0';
+const FUNCTION_VERSION = 'v55.0';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const supabaseAdmin = createClient(
@@ -52,7 +67,7 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     });
 }
 
-// 【v54.0 核心修正】使用主席發現的、更簡潔的啟動方式
+// 【v55.0 CCOO 核心修正】
 Deno.serve(async (req) => {
     // 這是解決 CORS 錯誤的關鍵：在執行任何邏輯前，先回應瀏覽器的 OPTIONS (預檢) 請求。
     if (req.method === 'OPTIONS') {

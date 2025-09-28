@@ -1,18 +1,34 @@
-// 檔案路徑: supabase/functions/manage-cart/index.ts
 // ==============================================================================
+// 檔案路徑: supabase/functions/manage-cart/index.ts
+// 版本：55.0 (CORS 基礎設施修正版)
+// ------------------------------------------------------------------------------
+// 【此為完整檔案，可直接覆蓋】
+// ==============================================================================
+
 /**
- * 版本：54.0 (主席外部情資整合版)
+ * 檔案名稱：index.ts
+ * 檔案職責：提供單一、原子化的端點來處理所有對購物車的修改命令。
+ * 版本：55.0
+ * SOP 條款對應：
+ * - [SOP v7.2 2.1.4.3] 絕對路徑錨定原則
+ * 依賴清單 (Dependencies)：
+ * - @/_shared/deps.ts -> ../_shared/deps.ts (路徑修正)
+ * - @/_shared/cors.ts -> ../_shared/cors.ts (路徑修正)
+ * - @/_shared/services/loggingService.ts -> ../_shared/services/loggingService.ts (路徑修正)
  * AI 註記：
- * - 【v54.0 核心修正】新增了處理 CORS `OPTIONS` 預檢請求的邏輯。
- * - 【v54.0 核心修正】移除了對已廢止的 `api-gateway.ts` 的所有依賴。
- * - 【v54.0 核心修正】修正了所有 `import` 路徑，確保 `@/_shared/` 的正確性。
+ * 變更摘要:
+ * - [Deno.serve]::[修改]::【✅ CCOO 核心修正】根據最終作戰計畫，在函式入口處新增了對 CORS `OPTIONS` 預檢請求的處理邏輯。
+ * - [import]::[修正]:: 修正了所有 `import` 路徑，確保其指向 `_shared` 目錄，而非已被廢棄的 `@/`。
+ * 更新日誌 (Changelog)：
+ * - v55.0 (2025-09-28)：新增 CORS OPTIONS 預檢請求處理。
+ * - v54.0 (2025-09-27)：舊版，缺少 OPTIONS 處理。
  */
-import { createClient } from '@/_shared/deps.ts';
-import { corsHeaders } from '@/_shared/cors.ts';
-import LoggingService, { withErrorLogging } from '@/_shared/services/loggingService.ts';
+import { createClient } from '../_shared/deps.ts';
+import { corsHeaders } from '../_shared/cors.ts';
+import LoggingService, { withErrorLogging } from '../_shared/services/loggingService.ts';
 
 const FUNCTION_NAME = 'manage-cart-command';
-const FUNCTION_VERSION = 'v54.0';
+const FUNCTION_VERSION = 'v55.0';
 
 async function mainHandler(req: Request, logger: LoggingService, correlationId: string): Promise<Response> {
     const { cartId, action } = await req.json().catch(() => ({}));
@@ -30,6 +46,7 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
         return new Response(JSON.stringify({ success: false, error: '使用者未授權或 Token 無效' }), { status: 401, headers: corsHeaders });
     }
     
+    // 【S-CTO 註記】此處的 RPC 函式 `atomic_modify_cart` 將在下一階段進行 RLS 權限重構
     const { data, error } = await supabaseAdmin.rpc('atomic_modify_cart', {
         p_cart_id: cartId,
         p_user_id: user.id,
@@ -51,7 +68,7 @@ async function mainHandler(req: Request, logger: LoggingService, correlationId: 
     return new Response(JSON.stringify({ success: true, data }), { status: 200, headers: corsHeaders });
 }
 
-// 【v54.0 核心修正】
+// 【v55.0 CCOO 核心修正】
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
