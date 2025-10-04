@@ -1,43 +1,8 @@
+# 檔案路徑: [您的專案根目錄]/_redirects
 # ==============================================================================
-# 檔案路徑: test-shiporder/_redirects
-# 版本: v31.7 - 最終 MPA/SPA 混合路由實作版
-# ------------------------------------------------------------------------------
-
-# --- 核心 API 路由 (最高優先級) ---
-/.netlify/functions/*             /.netlify/functions/:splat             200
-
-# --- 靜態資源優先處理 ---
-/_shared/js/*                     /_shared/js/:splat                     200
-
-/admin/js/*                       /admin/js/:splat                       200
-/admin/css/*                      /admin/css/:splat                      200
-/warehouse-panel/js/*             /warehouse-panel/js/:splat             200
-/warehouse-panel/css/*            /warehouse-panel/css/:splat            200
-/invoice-panel/js/*               /invoice-panel/js/:splat               200
-/invoice-panel/css/*              /invoice-panel/css/:splat              200
-/permission-panel/js/*            /permission-panel/js/:splat            200
-/permission-panel/css/*           /permission-panel/css/:splat           200
-
-/GreenHealth-Auth-Module/js/*     /GreenHealth-Auth-Module/js/:splat     200
-/GreenHealth-Auth-Module/css/*    /GreenHealth-Auth-Module/css/:splat    200
-/GreenHealth-Auth-Module/images/* /GreenHealth-Auth-Module/images/:splat 200
-
-# --- 指定 MPA 頁面 (可匿名直出，不進 SPA 驗證) ---
-/GreenHealth-Auth-Module/product-detail.html   /GreenHealth-Auth-Module/product-detail.html  200
-/GreenHealth-Auth-Module/products.html         /GreenHealth-Auth-Module/products.html        200
-/GreenHealth-Auth-Module/checkout.html         /GreenHealth-Auth-Module/checkout.html        200
-/GreenHealth-Auth-Module/order-success.html    /GreenHealth-Auth-Module/order-success.html   200
-
-# --- 其他 HTML 頁面 (會員相關) 一律走 SPA ---
-/GreenHealth-Auth-Module/*.html   /GreenHealth-Auth-Module/index.html    200
-
+# 版本：Production-Safe v1.0
+# 說明：這是一個適用於生產環境的、最簡潔、最安全的回退規則。
+#      它確保了使用者在訪問任何不存在的路徑時，都能被優雅地導向到首頁。
 # ==============================================================================
-# ⬇️ SPA / MPA 路由回退 ⬇️
-# ==============================================================================
-/admin/*                          /admin/index.html                      200
-/warehouse-panel/*                /warehouse-panel/index.html            200
-/invoice-panel/*                  /invoice-panel/index.html              200
-/permission-panel/*                /permission-panel/index.html           200
 
-# 消費者前端 SPA 回退
-/*                                /GreenHealth-Auth-Module/index.html    200
+/*    /index.html    200
