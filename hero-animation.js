@@ -111,7 +111,17 @@ function runAnimation() {
         createQueenTear();
         createCoronationWaves();
 
-        gsap.set([softText, ctaContainer], { opacity: 0, y: 20 });
+        // [DTC-06] Ensure Hero copy and CTA are immediately visible and interactive
+        if (heroTitle) heroTitle.classList.add('is-unveiled');
+        if (softText) {
+            softText.style.opacity = '1';
+            softText.style.transform = 'none';
+        }
+        if (ctaContainer) {
+            ctaContainer.style.opacity = '1';
+            ctaContainer.style.transform = 'none';
+            ctaContainer.style.pointerEvents = 'auto';
+        }
         
         render(); 
 
@@ -212,55 +222,68 @@ function runAnimation() {
     }
     
     function startMainAnimationSequence() {
-        // ... (This function remains the same)
         if (hasPlayed) return;
-        
+        hasPlayed = true;
+
+        // [DTC-06] Content is guaranteed readable immediately
+        if (heroTitle) heroTitle.classList.add('is-unveiled');
+        if (softText) {
+            softText.style.opacity = '1';
+            softText.style.transform = 'none';
+        }
+        if (ctaContainer) {
+            ctaContainer.style.opacity = '1';
+            ctaContainer.style.transform = 'none';
+            ctaContainer.style.pointerEvents = 'auto';
+        }
+
+        if (isMobileMode) {
+            mainSequenceCompleted = true;
+            stopAnimationLoop();
+            return;
+        }
+
+        let attempts = 0;
+        const maxAttempts = 15; // 1.5s max wait for drop texture
+
         const checkDropReady = () => {
+            attempts++;
             if (drop) {
-                hasPlayed = true;
                 startAnimationLoop();
 
                 const tl = gsap.timeline({
-                    delay: 0.5,
+                    delay: 0.2,
                     onComplete: () => {
                         mainSequenceCompleted = true;
                     }
                 });
-                
-                tl.to([softText, ctaContainer], {
-                    opacity: 1,
-                    y: 0,
-                    duration: 1.0,
-                    stagger: 0.3,
-                    ease: "power2.out"
-                });
-                
-                tl.set(drop, { visible: true }, "+=0.5")
-                  .fromTo(drop.material, { opacity: 0 }, { opacity: 1, duration: 0.8 })
-                  .fromTo(drop.position, 
-                      { y: dropInitialY }, 
-                      { 
-                          y: 0, 
-                          duration: 1.6, 
+
+                tl.set(drop, { visible: true }, "+=0.2")
+                  .fromTo(drop.material, { opacity: 0 }, { opacity: 1, duration: 0.6 })
+                  .fromTo(drop.position,
+                      { y: dropInitialY },
+                      {
+                          y: 0,
+                          duration: 1.4,
                           ease: "power2.in",
                           onComplete: () => {
                               drop.visible = false;
                               triggerCoronationWave(drop.position, true);
                           }
-                      }, 
-                      "<0.3");
-        
-                tl.call(() => {
-                    if (heroTitle) heroTitle.classList.add('is-unveiled');
-                }, [], ">1.0");
-            } else {
+                      },
+                      "<0.2");
+            } else if (attempts < maxAttempts) {
                 setTimeout(checkDropReady, 100);
+            } else {
+                console.log('ℹ️ Drop texture wait timed out; completing Hero sequence gracefully.');
+                mainSequenceCompleted = true;
+                stopAnimationLoop();
             }
         };
 
         checkDropReady();
     }
-    
+
     // [MODIFIED] Click interaction is now disabled after the animation plays to prevent issues.
     function onCanvasClick(event) {
         if (!water || hasPlayed) return; // Disable clicks after main animation

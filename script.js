@@ -35,39 +35,27 @@
     }
 })();
 
-// Lightweight CSS animation trigger
-function initCssAnimations() {
-    const animatedSections = document.querySelectorAll('.js-anim-trigger');
-    if (animatedSections.length === 0) return;
-
-    const observer = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('is-in-view');
-                observer.unobserve(entry.target); // Animate only once
-            }
-        });
-    }, {
-        threshold: 0.2 // Trigger when 20% of the element is visible
-    });
-
-    animatedSections.forEach(section => {
-        observer.observe(section);
-    });
-}
-
-
 document.addEventListener('DOMContentLoaded', function() {
 
     function initializeHeroExperience() {
         const heroSection = document.getElementById('hero-section');
         if (!heroSection) return;
 
+        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReduced) {
+            console.log('✅ 偏好減少動態：跳過 3D 動畫模組。');
+            const canvas = document.getElementById('hero-canvas');
+            if (canvas) canvas.style.display = 'none';
+            const heroTitle = document.getElementById('heroTitle');
+            if (heroTitle) heroTitle.classList.add('is-unveiled');
+            return;
+        }
+
         const observer = new IntersectionObserver((entries, observer) => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     console.log('🚀 Hero section is visible. Loading 3D animation module...');
-                    
+
                     import('/hero-animation.js')
                         .then(module => {
                             if (module.bootstrapAnimation) {
@@ -75,12 +63,16 @@ document.addEventListener('DOMContentLoaded', function() {
                                 module.bootstrapAnimation();
                             } else {
                                 console.error('❌ 3D 動畫模組載入失敗：找不到 bootstrapAnimation 函數。');
+                                const heroTitle = document.getElementById('heroTitle');
+                                if (heroTitle) heroTitle.classList.add('is-unveiled');
                             }
                         })
                         .catch(error => {
                             console.error('❌ 動態載入 3D 動畫模組失敗:', error);
+                            const heroTitle = document.getElementById('heroTitle');
+                            if (heroTitle) heroTitle.classList.add('is-unveiled');
                         });
-                    
+
                     observer.unobserve(heroSection);
                 }
             });
@@ -92,19 +84,69 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function initScrollReveal() {
-        const revealElements = document.querySelectorAll('.u-reveal');
+        const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (prefersReduced || !('IntersectionObserver' in window)) {
+            // Keep all content immediately visible
+            return;
+        }
+
+        const revealElements = document.querySelectorAll('.m-reveal-editorial, .m-reveal-object');
         if (revealElements.length === 0) return;
 
-        const revealObserver = new IntersectionObserver((entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                    observer.unobserve(entry.target);
+        try {
+            let pendingRevealCount = revealElements.length;
+            let scrollCheckScheduled = false;
+
+            const completeReveal = (element, observer) => {
+                if (element.classList.contains('visible')) return;
+                element.classList.add('visible');
+                observer.unobserve(element);
+                pendingRevealCount -= 1;
+                if (pendingRevealCount === 0) {
+                    window.removeEventListener('scroll', schedulePassedRevealCheck);
+                }
+            };
+
+            const revealObserver = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        completeReveal(entry.target, observer);
+                    }
+                });
+            }, { threshold: 0, rootMargin: '0px 0px -8% 0px' });
+
+            const revealPassedElements = () => {
+                scrollCheckScheduled = false;
+                revealElements.forEach(element => {
+                    if (element.classList.contains('visible')) return;
+                    const rect = element.getBoundingClientRect();
+                    if (rect.top < window.innerHeight * 0.92) {
+                        completeReveal(element, revealObserver);
+                    }
+                });
+            };
+
+            function schedulePassedRevealCheck() {
+                if (scrollCheckScheduled) return;
+                scrollCheckScheduled = true;
+                window.setTimeout(revealPassedElements, 0);
+            }
+
+            revealElements.forEach(element => revealObserver.observe(element));
+            document.documentElement.classList.add('js-motion-ready');
+            window.addEventListener('scroll', schedulePassedRevealCheck, { passive: true });
+
+            // Elements already inside the initial viewport should never flash hidden.
+            revealElements.forEach(element => {
+                const rect = element.getBoundingClientRect();
+                if (rect.top < window.innerHeight * 0.92 && rect.bottom > 0) {
+                    completeReveal(element, revealObserver);
                 }
             });
-        }, { threshold: 0.01, rootMargin: "0px 0px -50px 0px" });
-
-        revealElements.forEach(el => revealObserver.observe(el));
+        } catch (error) {
+            // Progressive enhancement fallback: CSS defaults keep all content visible.
+            document.documentElement.classList.remove('js-motion-ready');
+        }
     }
 
     function initMobileNav() {
@@ -171,13 +213,13 @@ document.addEventListener('DOMContentLoaded', function() {
             });
 
             const textToCopy = lines.join('\n').replace(/\n\n/g, '\n').trim();
-            
+
             navigator.clipboard.writeText(textToCopy).then(() => {
                 const originalText = button.textContent;
                 button.textContent = '食譜已複製！';
                 button.disabled = true;
-                setTimeout(() => { 
-                    button.textContent = originalText; 
+                setTimeout(() => {
+                    button.textContent = originalText;
                     button.disabled = false;
                 }, 2000);
             }).catch(err => {
@@ -186,99 +228,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function initFlipCards() {
-        const flipCards = document.querySelectorAll('.c-flip-card');
-        flipCards.forEach(card => {
-            const flipAction = (e) => {
-                if (e.type === 'click' || e.key === 'Enter' || e.key === ' ') {
-                     if (e.type !== 'click') e.preventDefault();
-                     card.classList.toggle('is-flipped');
-                }
-            };
-            card.addEventListener('click', flipAction);
-            card.addEventListener('keydown', flipAction);
-        });
-    }
-
-    function initImageGallery() {
-        const gallery = document.querySelector('.c-image-gallery');
-        if (!gallery) return;
-
-        const mainImage = document.getElementById('main-estate-image');
-        const thumbnails = gallery.querySelectorAll('.c-image-gallery__thumbnail');
-        const hints = gallery.querySelectorAll('.c-image-gallery__hint');
-        
-        if (!mainImage || thumbnails.length === 0) return;
-
-        let currentIndex = 0;
-        let galleryInterval = null;
-        let hintShown = false;
-        let hintTimeout = null;
-        
-        const showHintOnce = () => {
-            if (hintShown) return;
-            hintShown = true;
-            if (hintTimeout) clearTimeout(hintTimeout);
-            hints.forEach(h => h.classList.add('visible'));
-            hintTimeout = setTimeout(() => {
-                hints.forEach(h => h.classList.remove('visible'));
-            }, 2500);
-        };
-
-        const updateGallery = (index) => {
-            if (index < 0 || index >= thumbnails.length) return;
-            mainImage.style.opacity = 0;
-            setTimeout(() => {
-                mainImage.src = thumbnails[index].src;
-                mainImage.alt = thumbnails[index].alt;
-                mainImage.style.opacity = 1;
-            }, 250);
-            thumbnails.forEach(thumb => thumb.classList.remove('active'));
-            thumbnails[index].classList.add('active');
-            currentIndex = index;
-        };
-
-        const startGalleryInterval = () => {
-            clearInterval(galleryInterval);
-            galleryInterval = setInterval(() => {
-                const nextIndex = (currentIndex + 1) % thumbnails.length;
-                updateGallery(nextIndex);
-            }, 5000);
-        };
-
-        thumbnails.forEach((thumbnail, index) => {
-            thumbnail.addEventListener('click', () => {
-                updateGallery(index);
-                startGalleryInterval();
-            });
-        });
-
-        gallery.addEventListener('keydown', (e) => {
-            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                e.preventDefault();
-                let nextIndex = (e.key === 'ArrowRight')
-                    ? (currentIndex + 1) % thumbnails.length
-                    : (currentIndex - 1 + thumbnails.length) % thumbnails.length;
-                updateGallery(nextIndex);
-                startGalleryInterval();
-            }
-        });
-        
-        gallery.addEventListener('mouseenter', showHintOnce);
-        gallery.addEventListener('focus', showHintOnce);
-        startGalleryInterval();
-    }
 
     function initStickySubNav() {
         const subNav = document.getElementById('subNav');
         if (!subNav) return;
-        
+
         const mainNav = document.getElementById('mainNav');
         const sections = document.querySelectorAll('section[id], article[id]');
         const navLinks = subNav.querySelectorAll('.c-sub-nav__link');
         const heroSection = document.querySelector('.c-hero');
         const heroHeight = heroSection ? heroSection.offsetHeight : 500;
-        
+
         const onScroll = () => {
             const scrollY = window.pageYOffset;
             const navHeight = mainNav ? mainNav.offsetHeight : 73;
@@ -288,10 +248,10 @@ document.addEventListener('DOMContentLoaded', function() {
             if (mainNav) {
                 mainNav.classList.toggle('is-hidden', showSubNav);
             }
-            
+
             let currentSectionId = '';
             sections.forEach(section => {
-                const sectionTop = section.offsetTop - navHeight - 60; 
+                const sectionTop = section.offsetTop - navHeight - 60;
                 if (scrollY >= sectionTop) {
                     currentSectionId = section.getAttribute('id');
                 }
@@ -315,78 +275,32 @@ document.addEventListener('DOMContentLoaded', function() {
             mainNav.classList.toggle('is-scrolled', window.scrollY > 50);
         }, { passive: true });
     }
-    
-    function initScrollNarrative() {
-        const narrativeSection = document.getElementById('quality');
-        if (!narrativeSection) return;
 
-        const steps = narrativeSection.querySelectorAll('.c-timeline__item[data-step]');
-        if (steps.length === 0) return;
-
-        const observer = new IntersectionObserver(entries => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    const step = entry.target.dataset.step;
-                    narrativeSection.setAttribute('data-active-step', step);
-                }
-            });
-        }, {
-            threshold: 0.6,
-            rootMargin: "-30% 0px -30% 0px"
-        });
-
-        steps.forEach(step => observer.observe(step));
-    }
-    
-    function initCustomVideoPlayer() {
-        const video = document.getElementById('main-video');
-        const playBtn = document.getElementById('videoPlayBtn');
-
-        if (!video || !playBtn) return;
-
-        playBtn.addEventListener('click', () => {
-            video.play();
-        });
-
-        video.addEventListener('play', () => {
-            playBtn.classList.add('is-hidden');
-            video.controls = true;
-        });
-
-        video.addEventListener('pause', () => {
-            playBtn.classList.remove('is-hidden');
-        });
-
-        video.addEventListener('ended', () => {
-            playBtn.classList.remove('is-hidden');
-            video.controls = false;
-        });
-    }
 
     function initThemeSwitcher() {
         const sections = document.querySelectorAll('[data-theme]');
         if (sections.length === 0) return;
-    
+
         const body = document.body;
         let currentTheme = '';
-    
+
         const observer = new IntersectionObserver(entries => {
             let mostVisibleEntry = null;
             let maxRatio = 0;
-    
+
             entries.forEach(entry => {
                 if (entry.isIntersecting && entry.intersectionRatio > maxRatio) {
                     maxRatio = entry.intersectionRatio;
                     mostVisibleEntry = entry;
                 }
             });
-            
+
             if (mostVisibleEntry) {
                 const newTheme = mostVisibleEntry.target.dataset.theme;
                 if (newTheme !== currentTheme) {
                     currentTheme = newTheme;
                     body.dataset.activeTheme = newTheme;
-                    
+
                     const accentColor = mostVisibleEntry.target.dataset.accent;
                     if (accentColor && accentColor.startsWith('#') && accentColor.length === 7) {
                         const hex = accentColor.substring(1);
@@ -405,13 +319,72 @@ document.addEventListener('DOMContentLoaded', function() {
                     document.documentElement.style.removeProperty('--theme-accent-color-rgb');
                 }
             }
-    
+
         }, {
             threshold: Array.from({ length: 21 }, (_, i) => i * 0.05),
-            rootMargin: "-10% 0px -40% 0px" 
+            rootMargin: "-10% 0px -40% 0px"
         });
-    
+
         sections.forEach(section => observer.observe(section));
+    }
+
+    function ensureLazyVideoLoaded(video) {
+        const sources = video.querySelectorAll('source[data-src]');
+        let changed = false;
+        sources.forEach(source => {
+            source.src = source.dataset.src;
+            source.removeAttribute('data-src');
+            changed = true;
+        });
+        if (video.dataset.src) {
+            video.src = video.dataset.src;
+            delete video.dataset.src;
+            changed = true;
+        }
+        if (changed) video.load();
+    }
+
+    function initJourneyMedia() {
+        const gallery = document.querySelector('.c-image-gallery');
+        const mainImage = document.getElementById('main-estate-image');
+        if (gallery && mainImage) {
+            const thumbnails = [...gallery.querySelectorAll('.c-image-gallery__thumbnail')];
+            let activeIndex = Math.max(0, thumbnails.findIndex(image => image.classList.contains('active')));
+            const selectImage = index => {
+                if (!thumbnails.length) return;
+                activeIndex = (index + thumbnails.length) % thumbnails.length;
+                const selected = thumbnails[activeIndex];
+                mainImage.src = selected.src;
+                mainImage.alt = selected.alt;
+                thumbnails.forEach((image, imageIndex) => image.classList.toggle('active', imageIndex === activeIndex));
+            };
+            gallery.addEventListener('click', event => {
+                const thumbnail = event.target.closest('.c-image-gallery__thumbnail');
+                if (thumbnail) selectImage(thumbnails.indexOf(thumbnail));
+            });
+            gallery.addEventListener('keydown', event => {
+                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                event.preventDefault();
+                selectImage(activeIndex + (event.key === 'ArrowRight' ? 1 : -1));
+            });
+        }
+
+        const video = document.getElementById('main-video');
+        const playButton = document.getElementById('videoPlayBtn');
+        if (video && playButton) {
+            playButton.addEventListener('click', async () => {
+                ensureLazyVideoLoaded(video);
+                video.controls = true;
+                try {
+                    await video.play();
+                } catch (_) {
+                    playButton.hidden = false;
+                }
+            });
+            video.addEventListener('play', () => { playButton.hidden = true; });
+            video.addEventListener('pause', () => { playButton.hidden = false; });
+            video.addEventListener('ended', () => { playButton.hidden = false; });
+        }
     }
 
     function initLazyLoadVideo() {
@@ -422,19 +395,9 @@ document.addEventListener('DOMContentLoaded', function() {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
                     const video = entry.target;
-                    
-                    const sources = video.querySelectorAll("source[data-src]");
-                    if (sources.length > 0) {
-                        sources.forEach(source => {
-                            source.src = source.dataset.src;
-                        });
-                    } 
-                    else if (video.dataset.src) {
-                        video.src = video.dataset.src;
-                    }
 
-                    video.load();
-                    
+                    ensureLazyVideoLoaded(video);
+
                     if (video.hasAttribute('autoplay')) {
                         const playPromise = video.play();
                         if (playPromise !== undefined) {
@@ -445,17 +408,17 @@ document.addEventListener('DOMContentLoaded', function() {
                             });
                         }
                     }
-                    
+
                     observer.unobserve(video);
                 }
             });
         }, {
-            rootMargin: "200px" 
+            rootMargin: "200px"
         });
 
         lazyVideos.forEach(video => lazyVideoObserver.observe(video));
     }
-    
+
     function initializeContactForm() {
         const form = document.getElementById('contact-form');
         if (!form) return;
@@ -508,7 +471,7 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (err) {
                 console.error('[FORM][FETCH_ERROR]', err);
                 status.textContent = '❌ 發生網路連線錯誤，請檢查您的網路並重試。';
-                
+
                 if (typeof gtag === 'function') {
                     gtag('event', 'form_submission_error', {
                         'event_category': 'contact',
@@ -523,6 +486,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // [NEW] Initialize the contact tabs functionality
+    function initAnalyticsTracking() {
+        document.addEventListener('click', (e) => {
+            const link = e.target.closest('a');
+            if (!link) return;
+
+            const href = link.getAttribute('href') || '';
+            if (href.includes('shopee.tw/_a9_5vmt07')) {
+                if (typeof gtag === 'function') {
+                    gtag('event', 'shopee_store_click', {
+                        'event_category': 'ecommerce',
+                        'event_label': 'shopee_storefront_outbound'
+                    });
+                }
+            } else if (href.startsWith('mailto:sales@greenhealthtw.com.tw')) {
+                if (typeof gtag === 'function') {
+                    gtag('event', 'contact_email_click', {
+                        'event_category': 'contact',
+                        'event_label': 'sales_email_click'
+                    });
+                }
+            }
+        });
+    }
+
     function initContactTabs() {
         const tabsContainer = document.querySelector('.c-contact-tabs');
         if (!tabsContainer) return;
@@ -553,18 +540,15 @@ document.addEventListener('DOMContentLoaded', function() {
         initShrinkingNav();
         initBackToTopButton();
         initRecipeCopy();
-        initFlipCards();
-        initImageGallery();
         initStickySubNav();
-        initScrollNarrative();
-        initCustomVideoPlayer();
         initThemeSwitcher();
+        initJourneyMedia();
         initLazyLoadVideo();
-        initCssAnimations();
         initializeContactForm();
         initContactTabs();
+        initAnalyticsTracking();
     }
-    
+
     // Start the main sequence
     initializeHeroExperience();
     initApp();
